@@ -117,6 +117,8 @@ export default function App() {
     listNonce,
   ].join(":");
   const listing = useDirListing(cwd, refreshKey);
+  /** The folder whose contents are on screen. Lags `cwd` until its listing arrives. */
+  const shown = listing.path;
 
   const go = useCallback(
     (path: string, focus: string | null = null) => {
@@ -144,20 +146,22 @@ export default function App() {
     if (canUp && cwd) go(parentPath(cwd), cwd);
   };
 
-  const queue = cwd ? queueForDir(state, cwd) : undefined;
+  const queue = shown ? queueForDir(state, shown) : undefined;
   const allFolders = useMemo(
-    () => (cwd ? listing.folders.map((f) => folderVm(state, cwd, f)) : []),
-    [state, cwd, listing],
+    () => (shown ? listing.folders.map((f) => folderVm(state, shown, f)) : []),
+    [state, shown, listing],
   );
   const folders = showAllFolders ? allFolders : allFolders.filter((g) => g.hasQueue);
   const hiddenFolders = allFolders.length - folders.length;
+  // Follows the listing, so subfolders and downloads appear together instead of
+  // the downloads shifting when the subfolders arrive.
   const files = useMemo(
     () =>
       queue
         ? queue.downloads
             .map((id) => state.downloads[id])
             .filter(Boolean)
-            .map((item) => fileVm(item, queue, state, mode, listing.loaded ? listing.present : null))
+            .map((item) => fileVm(item, queue, state, mode, listing.present))
         : [],
     [state, queue, mode, listing],
   );
@@ -176,7 +180,7 @@ export default function App() {
 
   // Dropping on a folder moves downloads to its queue and folders inside it.
   const { drag, start: startDrag } = useItemDrag(
-    (keys, target) => target !== cwd && !keys.includes(target),
+    (keys, target) => target !== shown && !keys.includes(target),
     (keys, target) => {
       const ids = keys.filter((key) => key in state.downloads);
       const paths = keys.filter((key) => !(key in state.downloads));
@@ -374,7 +378,7 @@ export default function App() {
 
   if (!home || !cwd) return <div className="app" data-theme={theme} />;
 
-  const own = stats(state, cwd, false);
+  const own = stats(state, shown ?? cwd, false);
   const summary = [
     queue?.settings.paused && "Paused",
     own.active && `${own.active} downloading`,
@@ -639,7 +643,7 @@ export default function App() {
       >
         {mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />}
         {marquee.box && <div className="marquee" style={marquee.box} />}
-        {count === 0 && listing.loaded && state.loaded && (
+        {count === 0 && shown === cwd && state.loaded && (
           <div className="empty">
             {listing.error
               ? `Can't open this folder: ${listing.error}`

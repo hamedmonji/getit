@@ -5,19 +5,22 @@ export interface Listing extends DirListing {
   /** File names present in the folder, for quick lookups. */
   present: Set<string>;
   error: string | null;
-  /** False until the first listing of the current path has arrived. */
-  loaded: boolean;
+  /** The folder listed; null until the first listing arrives. */
+  path: string | null;
 }
 
-const EMPTY: Listing = { folders: [], files: [], present: new Set(), error: null, loaded: false };
+const EMPTY: Listing = { folders: [], files: [], present: new Set(), error: null, path: null };
 
 /**
  * Lists `path`'s subfolders and files. Re-lists whenever `refreshKey` changes
  * and when the window regains focus, so changes made outside getit show up.
+ *
+ * After `path` changes, the previous folder's listing is returned until the new
+ * one arrives, so the view can switch folders in one step, like Finder. Check
+ * the listing's `path` for which folder it describes.
  */
 export function useDirListing(path: string | null, refreshKey: string): Listing {
-  // Tagged with its path, so a previous folder's listing is never shown for a new one.
-  const [listing, setListing] = useState<{ path: string; value: Listing } | null>(null);
+  const [listing, setListing] = useState<Listing>(EMPTY);
   const [focusTick, setFocusTick] = useState(0);
 
   useEffect(() => {
@@ -33,19 +36,16 @@ export function useDirListing(path: string | null, refreshKey: string): Listing 
       .listDir(path)
       .then((result) => {
         if (!cancelled) {
-          setListing({
-            path,
-            value: { ...result, present: new Set(result.files), error: null, loaded: true },
-          });
+          setListing({ ...result, present: new Set(result.files), error: null, path });
         }
       })
       .catch((e) => {
-        if (!cancelled) setListing({ path, value: { ...EMPTY, error: String(e), loaded: true } });
+        if (!cancelled) setListing({ ...EMPTY, error: String(e), path });
       });
     return () => {
       cancelled = true;
     };
   }, [path, refreshKey, focusTick]);
 
-  return listing && listing.path === path ? listing.value : EMPTY;
+  return listing;
 }
