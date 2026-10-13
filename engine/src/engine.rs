@@ -15,7 +15,8 @@ use crate::types::{
     DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, QueueId, QueueInfo,
     QueueSettings, Result,
 };
-use crate::worker::{self, Job, Outcome, WorkerMsg};
+use crate::types::part_path;
+use crate::worker::{self, Job, Outcome, WorkerMsg, split_extension};
 
 const EVENT_CAPACITY: usize = 1024;
 const USER_AGENT: &str = concat!("getit/", env!("CARGO_PKG_VERSION"));
@@ -60,6 +61,9 @@ struct Active {
     stop: Option<Stop>,
     /// Start a new worker as soon as this one has stopped (started again while pausing).
     restart: bool,
+    /// Folder the worker writes into, when the download moved to another queue
+    /// while it was running. Its file follows once the worker has stopped.
+    moved_from: Option<PathBuf>,
 }
 
 impl Active {
@@ -292,6 +296,71 @@ impl Engine {
         Ok(())
     }
 
+    /// Moves downloads to the end of the queue for `dir` (creating it if needed),
+    /// taking their files along. Downloads the old queue was running wait in the
+    /// new one; ones started on their own restart there. A file whose name is
+    /// taken in `dir` gets a free one. Downloads already in that queue stay put.
+    pub fn move_downloads(&self, ids: &[DownloadId], dir: impl AsRef<Path>) -> Result<()> {
+        let dir = normalize(dir.as_ref())?;
+        let mut guard = self.inner.lock();
+        let st = &mut *guard;
+        if let Some(id) = ids.iter().find(|id| !st.owner.contains_key(id)) {
+            return Err(EngineError::DownloadNotFound(*id));
+        }
+        let target = self.inner.ensure_queue(st, dir.clone());
+        let mut sources: Vec<QueueId> = Vec::new();
+        let mut result = Ok(());
+        for &id in ids {
+            let source = st.owner[&id];
+            if source == target {
+                continue;
+            }
+            let from = st.queues.get_mut(&source).expect("owner queue exists");
+            let running = st.active.contains_key(&id);
+            // A running worker still writes into the old folder; its file moves when it stops.
+            if !running {
+                let item = &from.items[&id];
+                match move_file(item, &from.dir, &dir) {
+                    Ok(name) => from.items.get_mut(&id).expect("item exists").file_name = name,
+                    Err(e) => {
+                        result = Err(EngineError::MoveFailed {
+                            name: item.file_name.clone().unwrap_or_else(|| item.url.clone()),
+                            error: e.to_string(),
+                        });
+                        break;
+                    }
+                }
+            }
+            let mut item = from.remove(id).expect("owned download exists");
+            if let Some(active) = st.active.get_mut(&id) {
+                let manual = item.status == DownloadStatus::Downloading && item.manual;
+                if item.status == DownloadStatus::Downloading && !manual {
+                    item.status = DownloadStatus::Queued;
+                }
+                active.stop(Stop::Pause);
+                active.restart = manual;
+                active.moved_from.get_or_insert_with(|| from.dir.clone());
+            }
+            item.queue_id = target;
+            st.owner.insert(id, target);
+            self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
+            st.queues
+                .get_mut(&target)
+                .expect("target queue exists")
+                .push(item);
+            if !sources.contains(&source) {
+                sources.push(source);
+            }
+        }
+        for id in sources.into_iter().chain([target]) {
+            let queue = &st.queues[&id];
+            self.inner.save(queue);
+            self.inner.emit(EngineEvent::QueueChanged(queue.info()));
+            self.inner.schedule(st, id);
+        }
+        result
+    }
+
     /// Adds `url` to the end of a queue.
     pub fn add(&self, queue_id: QueueId, url: &str) -> Result<DownloadId> {
         let url = validate_url(url)?;
@@ -359,6 +428,42 @@ impl Engine {
             None => self.inner.spawn(&mut st.active, item, &queue.dir),
         }
         self.inner.save(queue);
+        Ok(())
+    }
+
+    /// Puts paused or failed downloads back in line in their queues, which start
+    /// them when they have room. Downloads in other states are left alone.
+    pub fn requeue(&self, ids: &[DownloadId]) -> Result<()> {
+        let mut guard = self.inner.lock();
+        let st = &mut *guard;
+        if let Some(id) = ids.iter().find(|id| !st.owner.contains_key(id)) {
+            return Err(EngineError::DownloadNotFound(*id));
+        }
+        let mut touched: Vec<QueueId> = Vec::new();
+        for id in ids {
+            let queue = owner_queue(&mut st.queues, &st.owner, *id)?;
+            let Some(item) = queue.items.get_mut(id) else {
+                continue;
+            };
+            if !matches!(item.status, DownloadStatus::Paused | DownloadStatus::Failed) {
+                continue;
+            }
+            item.status = DownloadStatus::Queued;
+            item.manual = false;
+            item.error = None;
+            // A worker still stopping after a pause stays stopped; the queue starts it again.
+            if let Some(active) = st.active.get_mut(id) {
+                active.restart = false;
+            }
+            self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
+            if !touched.contains(&queue.id) {
+                touched.push(queue.id);
+            }
+        }
+        for id in touched {
+            self.inner.save(&st.queues[&id]);
+            self.inner.schedule(st, id);
+        }
         Ok(())
     }
 
@@ -518,6 +623,7 @@ impl Inner {
                 token: token.clone(),
                 stop: None,
                 restart: false,
+                moved_from: None,
             },
         );
         self.runtime.spawn(worker::run(
@@ -583,10 +689,10 @@ impl Inner {
                 outcome,
                 part_path,
             } => {
-                let (stop, restart) = st
-                    .active
-                    .remove(&id)
-                    .map_or((None, false), |active| (active.stop, active.restart));
+                let (stop, restart, moved_from) = st.active.remove(&id).map_or(
+                    (None, false, None),
+                    |active| (active.stop, active.restart, active.moved_from),
+                );
                 let Ok(queue) = owner_queue(&mut st.queues, &st.owner, id) else {
                     // Removed while running.
                     if let Some(part) = part_path {
@@ -610,6 +716,15 @@ impl Inner {
                             item.error = Some(msg);
                         }
                         (Outcome::Stopped, None) => item.status = DownloadStatus::Paused,
+                    }
+                    if let Some(from) = moved_from {
+                        match move_file(item, &from, &queue.dir) {
+                            Ok(name) => item.file_name = name,
+                            Err(e) => {
+                                item.status = DownloadStatus::Failed;
+                                item.error = Some(format!("couldn't move the file: {e}"));
+                            }
+                        }
                     }
                     let item = item.clone();
                     self.emit(EngineEvent::DownloadChanged(item.clone()));
@@ -667,6 +782,54 @@ fn discard(active: &mut HashMap<DownloadId, Active>, item: &DownloadItem, dir: &
         }
         None => {}
     }
+}
+
+/// Moves a download's file (finished or partial) from `from` to `to`, picking a
+/// free name there. Returns the download's file name in `to`.
+fn move_file(item: &DownloadItem, from: &Path, to: &Path) -> io::Result<Option<String>> {
+    let Some(name) = &item.file_name else {
+        return Ok(None);
+    };
+    if from == to {
+        return Ok(Some(name.clone()));
+    }
+    let done = item.status == DownloadStatus::Completed;
+    let path = |dir: &Path, name: &str| {
+        if done {
+            dir.join(name)
+        } else {
+            part_path(dir, name)
+        }
+    };
+    let src = path(from, name);
+    let name = free_file_name(to, name)?;
+    if src.exists() {
+        std::fs::create_dir_all(to)?;
+        let dest = path(to, &name);
+        // Renaming fails across disks; copy, then delete the original.
+        if std::fs::rename(&src, &dest).is_err() {
+            std::fs::copy(&src, &dest)?;
+            std::fs::remove_file(&src)?;
+        }
+    }
+    Ok(Some(name))
+}
+
+/// `candidate`, or `candidate (1)`, `(2)`, ... if a file or partial download
+/// already has that name in `dir`.
+fn free_file_name(dir: &Path, candidate: &str) -> io::Result<String> {
+    let (stem, ext) = split_extension(candidate);
+    for n in 0..10_000 {
+        let name = if n == 0 {
+            candidate.to_string()
+        } else {
+            format!("{stem} ({n}){ext}")
+        };
+        if !dir.join(&name).exists() && !part_path(dir, &name).exists() {
+            return Ok(name);
+        }
+    }
+    Err(io::Error::other(format!("no free file name for {candidate}")))
 }
 
 fn validate_url(url: &str) -> Result<String> {

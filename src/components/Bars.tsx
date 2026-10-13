@@ -16,6 +16,8 @@ export interface ToolbarProps {
   onUp: () => void;
   crumbs: { label: string; path: string }[];
   onCrumb: (path: string) => void;
+  /** Crumb that items being dragged would be dropped on. */
+  dropTarget: string | null;
   mode: ViewMode;
   onMode: (mode: ViewMode) => void;
   /** Whether folders without a queue inside them are shown. */
@@ -49,7 +51,8 @@ export function Toolbar(p: ToolbarProps) {
             <span key={c.path} className="crumb-wrap">
               {i > 0 && <span className="crumb-sep">/</span>}
               <button
-                className="crumb"
+                className={"crumb" + (p.dropTarget === c.path ? " drop-target" : "")}
+                data-drop={c.path}
                 style={{ color: last ? "var(--ink)" : "var(--muted)", fontWeight: last ? 600 : 400 }}
                 onClick={() => p.onCrumb(c.path)}
               >
@@ -166,18 +169,26 @@ export function StatusBar({
   left,
   speed,
   warning,
+  notice,
 }: {
   itemCount: string;
   selInfo: string;
   left: string;
   speed: string;
   warning: string | null;
+  /** A passing message, such as why a move failed. */
+  notice: string | null;
 }) {
   return (
     <div className="status-bar">
       <span>{itemCount}</span>
       <span className="mono ellipsis">{selInfo}</span>
       <div className="spacer" />
+      {notice && (
+        <span className="status-warning ellipsis" title={notice}>
+          {notice}
+        </span>
+      )}
       {warning && (
         <span className="status-warning" title={warning}>
           Couldn't save queues

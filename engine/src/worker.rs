@@ -485,7 +485,7 @@ fn sanitize_file_name(raw: &str) -> Option<String> {
 }
 
 /// Splits `"name.ext"` into `("name", ".ext")`. Dotfiles have no extension.
-fn split_extension(name: &str) -> (&str, &str) {
+pub(crate) fn split_extension(name: &str) -> (&str, &str) {
     match name.rfind('.') {
         Some(i) if i > 0 => name.split_at(i),
         _ => (name, ""),

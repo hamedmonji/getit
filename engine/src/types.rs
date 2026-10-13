@@ -176,6 +176,8 @@ pub enum EngineError {
     QueueBusy(PathBuf),
     #[error("{0} already has a queue")]
     DirTaken(PathBuf),
+    #[error("couldn't move {name}: {error}")]
+    MoveFailed { name: String, error: String },
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;

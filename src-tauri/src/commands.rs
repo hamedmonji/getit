@@ -194,12 +194,54 @@ pub fn rename_folder(engine: State<'_, Engine>, path: String, name: String) -> C
     if new.exists() && !same {
         return Err(format!("\"{name}\" already exists"));
     }
-    fs::rename(&old, &new).map_err(err)?;
-    if let Err(e) = engine.relocate(&old, &new) {
-        let _ = fs::rename(&new, &old);
+    move_dir(&engine, &old, &new)?;
+    Ok(new.to_string_lossy().into_owned())
+}
+
+/// Moves a folder on disk and points its queues at the new place, undoing the
+/// move if the queues can't follow.
+fn move_dir(engine: &Engine, old: &Path, new: &Path) -> CommandResult<()> {
+    fs::rename(old, new).map_err(err)?;
+    if let Err(e) = engine.relocate(old, new) {
+        let _ = fs::rename(new, old);
         return Err(err(e));
     }
-    Ok(new.to_string_lossy().into_owned())
+    Ok(())
+}
+
+/// Moves folders (with the queues inside them) into `dest`. Stops at the first
+/// one that can't move; the ones before it stay moved.
+#[tauri::command]
+pub fn move_folders(engine: State<'_, Engine>, paths: Vec<String>, dest: String) -> CommandResult<()> {
+    let dest = PathBuf::from(dest);
+    for path in paths {
+        let old = PathBuf::from(&path);
+        let name = old.file_name().ok_or("can't move this folder")?;
+        if old.parent() == Some(dest.as_path()) {
+            continue;
+        }
+        if dest.starts_with(&old) {
+            return Err(format!("can't move \"{}\" into itself", name.to_string_lossy()));
+        }
+        let new = dest.join(name);
+        if new.exists() {
+            return Err(format!("\"{}\" already exists there", name.to_string_lossy()));
+        }
+        move_dir(&engine, &old, &new)?;
+    }
+    Ok(())
+}
+
+/// Moves downloads, with their files, to the queue for `dir`.
+#[tauri::command]
+pub fn move_downloads(engine: State<'_, Engine>, ids: Vec<DownloadId>, dir: String) -> CommandResult<()> {
+    engine.move_downloads(&ids, dir).map_err(err)
+}
+
+/// Puts paused or failed downloads back in line in their queues.
+#[tauri::command]
+pub fn requeue_downloads(engine: State<'_, Engine>, ids: Vec<DownloadId>) -> CommandResult<()> {
+    engine.requeue(&ids).map_err(err)
 }
 
 #[tauri::command]

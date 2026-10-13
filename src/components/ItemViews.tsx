@@ -5,9 +5,11 @@ import { ActionButton, FileGlyph, FolderGlyph, ProgressBar } from "./Glyphs";
 export interface ItemViewProps {
   folders: FolderVm[];
   files: FileVm[];
-  /** Selected folder path or download id. */
-  selected: string | null;
-  onSelect: (key: string) => void;
+  /** Selected folder paths and download ids. */
+  selected: Set<string>;
+  /** Press on a folder (by path) or download (by id); may start a drag. */
+  onItemMouseDown: (key: string, e: MouseEvent) => void;
+  onItemClick: (key: string, e: MouseEvent) => void;
   onOpenFolder: (path: string) => void;
   onOpenFile: (vm: FileVm) => void;
   onAction: (vm: FileVm) => void;
@@ -18,6 +20,9 @@ export interface ItemViewProps {
   /** Commits a new name; rejects with a message if it can't be used. */
   onRename: (path: string, name: string) => Promise<void>;
   onCancelRename: () => void;
+  /** Items being dragged, and the folder they'd be dropped on. */
+  dragging: Set<string>;
+  dropTarget: string | null;
 }
 
 /** Inline name field, like Finder's: Enter or clicking away saves, Escape cancels. */
@@ -80,6 +85,7 @@ function NameEditor({
         }
       }}
       onBlur={commit}
+      onMouseDown={stop}
       onClick={stop}
       onDoubleClick={stop}
       onContextMenu={stop}
@@ -102,9 +108,11 @@ function FolderName({ props, path, name, className }: { props: ItemViewProps; pa
 
 function handlers(props: ItemViewProps, key: string, open: () => void) {
   return {
+    "data-key": key,
+    onMouseDown: (e: MouseEvent) => props.onItemMouseDown(key, e),
     onClick: (e: MouseEvent) => {
       e.stopPropagation();
-      props.onSelect(key);
+      props.onItemClick(key, e);
     },
     onDoubleClick: (e: MouseEvent) => {
       e.stopPropagation();
@@ -113,14 +121,17 @@ function handlers(props: ItemViewProps, key: string, open: () => void) {
     onContextMenu: (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      props.onSelect(key);
       props.onItemMenu(key, e.clientX, e.clientY);
     },
   };
 }
 
-function selectedClass(props: ItemViewProps, key: string) {
-  return props.selected === key ? " selected" : "";
+function stateClass(props: ItemViewProps, key: string) {
+  return (
+    (props.selected.has(key) ? " selected" : "") +
+    (props.dropTarget === key ? " drop-target" : "") +
+    (props.dragging.has(key) ? " dragging" : "")
+  );
 }
 
 export function IconView(props: ItemViewProps) {
@@ -129,7 +140,8 @@ export function IconView(props: ItemViewProps) {
       {props.folders.map((g) => (
         <div
           key={g.path}
-          className={"tile" + selectedClass(props, g.path)}
+          data-drop={g.path}
+          className={"tile" + stateClass(props, g.path)}
           {...handlers(props, g.path, () => props.onOpenFolder(g.path))}
         >
           <FolderGlyph vm={g} size="large" />
@@ -141,7 +153,7 @@ export function IconView(props: ItemViewProps) {
       {props.files.map((f) => (
         <div
           key={f.id}
-          className={"tile" + selectedClass(props, f.id)}
+          className={"tile" + stateClass(props, f.id)}
           {...handlers(props, f.id, () => props.onOpenFile(f))}
         >
           <ActionButton className="tile-action" vm={f} onAction={props.onAction} />
@@ -173,7 +185,8 @@ export function ListView(props: ItemViewProps) {
         {props.folders.map((g) => (
           <div
             key={g.path}
-            className={"row folder-row" + selectedClass(props, g.path)}
+            data-drop={g.path}
+            className={"row folder-row" + stateClass(props, g.path)}
             {...handlers(props, g.path, () => props.onOpenFolder(g.path))}
           >
             <FolderGlyph vm={g} size="small" />
@@ -187,7 +200,7 @@ export function ListView(props: ItemViewProps) {
         {props.files.map((f) => (
           <div
             key={f.id}
-            className={"row file-row" + selectedClass(props, f.id)}
+            className={"row file-row" + stateClass(props, f.id)}
             {...handlers(props, f.id, () => props.onOpenFile(f))}
           >
             <FileGlyph vm={f} size="small" />

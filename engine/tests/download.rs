@@ -952,3 +952,105 @@ async fn restore_drops_trailing_slashes_from_saved_folders() {
         Some(queues[0].id)
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn move_downloads_takes_files_along() {
+    let ctx = Ctx::new().await;
+    let done = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_status(&ctx.engine, done, DownloadStatus::Completed).await;
+    let source = ctx.engine.get(done).unwrap().queue_id;
+    let waiting = ctx.engine.add(source, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.pause(waiting).unwrap();
+    // A file with the same name is already in the destination.
+    std::fs::create_dir_all(ctx.folder("b")).unwrap();
+    std::fs::write(ctx.folder("b/file.bin"), b"taken").unwrap();
+
+    ctx.engine
+        .move_downloads(&[done, waiting], ctx.folder("b"))
+        .unwrap();
+
+    let target = ctx.engine.queue_for_dir(ctx.folder("b")).unwrap();
+    assert_eq!(ctx.engine.queue(target).unwrap().downloads, vec![done, waiting]);
+    assert!(ctx.engine.queue(source).unwrap().downloads.is_empty());
+    let moved = ctx.engine.get(done).unwrap();
+    assert_eq!(moved.queue_id, target);
+    assert_eq!(moved.file_name.as_deref(), Some("file (1).bin"));
+    assert!(!ctx.folder("a/file.bin").exists());
+    ctx.assert_file_matches(done);
+    assert_eq!(std::fs::read(ctx.folder("b/file.bin")).unwrap(), b"taken");
+
+    // Moving into the queue it's already in changes nothing.
+    ctx.engine.move_downloads(&[done], ctx.folder("b")).unwrap();
+    assert_eq!(ctx.engine.queue(target).unwrap().downloads, vec![done, waiting]);
+
+    ctx.engine.resume(waiting).unwrap();
+    wait_for_status(&ctx.engine, waiting, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(waiting);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn move_downloads_moves_running_downloads() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    let target = ctx.paused_queue("b", 1);
+
+    ctx.engine.move_downloads(&[id], ctx.folder("b")).unwrap();
+    let item = ctx.engine.get(id).unwrap();
+    assert_eq!(item.queue_id, target);
+    assert_eq!(item.status, DownloadStatus::Queued);
+
+    // It waits in the paused queue, then continues from its moved partial file.
+    settle().await;
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
+    let name = ctx.engine.get(id).unwrap().file_name.unwrap();
+    assert!(!ctx.folder(&format!("a/{name}.part")).exists());
+    ctx.unpause(target);
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+    assert!(ctx.server.requests().iter().any(|r| r.status == 206));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn move_downloads_restarts_downloads_started_on_their_own() {
+    let ctx = Ctx::new().await;
+    let source = ctx.paused_queue("a", 1);
+    let id = ctx.engine.add(source, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.pause(id).unwrap();
+    ctx.engine.resume(id).unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    ctx.paused_queue("b", 1);
+
+    ctx.engine.move_downloads(&[id], ctx.folder("b")).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+    assert!(ctx.folder("b").join(ctx.engine.get(id).unwrap().file_name.unwrap()).exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn requeue_puts_paused_downloads_back_in_line() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let first = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    let second = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.pause(first).unwrap();
+    ctx.engine.pause(second).unwrap();
+    ctx.unpause(queue);
+    settle().await;
+    assert_eq!(ctx.engine.get(first).unwrap().status, DownloadStatus::Paused);
+
+    ctx.engine.requeue(&[first, second]).unwrap();
+    // The queue runs them one at a time, as it would have before they were paused.
+    let item = wait_for_progress(&ctx.engine, first).await;
+    assert!(!item.manual);
+    assert_eq!(ctx.engine.get(second).unwrap().status, DownloadStatus::Queued);
+    wait_for_status(&ctx.engine, second, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(first);
+    ctx.assert_file_matches(second);
+}

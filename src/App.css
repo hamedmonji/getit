@@ -304,10 +304,19 @@ input::placeholder {
 /* Content */
 
 .content {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
   background: var(--panel);
+}
+
+.marquee {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid var(--accent);
+  background: var(--accentSoft);
+  pointer-events: none;
 }
 
 .empty {
@@ -342,6 +351,35 @@ input::placeholder {
 .tile.selected,
 .row.selected {
   background: var(--accentSoft);
+}
+
+.tile.drop-target,
+.row.drop-target,
+.crumb.drop-target {
+  background: var(--accentSoft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.tile.dragging,
+.row.dragging {
+  opacity: 0.5;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 200;
+  max-width: 240px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
 }
 
 .tile-name {

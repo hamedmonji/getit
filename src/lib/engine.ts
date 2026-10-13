@@ -71,11 +71,17 @@ export const engine = {
   pause: (id: DownloadId) => invoke<void>("pause_download", { id }),
   /** Starts a paused or failed download on its own, outside its queue. */
   resume: (id: DownloadId) => invoke<void>("resume_download", { id }),
+  /** Puts paused or failed downloads back in line; their queue starts them when it has room. */
+  requeue: (ids: DownloadId[]) => invoke<void>("requeue_downloads", { ids }),
   remove: (id: DownloadId) => invoke<void>("remove_download", { id }),
   /** Creates a "New Queue" subfolder with its own queue; returns its path. */
   createQueue: (parent: string) => invoke<string>("create_queue", { parent }),
   /** Renames a folder (and moves queues inside it); returns the new path. */
   renameFolder: (path: string, name: string) => invoke<string>("rename_folder", { path, name }),
+  /** Moves folders, with the queues inside them, into `dest`. */
+  moveFolders: (paths: string[], dest: string) => invoke<void>("move_folders", { paths, dest }),
+  /** Moves downloads, with their files, to the queue for `dir`. */
+  moveDownloads: (ids: DownloadId[], dir: string) => invoke<void>("move_downloads", { ids, dir }),
   setQueueSettings: (queueId: QueueId, settings: QueueSettings) =>
     invoke<void>("set_queue_settings", { queueId, settings }),
   clearCompleted: (queueId: QueueId) => invoke<number>("clear_completed", { queueId }),
