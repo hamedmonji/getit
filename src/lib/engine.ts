@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { openPath } from "@tauri-apps/plugin-opener";
 
 export type DownloadId = string;
@@ -86,6 +87,8 @@ export const engine = {
     invoke<void>("set_queue_settings", { queueId, settings }),
   clearCompleted: (queueId: QueueId) => invoke<number>("clear_completed", { queueId }),
   openPath: (path: string) => openPath(path),
+  /** The clipboard's text; rejects when it holds no text. */
+  readClipboard: () => readText(),
 };
 
 export function onEngineEvent(handler: (event: EngineEvent) => void): Promise<UnlistenFn> {

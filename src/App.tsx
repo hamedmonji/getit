@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { InputBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
+import { InputBar, PasteBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
 import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
 import { useDirListing } from "./hooks/useDirListing";
@@ -41,6 +41,19 @@ interface Menu {
   target: string | null;
 }
 
+/** The http(s) links in `text`, each once, in order. */
+function linksIn(text: string): string[] {
+  const links = text.split(/\s+/).filter((token) => {
+    if (!/^https?:\/\//i.test(token)) return false;
+    try {
+      return !!new URL(token).hostname;
+    } catch {
+      return false;
+    }
+  });
+  return [...new Set(links)];
+}
+
 function report(promise: Promise<unknown>) {
   promise.catch((e) => console.error(e));
 }
@@ -79,6 +92,10 @@ export default function App() {
     () => "all",
   );
   const showAllFolders = folderFilter === "all";
+  /** Whether pasting links asks first or adds them right away. */
+  const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
+  /** Links from the clipboard waiting for the user to confirm. */
+  const [pasting, setPasting] = useState<string[] | null>(null);
 
   useEffect(() => {
     Promise.all([engine.homeDir(), engine.initialDir()]).then(([home, start]) => {
@@ -88,7 +105,10 @@ export default function App() {
   }, []);
 
   const cwd = history?.cwd ?? null;
-  useEffect(() => setEditing(null), [cwd]);
+  useEffect(() => {
+    setEditing(null);
+    setPasting(null);
+  }, [cwd]);
   const all = Object.values(state.downloads);
   const refreshKey = [
     all.length,
@@ -278,6 +298,31 @@ export default function App() {
       ?.scrollIntoView({ block: "nearest" });
   };
 
+  const addLinks = async (urls: string[]) => {
+    if (!cwd) return;
+    const ids: string[] = [];
+    for (const url of urls) ids.push(await engine.addDownload(cwd, url));
+    select(ids);
+  };
+
+  // Command-V adds the links on the clipboard to this folder's queue, after
+  // asking unless the user chose not to be asked.
+  const paste = () => {
+    engine
+      .readClipboard()
+      .then((text) => {
+        const urls = linksIn(text);
+        if (!urls.length) return;
+        if (pasteMode === "always") {
+          addLinks(urls).catch((e) => setNotice(`Couldn't add: ${e}`));
+        } else {
+          setAdding(false);
+          setPasting(urls);
+        }
+      })
+      .catch(() => {});
+  };
+
   // Delete/Backspace removes the selected downloads (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
   // item and Command-Up goes to the enclosing folder (Control-A and Alt-arrows elsewhere).
@@ -303,6 +348,11 @@ export default function App() {
         if (!ids.length) return;
         ids.forEach((id) => report(engine.remove(id)));
         select([]);
+      } else if (e.key.toLowerCase() === "v" && command) {
+        e.preventDefault();
+        paste();
+      } else if (e.key === "Escape" && pasting) {
+        setPasting(null);
       } else if (e.key.toLowerCase() === "a" && command) {
         e.preventDefault();
         setSelected(new Set(order));
@@ -359,7 +409,14 @@ export default function App() {
     if (queue) items.push({ kind: "header", label: summary ? `Queue · ${summary}` : "Queue" });
     items.push(
       { kind: "action", label: "Add download…", onSelect: () => setAdding(true) },
+      { kind: "action", label: "Paste link", onSelect: paste },
       { kind: "action", label: "New queue", onSelect: newQueue },
+      {
+        kind: "action",
+        label: "Ask before adding pasted links",
+        checked: pasteMode === "ask",
+        onSelect: () => setPasteMode(pasteMode === "ask" ? "always" : "ask"),
+      },
     );
     if (queue) {
       const { settings } = queue;
@@ -532,7 +589,10 @@ export default function App() {
         onMode={setMode}
         showAllFolders={showAllFolders}
         onToggleFolders={() => setFolderFilter(showAllFolders ? "queues" : "all")}
-        onToggleAdd={() => setAdding((a) => !a)}
+        onToggleAdd={() => {
+          setPasting(null);
+          setAdding((a) => !a);
+        }}
         theme={theme}
         onToggleTheme={() => setTheme(theme === "Dark" ? "Light" : "Dark")}
       />
@@ -549,6 +609,18 @@ export default function App() {
             select([await engine.addDownload(cwd, url)]);
           }}
           onClose={() => setAdding(false)}
+        />
+      )}
+
+      {pasting && (
+        <PasteBar
+          urls={pasting}
+          dirLabel={displayPath(cwd, home)}
+          onAdd={async (always) => {
+            if (always) setPasteMode("always");
+            await addLinks(pasting);
+          }}
+          onClose={() => setPasting(null)}
         />
       )}
 

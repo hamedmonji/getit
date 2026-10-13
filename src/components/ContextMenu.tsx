@@ -1,7 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export type MenuItem =
-  | { kind: "action"; label: string; onSelect: () => void; disabled?: boolean; danger?: boolean }
+  | {
+      kind: "action";
+      label: string;
+      onSelect: () => void;
+      disabled?: boolean;
+      danger?: boolean;
+      /** Shows a check mark column; true checks it. */
+      checked?: boolean;
+    }
   | { kind: "separator" }
   | { kind: "header"; label: string }
   /** A −/+ control; changing it keeps the menu open. */
@@ -112,6 +120,7 @@ export function ContextMenu({
                   item.onSelect();
                 }}
               >
+                {item.checked !== undefined && <span className="menu-check">{item.checked ? "✓" : ""}</span>}
                 {item.label}
               </button>
             );

@@ -163,6 +163,59 @@ export function InputBar({
   );
 }
 
+/** Asks whether to add the links found on the clipboard. Enter adds, Escape cancels. */
+export function PasteBar({
+  urls,
+  dirLabel,
+  onAdd,
+  onClose,
+}: {
+  urls: string[];
+  dirLabel: string;
+  /** Adds the links; `always` skips this prompt from now on. Rejects with a message to show. */
+  onAdd: (always: boolean) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [always, setAlways] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const add = async () => {
+    try {
+      await onAdd(always);
+      onClose();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  return (
+    <div className="add-bar">
+      <span className="add-label">
+        Add {urls.length === 1 ? "link" : `${urls.length} links`} to <span className="mono ink">{dirLabel}/</span>
+      </span>
+      <span className="paste-urls mono ellipsis" title={urls.join("\n")}>
+        {urls[0]}
+        {urls.length > 1 && <span className="muted"> and {urls.length - 1} more</span>}
+      </span>
+      {error && (
+        <span className="status-warning ellipsis" title={error}>
+          {error}
+        </span>
+      )}
+      <label className="paste-always">
+        <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
+        Don't ask again
+      </label>
+      <button className="plain-btn" onClick={onClose}>
+        Cancel
+      </button>
+      <button className="plain-btn" autoFocus onClick={add}>
+        Add to queue
+      </button>
+    </div>
+  );
+}
+
 export function StatusBar({
   itemCount,
   selInfo,
