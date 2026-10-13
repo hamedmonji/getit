@@ -231,17 +231,79 @@ export default function App() {
     if (vm.done && !vm.missing && vm.path) report(engine.openPath(vm.path));
   };
 
+  /** Where arrow keys move from: the item last reached with them, if still selected. */
+  const lead = useRef<string | null>(null);
+
+  /** Items per row in the icon grid, read from the laid-out tiles. */
+  const columns = () => {
+    const tiles = contentRef.current?.querySelectorAll<HTMLElement>(".icon-grid > [data-key]");
+    if (!tiles?.length) return 1;
+    let n = 0;
+    for (const tile of tiles) {
+      if (tile.offsetTop !== tiles[0].offsetTop) break;
+      n++;
+    }
+    return n;
+  };
+
+  // Arrows move the selection (Shift extends it), like Finder: up and down move
+  // by rows, left and right by items in the icon grid.
+  const moveSelection = (key: string, extend: boolean) => {
+    const current = lead.current && selected.has(lead.current) ? lead.current : (selection[selection.length - 1] ?? null);
+    const index = current === null ? -1 : order.indexOf(current);
+    if (mode === "List" && (key === "ArrowLeft" || key === "ArrowRight")) return;
+    const forward = key === "ArrowDown" || key === "ArrowRight";
+    let next: number;
+    if (index < 0) {
+      next = forward ? 0 : order.length - 1;
+    } else {
+      const row = mode === "Icons" ? columns() : 1;
+      const delta = { ArrowUp: -row, ArrowDown: row, ArrowLeft: -1, ArrowRight: 1 }[key] ?? 0;
+      next = index + delta;
+      if (next < 0 || next >= order.length) return;
+    }
+    const target = order[next];
+    if (target === undefined) return;
+    if (extend) {
+      const from = order.indexOf(anchor ?? current ?? target);
+      const start = from < 0 ? next : from;
+      setSelected(new Set(order.slice(Math.min(start, next), Math.max(start, next) + 1)));
+      setAnchor(order[start]);
+    } else {
+      select([target]);
+    }
+    lead.current = target;
+    contentRef.current
+      ?.querySelector(`[data-key="${CSS.escape(target)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  };
+
   // Delete/Backspace removes the selected downloads (finished files stay);
-  // Command-A (Control-A elsewhere) selects everything in the folder.
+  // Command-A selects everything in the folder; Command-Down opens the selected
+  // item and Command-Up goes to the enclosing folder (Control-A and Alt-arrows elsewhere).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
-      if (e.key === "Delete" || e.key === "Backspace") {
+      if (e.target instanceof HTMLInputElement || menu) return;
+      const command = IS_MAC ? e.metaKey : e.ctrlKey;
+      const arrow = e.key.startsWith("Arrow");
+      if (arrow && (IS_MAC ? e.metaKey : e.altKey)) {
+        e.preventDefault();
+        if (e.key === "ArrowUp") goUp();
+        if (e.key === "ArrowDown" && selection.length === 1) {
+          const [key] = selection;
+          const file = files.find((f) => f.id === key);
+          if (file) onOpenFile(file);
+          else go(key);
+        }
+      } else if (arrow && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        moveSelection(e.key, e.shiftKey);
+      } else if (e.key === "Delete" || e.key === "Backspace") {
         const ids = selectedFiles.map((f) => f.id);
         if (!ids.length) return;
         ids.forEach((id) => report(engine.remove(id)));
         select([]);
-      } else if (e.key.toLowerCase() === "a" && (IS_MAC ? e.metaKey : e.ctrlKey)) {
+      } else if (e.key.toLowerCase() === "a" && command) {
         e.preventDefault();
         setSelected(new Set(order));
         setAnchor(null);

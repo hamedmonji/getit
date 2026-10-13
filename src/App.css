@@ -353,6 +353,10 @@ input::placeholder {
   background: var(--accentSoft);
 }
 
+.tile {
+  scroll-margin: 12px 0;
+}
+
 .tile.drop-target,
 .row.drop-target,
 .crumb.drop-target {
@@ -621,6 +625,11 @@ input::placeholder {
   grid-template-columns: 28px minmax(0, 1fr) 200px 80px 120px 44px;
   padding: 0 10px 0 12px;
   border-radius: 7px;
+}
+
+/* Keeps rows reached with the arrow keys clear of the sticky header. */
+.row {
+  scroll-margin: 34px 0 4px;
 }
 
 .folder-row {
