@@ -1,0 +1,746 @@
+//! End-to-end tests against a local HTTP server that streams a generated file
+//! slowly enough for pause, queue and restart behaviour to be observable.
+
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use axum::Router;
+use axum::body::{Body, Bytes};
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::Response;
+use axum::routing::get;
+use futures_util::Stream;
+use getit_engine::{
+    DownloadId, DownloadItem, DownloadStatus, Engine, EngineEvent, JsonDirStore, MemoryStore,
+    QueueId, QueueSettings,
+};
+use sha2::{Digest, Sha256};
+use tokio::sync::broadcast;
+
+const FILE_SIZE: usize = 4 * 1024 * 1024;
+const CHUNK: usize = 32 * 1024;
+/// ~6.5 MB/s, so one file takes about 0.6 s.
+const CHUNK_DELAY: Duration = Duration::from_millis(5);
+const TIMEOUT: Duration = Duration::from_secs(20);
+
+#[derive(Clone)]
+struct Server {
+    data: Arc<Vec<u8>>,
+    log: Arc<Mutex<Vec<Logged>>>,
+}
+
+#[derive(Debug, Clone)]
+struct Logged {
+    range: Option<String>,
+    status: u16,
+}
+
+impl Server {
+    fn requests(&self) -> Vec<Logged> {
+        self.log.lock().unwrap().clone()
+    }
+}
+
+async fn start_server() -> (String, Server) {
+    let server = Server {
+        data: Arc::new(test_data(FILE_SIZE)),
+        log: Arc::default(),
+    };
+    let app = Router::new()
+        .route("/file.bin", get(ranged))
+        .route("/norange.bin", get(no_range))
+        .route("/attachment", get(attachment))
+        .with_state(server.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{addr}"), server)
+}
+
+async fn ranged(State(server): State<Server>, headers: HeaderMap) -> Response {
+    serve(&server, &headers, true, None)
+}
+
+async fn no_range(State(server): State<Server>, headers: HeaderMap) -> Response {
+    serve(&server, &headers, false, None)
+}
+
+async fn attachment(State(server): State<Server>, headers: HeaderMap) -> Response {
+    serve(
+        &server,
+        &headers,
+        true,
+        Some(r#"attachment; filename="report final.pdf""#),
+    )
+}
+
+fn serve(
+    server: &Server,
+    headers: &HeaderMap,
+    ranges: bool,
+    disposition: Option<&str>,
+) -> Response {
+    let range = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let len = server.data.len();
+    let requested_start = range
+        .as_deref()
+        .filter(|_| ranges)
+        .and_then(|r| r.strip_prefix("bytes="))
+        .and_then(|r| r.strip_suffix('-'))
+        .and_then(|n| n.parse::<usize>().ok());
+
+    let mut builder = Response::builder().header(header::ETAG, "\"v1\"");
+    if ranges {
+        builder = builder.header(header::ACCEPT_RANGES, "bytes");
+    }
+    if let Some(disposition) = disposition {
+        builder = builder.header(header::CONTENT_DISPOSITION, disposition);
+    }
+    let (status, from) = match requested_start {
+        Some(start) if start < len => {
+            builder = builder.header(
+                header::CONTENT_RANGE,
+                format!("bytes {start}-{}/{len}", len - 1),
+            );
+            (StatusCode::PARTIAL_CONTENT, start)
+        }
+        Some(_) => {
+            server
+                .log
+                .lock()
+                .unwrap()
+                .push(Logged { range, status: 416 });
+            return builder
+                .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                .header(header::CONTENT_RANGE, format!("bytes */{len}"))
+                .body(Body::empty())
+                .unwrap();
+        }
+        None => (StatusCode::OK, 0),
+    };
+    server.log.lock().unwrap().push(Logged {
+        range,
+        status: status.as_u16(),
+    });
+    builder
+        .status(status)
+        .header(header::CONTENT_LENGTH, len - from)
+        .body(Body::from_stream(throttled(server.data.clone(), from)))
+        .unwrap()
+}
+
+fn throttled(data: Arc<Vec<u8>>, from: usize) -> impl Stream<Item = Result<Bytes, std::io::Error>> {
+    futures_util::stream::unfold(from, move |pos| {
+        let data = data.clone();
+        async move {
+            if pos >= data.len() {
+                return None;
+            }
+            tokio::time::sleep(CHUNK_DELAY).await;
+            let end = (pos + CHUNK).min(data.len());
+            Some((Ok(Bytes::copy_from_slice(&data[pos..end])), end))
+        }
+    })
+}
+
+/// Deterministic pseudo-random bytes (xorshift64).
+fn test_data(len: usize) -> Vec<u8> {
+    let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
+    (0..len)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x as u8
+        })
+        .collect()
+}
+
+fn sha256(bytes: &[u8]) -> Vec<u8> {
+    Sha256::digest(bytes).to_vec()
+}
+
+struct Ctx {
+    base: String,
+    server: Server,
+    dir: tempfile::TempDir,
+    engine: Engine,
+}
+
+impl Ctx {
+    async fn new() -> Self {
+        let (base, server) = start_server().await;
+        Self {
+            base,
+            server,
+            dir: tempfile::tempdir().unwrap(),
+            engine: Engine::new(MemoryStore::new()).unwrap(),
+        }
+    }
+
+    fn url(&self, path: &str) -> String {
+        format!("{}{path}", self.base)
+    }
+
+    fn folder(&self, name: &str) -> PathBuf {
+        self.dir.path().join(name)
+    }
+
+    /// Creates a paused queue with the given concurrency, so tests can add
+    /// downloads before anything starts.
+    fn paused_queue(&self, name: &str, max_concurrent: usize) -> QueueId {
+        let id = self.engine.ensure_queue(self.folder(name)).unwrap();
+        self.engine
+            .set_queue_settings(
+                id,
+                QueueSettings {
+                    max_concurrent,
+                    paused: true,
+                },
+            )
+            .unwrap();
+        id
+    }
+
+    fn unpause(&self, id: QueueId) {
+        let mut settings = self.engine.queue(id).unwrap().settings;
+        settings.paused = false;
+        self.engine.set_queue_settings(id, settings).unwrap();
+    }
+
+    fn assert_file_matches(&self, id: DownloadId) {
+        assert_file_matches(&self.engine, id, &self.server);
+    }
+}
+
+fn assert_file_matches(engine: &Engine, id: DownloadId, server: &Server) {
+    let item = engine.get(id).expect("download exists");
+    let dir = engine.queue(item.queue_id).unwrap().dir;
+    let path = item.file_path(&dir).expect("file name known");
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(bytes.len(), FILE_SIZE, "{}", path.display());
+    assert_eq!(sha256(&bytes), sha256(&server.data), "{}", path.display());
+    assert!(
+        !item.part_path(&dir).unwrap().exists(),
+        ".part file left behind"
+    );
+}
+
+async fn wait_until(
+    engine: &Engine,
+    id: DownloadId,
+    what: &str,
+    pred: impl Fn(&DownloadItem) -> bool,
+) -> DownloadItem {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let item = engine.get(id).expect("download exists");
+        if pred(&item) {
+            return item;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {what}: {item:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn wait_for_status(engine: &Engine, id: DownloadId, status: DownloadStatus) -> DownloadItem {
+    wait_until(engine, id, &format!("{status:?}"), |item| {
+        item.status == status
+    })
+    .await
+}
+
+async fn wait_for_progress(engine: &Engine, id: DownloadId) -> DownloadItem {
+    wait_until(engine, id, "1 MiB downloaded", |item| {
+        item.downloaded >= 1024 * 1024
+    })
+    .await
+}
+
+async fn wait_until_gone(path: &Path) {
+    let deadline = Instant::now() + TIMEOUT;
+    while path.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "{} was not deleted",
+            path.display()
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+/// Lets a stopped worker finish flushing its partial file.
+async fn settle() {
+    tokio::time::sleep(Duration::from_millis(300)).await;
+}
+
+#[derive(Default)]
+struct QueueWatch {
+    completed: Vec<DownloadId>,
+    /// Most downloads running at once, overall and per queue.
+    max_running: usize,
+    max_running_per_queue: usize,
+}
+
+/// Follows download events until `count` downloads have completed.
+async fn watch(events: &mut broadcast::Receiver<EngineEvent>, count: usize) -> QueueWatch {
+    let mut running: HashSet<(QueueId, DownloadId)> = HashSet::new();
+    let mut watch = QueueWatch::default();
+    while watch.completed.len() < count {
+        let event = tokio::time::timeout(TIMEOUT, events.recv())
+            .await
+            .expect("timed out waiting for queue events")
+            .expect("event stream closed or lagged");
+        let EngineEvent::DownloadChanged(item) = event else {
+            continue;
+        };
+        match item.status {
+            DownloadStatus::Downloading => {
+                running.insert((item.queue_id, item.id));
+            }
+            DownloadStatus::Completed => {
+                running.remove(&(item.queue_id, item.id));
+                watch.completed.push(item.id);
+            }
+            DownloadStatus::Failed => panic!("download failed: {item:?}"),
+            _ => {}
+        }
+        watch.max_running = watch.max_running.max(running.len());
+        let per_queue = running
+            .iter()
+            .map(|(queue, _)| running.iter().filter(|(q, _)| q == queue).count())
+            .max()
+            .unwrap_or(0);
+        watch.max_running_per_queue = watch.max_running_per_queue.max(per_queue);
+    }
+    watch
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn enqueue_downloads_into_the_folder_queue() {
+    let ctx = Ctx::new().await;
+    let mut events = ctx.engine.subscribe();
+
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("Downloads"), &ctx.url("/file.bin"))
+        .unwrap();
+    let item = wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+
+    let queues = ctx.engine.queues();
+    assert_eq!(queues.len(), 1);
+    assert_eq!(queues[0].dir, ctx.folder("Downloads"));
+    assert_eq!(queues[0].downloads, vec![id]);
+    assert_eq!(item.queue_id, queues[0].id);
+    assert_eq!(item.file_name.as_deref(), Some("file.bin"));
+    assert_eq!(item.total_bytes, Some(FILE_SIZE as u64));
+    assert_eq!(item.downloaded, FILE_SIZE as u64);
+    assert_eq!(item.resumable, Some(true));
+    ctx.assert_file_matches(id);
+
+    // A second download into the same folder reuses the queue.
+    let second = ctx
+        .engine
+        .enqueue(ctx.folder("Downloads/./"), &ctx.url("/file.bin"))
+        .unwrap();
+    assert_eq!(ctx.engine.queues().len(), 1);
+    assert_eq!(ctx.engine.get(second).unwrap().queue_id, queues[0].id);
+
+    let mut saw_completed = false;
+    let mut saw_progress = false;
+    loop {
+        match events.try_recv() {
+            Ok(EngineEvent::DownloadChanged(i))
+                if i.id == id && i.status == DownloadStatus::Completed =>
+            {
+                saw_completed = true
+            }
+            Ok(EngineEvent::Progress { id: pid, .. }) if pid == id => saw_progress = true,
+            Ok(_) | Err(broadcast::error::TryRecvError::Lagged(_)) => {}
+            Err(_) => break,
+        }
+    }
+    assert!(saw_completed, "no Completed event");
+    assert!(saw_progress, "no Progress event");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pause_and_resume_continues_with_a_range_request() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    ctx.engine.pause(id).unwrap();
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Paused);
+
+    settle().await;
+    let item = ctx.engine.get(id).unwrap();
+    let partial = std::fs::metadata(item.part_path(&ctx.folder("a")).unwrap())
+        .unwrap()
+        .len();
+    assert!(
+        partial > 0 && partial < FILE_SIZE as u64,
+        "partial size {partial}"
+    );
+    assert_eq!(item.downloaded, partial);
+
+    ctx.engine.resume(id).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+
+    let requests = ctx.server.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[1].status, 206);
+    assert_eq!(
+        requests[1].range.as_deref(),
+        Some(format!("bytes={partial}-").as_str())
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_without_range_support_restarts_from_zero() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/norange.bin"))
+        .unwrap();
+    let item = wait_for_progress(&ctx.engine, id).await;
+    assert_eq!(item.resumable, Some(false));
+    ctx.engine.pause(id).unwrap();
+    settle().await;
+
+    ctx.engine.resume(id).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+
+    let requests = ctx.server.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[1].status, 200);
+    assert_eq!(requests[1].range, None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queue_runs_in_order_one_at_a_time() {
+    let ctx = Ctx::new().await;
+    let mut events = ctx.engine.subscribe();
+    let queue = ctx.paused_queue("a", 1);
+
+    let url = ctx.url("/file.bin");
+    let ids: Vec<_> = (0..3)
+        .map(|_| ctx.engine.add(queue, &url).unwrap())
+        .collect();
+    assert_eq!(ctx.engine.queue(queue).unwrap().downloads, ids);
+
+    // Nothing starts while the queue is paused.
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(
+        ctx.engine
+            .downloads(queue)
+            .unwrap()
+            .iter()
+            .all(|i| i.status == DownloadStatus::Queued)
+    );
+    assert!(ctx.server.requests().is_empty());
+
+    ctx.unpause(queue);
+    let watch = watch(&mut events, 3).await;
+    assert_eq!(watch.completed, ids);
+    assert_eq!(watch.max_running, 1);
+
+    // Same URL three times into one folder: each gets its own name.
+    let names: HashSet<_> = ids
+        .iter()
+        .map(|id| ctx.engine.get(*id).unwrap().file_name.unwrap())
+        .collect();
+    let expected: HashSet<_> = ["file.bin", "file (1).bin", "file (2).bin"]
+        .into_iter()
+        .map(String::from)
+        .collect();
+    assert_eq!(names, expected);
+    for id in ids {
+        ctx.assert_file_matches(id);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queue_respects_max_concurrent() {
+    let ctx = Ctx::new().await;
+    let mut events = ctx.engine.subscribe();
+    let queue = ctx.paused_queue("a", 2);
+
+    let url = ctx.url("/file.bin");
+    let ids: Vec<_> = (0..3)
+        .map(|_| ctx.engine.add(queue, &url).unwrap())
+        .collect();
+    ctx.unpause(queue);
+    let watch = watch(&mut events, 3).await;
+    assert_eq!(watch.completed.len(), 3);
+    assert_eq!(watch.max_running, 2);
+    for id in ids {
+        ctx.assert_file_matches(id);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queues_run_independently() {
+    let ctx = Ctx::new().await;
+    let mut events = ctx.engine.subscribe();
+    let movies = ctx.paused_queue("Movies", 1);
+    let music = ctx.paused_queue("Music", 1);
+
+    let url = ctx.url("/file.bin");
+    let mut ids = Vec::new();
+    for queue in [movies, music] {
+        for _ in 0..2 {
+            ids.push(ctx.engine.add(queue, &url).unwrap());
+        }
+    }
+    ctx.unpause(movies);
+    ctx.unpause(music);
+    let watch = watch(&mut events, 4).await;
+    assert_eq!(watch.max_running, 2, "one per queue at the same time");
+    assert_eq!(watch.max_running_per_queue, 1);
+    for id in ids {
+        ctx.assert_file_matches(id);
+    }
+    assert!(ctx.folder("Movies/file.bin").exists());
+    assert!(ctx.folder("Music/file.bin").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pausing_a_queue_requeues_and_later_resumes() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let first = ctx.engine.add(queue, &url).unwrap();
+    let second = ctx.engine.add(queue, &url).unwrap();
+    ctx.unpause(queue);
+    wait_for_progress(&ctx.engine, first).await;
+
+    let mut settings = ctx.engine.queue(queue).unwrap().settings;
+    settings.paused = true;
+    ctx.engine.set_queue_settings(queue, settings).unwrap();
+    assert_eq!(
+        ctx.engine.get(first).unwrap().status,
+        DownloadStatus::Queued
+    );
+    settle().await;
+    assert_eq!(
+        ctx.engine.get(second).unwrap().status,
+        DownloadStatus::Queued
+    );
+    assert_eq!(ctx.server.requests().len(), 1);
+
+    // Put the second download first; the queue picks it up before the partial one.
+    ctx.engine.reorder_queue(queue, &[second]).unwrap();
+    assert_eq!(
+        ctx.engine.queue(queue).unwrap().downloads,
+        vec![second, first]
+    );
+    ctx.unpause(queue);
+    wait_for_status(&ctx.engine, second, DownloadStatus::Completed).await;
+    wait_for_status(&ctx.engine, first, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(first);
+    ctx.assert_file_matches(second);
+
+    let requests = ctx.server.requests();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert_eq!(requests[1].range, None, "second download starts fresh");
+    assert_eq!(requests[2].status, 206, "first download resumes");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn remove_stops_and_deletes_the_partial_file() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    let part = wait_for_progress(&ctx.engine, id)
+        .await
+        .part_path(&ctx.folder("a"))
+        .unwrap();
+    let queue = ctx.engine.get(id).unwrap().queue_id;
+
+    ctx.engine.remove(id).unwrap();
+    assert!(ctx.engine.get(id).is_none());
+    assert!(ctx.engine.queue(queue).unwrap().downloads.is_empty());
+    wait_until_gone(&part).await;
+    assert!(ctx.engine.remove(id).is_err());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn clear_completed_keeps_files_and_unfinished_downloads() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let done = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    let waiting = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.pause(waiting).unwrap();
+    ctx.unpause(queue);
+    let item = wait_for_status(&ctx.engine, done, DownloadStatus::Completed).await;
+
+    assert_eq!(ctx.engine.clear_completed(queue).unwrap(), 1);
+    assert!(ctx.engine.get(done).is_none());
+    assert_eq!(ctx.engine.queue(queue).unwrap().downloads, vec![waiting]);
+    assert!(item.file_path(&ctx.folder("a")).unwrap().exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn missing_file_fails() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/missing"))
+        .unwrap();
+    let item = wait_for_status(&ctx.engine, id, DownloadStatus::Failed).await;
+    let error = item.error.unwrap();
+    assert!(error.contains("404"), "{error}");
+    assert_eq!(item.file_name, None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn uses_content_disposition_file_name() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/attachment"))
+        .unwrap();
+    let item = wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert_eq!(item.file_name.as_deref(), Some("report final.pdf"));
+    ctx.assert_file_matches(id);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rejects_invalid_input() {
+    let ctx = Ctx::new().await;
+    assert!(ctx.engine.enqueue(ctx.folder("a"), "not a url").is_err());
+    assert!(
+        ctx.engine
+            .enqueue(ctx.folder("a"), "ftp://example.com/file")
+            .is_err()
+    );
+    assert!(
+        ctx.engine
+            .enqueue("relative/dir", &ctx.url("/file.bin"))
+            .is_err()
+    );
+    assert!(ctx.engine.queues().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queues_are_saved_and_restored() {
+    let (base, server) = start_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let store_dir = dir.path().join("store");
+    let folder = dir.path().join("Downloads");
+    let url = format!("{base}/file.bin");
+
+    let engine = Engine::new(JsonDirStore::new(&store_dir).unwrap()).unwrap();
+    let queue = engine.ensure_queue(&folder).unwrap();
+    engine
+        .set_queue_settings(
+            queue,
+            QueueSettings {
+                max_concurrent: 1,
+                paused: false,
+            },
+        )
+        .unwrap();
+    let first = engine.add(queue, &url).unwrap();
+    wait_for_progress(&engine, first).await;
+    engine
+        .set_queue_settings(
+            queue,
+            QueueSettings {
+                max_concurrent: 1,
+                paused: true,
+            },
+        )
+        .unwrap();
+    let second = engine.add(queue, &url).unwrap();
+    settle().await;
+    let partial = std::fs::metadata(folder.join("file.bin.part"))
+        .unwrap()
+        .len();
+    drop(engine);
+
+    let engine = Engine::new(JsonDirStore::new(&store_dir).unwrap()).unwrap();
+    let queues = engine.queues();
+    assert_eq!(queues.len(), 1);
+    assert_eq!(queues[0].id, queue);
+    assert_eq!(queues[0].dir, folder);
+    assert_eq!(
+        queues[0].settings,
+        QueueSettings {
+            max_concurrent: 1,
+            paused: true
+        }
+    );
+    assert_eq!(queues[0].downloads, vec![first, second]);
+    let restored = engine.get(first).unwrap();
+    assert_eq!(restored.status, DownloadStatus::Queued);
+    assert_eq!(restored.file_name.as_deref(), Some("file.bin"));
+    assert_eq!(restored.downloaded, partial);
+
+    engine
+        .set_queue_settings(
+            queue,
+            QueueSettings {
+                max_concurrent: 1,
+                paused: false,
+            },
+        )
+        .unwrap();
+    wait_for_status(&engine, second, DownloadStatus::Completed).await;
+    assert_file_matches(&engine, first, &server);
+    assert_file_matches(&engine, second, &server);
+
+    let requests = server.requests();
+    assert_eq!(requests[1].status, 206, "{requests:?}");
+    assert_eq!(
+        requests[1].range.as_deref(),
+        Some(format!("bytes={partial}-").as_str())
+    );
+
+    // Removing the queue removes its saved file.
+    engine.remove_queue(queue).unwrap();
+    assert!(engine.queues().is_empty());
+    drop(engine);
+    let engine = Engine::new(JsonDirStore::new(&store_dir).unwrap()).unwrap();
+    assert!(engine.queues().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn interrupted_downloads_resume_after_restart() {
+    let (base, server) = start_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(MemoryStore::new());
+    let folder = dir.path().join("a");
+
+    let engine = Engine::new(store.clone()).unwrap();
+    let id = engine
+        .enqueue(&folder, &format!("{base}/file.bin"))
+        .unwrap();
+    wait_for_progress(&engine, id).await;
+    // Simulates quitting mid-download.
+    drop(engine);
+    settle().await;
+
+    let engine = Engine::new(store).unwrap();
+    wait_for_status(&engine, id, DownloadStatus::Completed).await;
+    assert_file_matches(&engine, id, &server);
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[1].status, 206);
+}
