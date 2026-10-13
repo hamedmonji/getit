@@ -87,7 +87,8 @@ export function fileVm(
   queue: QueueInfo,
   state: EngineState,
   mode: ViewMode,
-  present: Set<string>,
+  /** Files in the queue's folder; null until it has been listed. */
+  present: Set<string> | null,
 ): FileVm {
   const name = displayName(item);
   const ext = (name.includes(".") ? name.split(".").pop()! : "").toUpperCase().slice(0, 4);
@@ -95,7 +96,7 @@ export function fileVm(
   const exact = percent(item);
   const pct = Math.floor(exact);
   const done = item.status === "completed";
-  const missing = done && !!item.file_name && !present.has(item.file_name);
+  const missing = done && !!item.file_name && !!present && !present.has(item.file_name);
   const active = item.status === "downloading";
   const waiting = item.status === "queued" && queue.settings.paused;
   const speed = state.speeds[item.id] ?? 0;

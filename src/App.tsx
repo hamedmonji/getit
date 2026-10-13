@@ -137,7 +137,7 @@ export default function App() {
         ? queue.downloads
             .map((id) => state.downloads[id])
             .filter(Boolean)
-            .map((item) => fileVm(item, queue, state, mode, listing.present))
+            .map((item) => fileVm(item, queue, state, mode, listing.loaded ? listing.present : null))
         : [],
     [state, queue, mode, listing],
   );
