@@ -122,9 +122,7 @@ input::placeholder {
 .icon-btn:hover,
 .crumb:hover,
 .square-btn:hover,
-.plain-btn:hover,
-.small-btn:hover,
-.stepper button:hover {
+.plain-btn:hover {
   background: var(--hover);
 }
 
@@ -264,11 +262,14 @@ input::placeholder {
   border-radius: 7px;
   background: var(--panel2);
   color: var(--ink);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 12px;
   outline: none;
   user-select: text;
   -webkit-user-select: text;
+}
+
+.add-input-wrap input.mono-input {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .add-input-wrap input.invalid {
@@ -300,79 +301,6 @@ input::placeholder {
   white-space: nowrap;
 }
 
-/* Queue bar */
-
-.queue-bar {
-  flex: none;
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 9px 14px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel2);
-}
-
-.queue-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.stepper {
-  display: flex;
-  align-items: center;
-  height: 26px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  overflow: hidden;
-  background: var(--panel);
-}
-
-.stepper button {
-  width: 24px;
-  height: 100%;
-  border: 0;
-  background: transparent;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.stepper span {
-  padding: 0 6px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.small-btn {
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--panel);
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.queue-progress {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  background: var(--track);
-}
-
-.queue-progress > div {
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.4s linear;
-}
-
 /* Content */
 
 .content {
@@ -390,9 +318,10 @@ input::placeholder {
 
 .icon-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 6px;
-  padding: 18px;
+  grid-template-columns: repeat(auto-fill, 124px);
+  justify-content: start;
+  gap: 20px 24px;
+  padding: 24px;
 }
 
 .icon-grid:empty {
@@ -416,6 +345,7 @@ input::placeholder {
 }
 
 .tile-name {
+  display: block;
   width: 100%;
   font-weight: 500;
   text-align: center;
@@ -725,4 +655,137 @@ input::placeholder {
 
 .status-warning {
   color: var(--danger);
+}
+
+/* Context menu */
+
+.menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 200px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.16),
+    0 1px 3px rgba(0, 0, 0, 0.1);
+  font-size: 12.5px;
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.menu-item:disabled {
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.menu-item.danger {
+  color: var(--danger);
+}
+
+.menu-item.danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
+.menu-header {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.menu-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  white-space: nowrap;
+}
+
+.menu-stepper-control {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--panel2);
+}
+
+.menu-stepper-control button {
+  width: 24px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.menu-stepper-control button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.menu-stepper-control button:disabled {
+  color: var(--muted);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.menu-stepper-control span {
+  min-width: 20px;
+  text-align: center;
+  font-size: 12px;
+}
+
+/* Inline rename */
+
+.name-editor {
+  width: 100%;
+  min-width: 0;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  outline: 3px solid var(--accentSoft);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.tile .name-editor {
+  text-align: center;
+}
+
+.name-editor.invalid {
+  border-color: var(--danger);
+  outline-color: color-mix(in oklch, var(--danger) 20%, transparent);
 }

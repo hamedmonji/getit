@@ -744,3 +744,211 @@ async fn interrupted_downloads_resume_after_restart() {
     assert_eq!(requests.len(), 2, "{requests:?}");
     assert_eq!(requests[1].status, 206);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_starts_only_that_download() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let first = ctx.engine.add(queue, &url).unwrap();
+    let second = ctx.engine.add(queue, &url).unwrap();
+    ctx.engine.pause(second).unwrap();
+
+    ctx.engine.resume(second).unwrap();
+    let item = ctx.engine.get(second).unwrap();
+    assert_eq!(item.status, DownloadStatus::Downloading);
+    assert!(item.manual);
+    wait_for_status(&ctx.engine, second, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(second);
+    // The queue stays paused and nothing else started.
+    assert!(ctx.engine.queue(queue).unwrap().settings.paused);
+    assert_eq!(
+        ctx.engine.get(first).unwrap().status,
+        DownloadStatus::Queued
+    );
+    assert_eq!(ctx.server.requests().len(), 1);
+    assert!(ctx.engine.resume(second).is_err());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resume_right_after_pause_continues_the_download() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    // The worker may still be stopping when the download is resumed.
+    ctx.engine.pause(id).unwrap();
+    ctx.engine.resume(id).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+    let requests = ctx.server.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[1].status, 206);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queue_skips_downloads_started_on_their_own() {
+    let ctx = Ctx::new().await;
+    let mut events = ctx.engine.subscribe();
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let ids: Vec<_> = (0..3)
+        .map(|_| ctx.engine.add(queue, &url).unwrap())
+        .collect();
+    ctx.engine.pause(ids[0]).unwrap();
+    ctx.engine.resume(ids[0]).unwrap();
+
+    // With one slot, the queue starts the next download alongside the one
+    // started on its own, then the last one when its own download finishes.
+    ctx.unpause(queue);
+    let watch = watch(&mut events, 3).await;
+    assert_eq!(watch.max_running, 2);
+    assert_eq!(watch.completed.last(), Some(&ids[2]));
+    for id in &ids {
+        ctx.assert_file_matches(*id);
+    }
+    assert!(!ctx.engine.get(ids[1]).unwrap().manual);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pausing_a_queue_keeps_downloads_started_on_their_own() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let own = ctx.engine.add(queue, &url).unwrap();
+    let queued = ctx.engine.add(queue, &url).unwrap();
+    ctx.engine.pause(own).unwrap();
+    ctx.engine.resume(own).unwrap();
+    ctx.unpause(queue);
+    wait_for_progress(&ctx.engine, queued).await;
+
+    let mut settings = ctx.engine.queue(queue).unwrap().settings;
+    settings.paused = true;
+    ctx.engine.set_queue_settings(queue, settings).unwrap();
+    assert_eq!(
+        ctx.engine.get(queued).unwrap().status,
+        DownloadStatus::Queued
+    );
+    assert_eq!(
+        ctx.engine.get(own).unwrap().status,
+        DownloadStatus::Downloading
+    );
+    wait_for_status(&ctx.engine, own, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(own);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn downloads_started_on_their_own_restart_after_restart() {
+    let (base, server) = start_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(MemoryStore::new());
+    let folder = dir.path().join("a");
+
+    let engine = Engine::new(store.clone()).unwrap();
+    let queue = engine.ensure_queue(&folder).unwrap();
+    engine
+        .set_queue_settings(
+            queue,
+            QueueSettings {
+                max_concurrent: 1,
+                paused: true,
+            },
+        )
+        .unwrap();
+    let id = engine.add(queue, &format!("{base}/file.bin")).unwrap();
+    engine.pause(id).unwrap();
+    engine.resume(id).unwrap();
+    wait_for_progress(&engine, id).await;
+    drop(engine);
+    settle().await;
+
+    // The queue is still paused, but the download was started on its own.
+    let engine = Engine::new(store).unwrap();
+    wait_for_status(&engine, id, DownloadStatus::Completed).await;
+    assert_file_matches(&engine, id, &server);
+    assert_eq!(server.requests()[1].status, 206);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn relocate_moves_queues_with_their_folder() {
+    let ctx = Ctx::new().await;
+    let outer = ctx.paused_queue("Old", 1);
+    let inner = ctx.paused_queue("Old/Inner", 1);
+    let other = ctx.paused_queue("Other", 1);
+    let id = ctx.engine.add(inner, &ctx.url("/file.bin")).unwrap();
+
+    std::fs::create_dir_all(ctx.folder("Old/Inner")).unwrap();
+    std::fs::rename(ctx.folder("Old"), ctx.folder("New")).unwrap();
+    assert_eq!(
+        ctx.engine
+            .relocate(ctx.folder("Old"), ctx.folder("New"))
+            .unwrap(),
+        2
+    );
+    // Compared as strings: `PathBuf` equality ignores a trailing slash, the UI doesn't.
+    assert_eq!(
+        ctx.engine.queue(outer).unwrap().dir.to_str(),
+        ctx.folder("New").to_str()
+    );
+    assert_eq!(
+        ctx.engine.queue(inner).unwrap().dir.to_str(),
+        ctx.folder("New/Inner").to_str()
+    );
+    assert_eq!(
+        ctx.engine.queue(inner).unwrap().dir,
+        ctx.folder("New/Inner")
+    );
+    assert_eq!(ctx.engine.queue(other).unwrap().dir, ctx.folder("Other"));
+    assert_eq!(ctx.engine.queue_for_dir(ctx.folder("Old")), None);
+
+    // Downloads continue in the new place.
+    ctx.unpause(inner);
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert!(ctx.folder("New/Inner/file.bin").exists());
+
+    // A destination that already has a queue is refused.
+    assert!(
+        ctx.engine
+            .relocate(ctx.folder("New"), ctx.folder("Other"))
+            .is_err()
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn relocate_refuses_queues_with_running_downloads() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    assert!(
+        ctx.engine
+            .relocate(ctx.folder("a"), ctx.folder("b"))
+            .is_err()
+    );
+    let queue = ctx.engine.get(id).unwrap().queue_id;
+    assert_eq!(ctx.engine.queue(queue).unwrap().dir, ctx.folder("a"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn restore_drops_trailing_slashes_from_saved_folders() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = dir.path().join("store");
+    std::fs::create_dir_all(&store).unwrap();
+    let id = "6f1c1f3e-8a51-4c51-9d2e-6f0e3c1b2a77";
+    let json = format!(
+        r#"{{"version":1,"id":"{id}","dir":"/tmp/getit-test/Renamed/","settings":{{"max_concurrent":1,"paused":true}},"downloads":[]}}"#
+    );
+    std::fs::write(store.join(format!("{id}.json")), json).unwrap();
+
+    let engine = Engine::new(JsonDirStore::new(&store).unwrap()).unwrap();
+    let queues = engine.queues();
+    assert_eq!(queues[0].dir.to_str(), Some("/tmp/getit-test/Renamed"));
+    assert_eq!(
+        engine.queue_for_dir("/tmp/getit-test/Renamed"),
+        Some(queues[0].id)
+    );
+}

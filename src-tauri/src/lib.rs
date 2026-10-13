@@ -30,6 +30,8 @@ pub fn run() {
             commands::add_download,
             commands::pause_download,
             commands::resume_download,
+            commands::create_queue,
+            commands::rename_folder,
             commands::remove_download,
             commands::set_queue_settings,
             commands::clear_completed,

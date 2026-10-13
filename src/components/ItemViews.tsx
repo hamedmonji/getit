@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { ActionButton, FileGlyph, FolderGlyph, ProgressBar } from "./Glyphs";
 
@@ -11,6 +11,93 @@ export interface ItemViewProps {
   onOpenFolder: (path: string) => void;
   onOpenFile: (vm: FileVm) => void;
   onAction: (vm: FileVm) => void;
+  /** Right-click on a folder (by path) or download (by id). */
+  onItemMenu: (key: string, x: number, y: number) => void;
+  /** Folder whose name is being edited, if any. */
+  editing: string | null;
+  /** Commits a new name; rejects with a message if it can't be used. */
+  onRename: (path: string, name: string) => Promise<void>;
+  onCancelRename: () => void;
+}
+
+/** Inline name field, like Finder's: Enter or clicking away saves, Escape cancels. */
+function NameEditor({
+  initial,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  onCommit: (name: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
+  const commit = async () => {
+    if (done.current) return;
+    const name = value.trim();
+    if (!name || name === initial) {
+      done.current = true;
+      onCancel();
+      return;
+    }
+    try {
+      done.current = true;
+      await onCommit(name);
+    } catch (e) {
+      done.current = false;
+      setError(String(e));
+      ref.current?.focus();
+    }
+  };
+  const stop = (e: MouseEvent) => e.stopPropagation();
+
+  return (
+    <input
+      ref={ref}
+      className={"name-editor" + (error ? " invalid" : "")}
+      title={error ?? undefined}
+      value={value}
+      spellCheck={false}
+      autoCorrect="off"
+      onChange={(e) => {
+        setValue(e.target.value);
+        setError(null);
+      }}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") {
+          done.current = true;
+          onCancel();
+        }
+      }}
+      onBlur={commit}
+      onClick={stop}
+      onDoubleClick={stop}
+      onContextMenu={stop}
+    />
+  );
+}
+
+function FolderName({ props, path, name, className }: { props: ItemViewProps; path: string; name: string; className: string }) {
+  if (props.editing === path) {
+    return (
+      <NameEditor
+        initial={name}
+        onCommit={(value) => props.onRename(path, value)}
+        onCancel={props.onCancelRename}
+      />
+    );
+  }
+  return <span className={className}>{name}</span>;
 }
 
 function handlers(props: ItemViewProps, key: string, open: () => void) {
@@ -22,6 +109,12 @@ function handlers(props: ItemViewProps, key: string, open: () => void) {
     onDoubleClick: (e: MouseEvent) => {
       e.stopPropagation();
       open();
+    },
+    onContextMenu: (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      props.onSelect(key);
+      props.onItemMenu(key, e.clientX, e.clientY);
     },
   };
 }
@@ -40,7 +133,7 @@ export function IconView(props: ItemViewProps) {
           {...handlers(props, g.path, () => props.onOpenFolder(g.path))}
         >
           <FolderGlyph vm={g} size="large" />
-          <div className="tile-name">{g.name}</div>
+          <FolderName props={props} path={g.path} name={g.name} className="tile-name" />
           {g.showBar && <ProgressBar className="tile-bar" pct={g.pct} color={g.barColor} />}
           <div className="tile-sub">{g.sub}</div>
         </div>
@@ -84,7 +177,7 @@ export function ListView(props: ItemViewProps) {
             {...handlers(props, g.path, () => props.onOpenFolder(g.path))}
           >
             <FolderGlyph vm={g} size="small" />
-            <span className="row-name">{g.name}</span>
+            <FolderName props={props} path={g.path} name={g.name} className="row-name" />
             <span className="row-sub">{g.sub}</span>
             <span className="row-size">{g.sizeLabel}</span>
             <ProgressBar className="row-bar" pct={g.pct} color={g.barColor} />

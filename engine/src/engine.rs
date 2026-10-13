@@ -58,11 +58,14 @@ struct Active {
     token: CancellationToken,
     /// Why the worker was told to stop, if it was.
     stop: Option<Stop>,
+    /// Start a new worker as soon as this one has stopped (started again while pausing).
+    restart: bool,
 }
 
 impl Active {
     fn stop(&mut self, stop: Stop) {
         self.stop = Some(stop);
+        self.restart = false;
         self.token.cancel();
     }
 }
@@ -108,7 +111,11 @@ impl Engine {
             let mut guard = inner.lock();
             let st = &mut *guard;
             for snapshot in snapshots {
-                let queue = Queue::restore(snapshot);
+                let mut queue = Queue::restore(snapshot);
+                // Older saves could hold a folder with a trailing slash.
+                if let Ok(dir) = normalize(&queue.dir) {
+                    queue.dir = dir;
+                }
                 if st.by_dir.contains_key(&queue.dir) || st.queues.contains_key(&queue.id) {
                     continue;
                 }
@@ -116,6 +123,14 @@ impl Engine {
                 st.owner
                     .extend(queue.order.iter().map(|id| (*id, queue.id)));
                 st.queues.insert(queue.id, queue);
+            }
+            // Restart downloads that had been started on their own.
+            for queue in st.queues.values() {
+                for item in queue.items.values() {
+                    if item.status == DownloadStatus::Downloading {
+                        inner.spawn(&mut st.active, item, &queue.dir);
+                    }
+                }
             }
             let ids: Vec<QueueId> = st.queues.keys().copied().collect();
             for id in ids {
@@ -185,8 +200,54 @@ impl Engine {
         Ok(())
     }
 
-    /// Replaces a queue's settings. Pausing stops its running downloads and puts
-    /// them back to `Queued`; unpausing or adding slots starts more.
+    /// Points every queue in `old` (or in a folder inside it) at the same place
+    /// under `new`, after the folder was moved or renamed on disk. Fails without
+    /// changing anything if one of those queues has a download running, or if a
+    /// queue already uses a destination. Returns how many queues moved.
+    pub fn relocate(&self, old: impl AsRef<Path>, new: impl AsRef<Path>) -> Result<usize> {
+        let old = normalize(old.as_ref())?;
+        let new = normalize(new.as_ref())?;
+        let mut guard = self.inner.lock();
+        let st = &mut *guard;
+        let moves: Vec<(QueueId, PathBuf)> = st
+            .queues
+            .values()
+            .filter_map(|queue| {
+                let rest = queue.dir.strip_prefix(&old).ok()?;
+                // `join("")` would add a trailing slash; normalizing drops it.
+                Some((queue.id, normalize(&new.join(rest)).ok()?))
+            })
+            .collect();
+        for (id, dir) in &moves {
+            let queue = &st.queues[id];
+            if queue.order.iter().any(|d| st.active.contains_key(d)) {
+                return Err(EngineError::QueueBusy(queue.dir.clone()));
+            }
+            if st
+                .by_dir
+                .get(dir)
+                .is_some_and(|other| !moves.iter().any(|(moved, _)| moved == other))
+            {
+                return Err(EngineError::DirTaken(dir.clone()));
+            }
+        }
+        for (id, _) in &moves {
+            let dir = &st.queues[id].dir;
+            st.by_dir.remove(dir);
+        }
+        for (id, dir) in &moves {
+            let queue = st.queues.get_mut(id).expect("queue exists");
+            queue.dir = dir.clone();
+            st.by_dir.insert(dir.clone(), *id);
+            self.inner.save(queue);
+            self.inner.emit(EngineEvent::QueueChanged(queue.info()));
+        }
+        Ok(moves.len())
+    }
+
+    /// Replaces a queue's settings. Pausing stops the downloads the queue started
+    /// and puts them back to `Queued` (downloads started on their own keep going);
+    /// unpausing or adding slots lets the queue start more.
     pub fn set_queue_settings(&self, id: QueueId, settings: QueueSettings) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
@@ -201,6 +262,7 @@ impl Engine {
                     st.active.get_mut(download_id),
                     queue.items.get_mut(download_id),
                 ) && item.status == DownloadStatus::Downloading
+                    && !item.manual
                 {
                     item.status = DownloadStatus::Queued;
                     active.stop(Stop::Pause);
@@ -273,13 +335,13 @@ impl Engine {
         Ok(())
     }
 
-    /// Puts a paused or failed download back in its queue. It continues from its
-    /// partial file when a slot is free.
+    /// Starts a paused or failed download right away, on its own, continuing from
+    /// its partial file. It runs whether or not its queue is paused or full, takes
+    /// no queue slot, and starts nothing else.
     pub fn resume(&self, id: DownloadId) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
         let queue = owner_queue(&mut st.queues, &st.owner, id)?;
-        let queue_id = queue.id;
         let item = queue
             .items
             .get_mut(&id)
@@ -287,11 +349,16 @@ impl Engine {
         if !matches!(item.status, DownloadStatus::Paused | DownloadStatus::Failed) {
             return Err(invalid("resume", item));
         }
-        item.status = DownloadStatus::Queued;
+        item.status = DownloadStatus::Downloading;
+        item.manual = true;
         item.error = None;
         self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
+        match st.active.get_mut(&id) {
+            // Still stopping after a pause; start again once it has.
+            Some(active) => active.restart = true,
+            None => self.inner.spawn(&mut st.active, item, &queue.dir),
+        }
         self.inner.save(queue);
-        self.inner.schedule(st, queue_id);
         Ok(())
     }
 
@@ -412,6 +479,7 @@ impl Inner {
             etag: None,
             last_modified: None,
             error: None,
+            manual: false,
             added_at: now_millis(),
         };
         let id = item.id;
@@ -424,7 +492,9 @@ impl Inner {
         id
     }
 
-    /// Starts the queue's next downloads if it has free slots.
+    /// Lets the queue start its next downloads if it has free slots. Called
+    /// whenever that could change: the queue was resumed or given more slots, a
+    /// download was added, or one of its downloads stopped.
     fn schedule(&self, st: &mut State, queue_id: QueueId) {
         let Some(queue) = st.queues.get_mut(&queue_id) else {
             return;
@@ -434,22 +504,28 @@ impl Inner {
                 continue;
             };
             item.status = DownloadStatus::Downloading;
+            item.manual = false;
             self.emit(EngineEvent::DownloadChanged(item.clone()));
-            let token = CancellationToken::new();
-            st.active.insert(
-                id,
-                Active {
-                    token: token.clone(),
-                    stop: None,
-                },
-            );
-            self.runtime.spawn(worker::run(
-                self.client.clone(),
-                Job::new(item, &queue.dir),
-                token,
-                self.worker_tx.clone(),
-            ));
+            self.spawn(&mut st.active, item, &queue.dir);
         }
+    }
+
+    fn spawn(&self, active: &mut HashMap<DownloadId, Active>, item: &DownloadItem, dir: &Path) {
+        let token = CancellationToken::new();
+        active.insert(
+            item.id,
+            Active {
+                token: token.clone(),
+                stop: None,
+                restart: false,
+            },
+        );
+        self.runtime.spawn(worker::run(
+            self.client.clone(),
+            Job::new(item, dir),
+            token,
+            self.worker_tx.clone(),
+        ));
     }
 
     fn handle(&self, msg: WorkerMsg) {
@@ -507,7 +583,10 @@ impl Inner {
                 outcome,
                 part_path,
             } => {
-                let stop = st.active.remove(&id).and_then(|active| active.stop);
+                let (stop, restart) = st
+                    .active
+                    .remove(&id)
+                    .map_or((None, false), |active| (active.stop, active.restart));
                 let Ok(queue) = owner_queue(&mut st.queues, &st.owner, id) else {
                     // Removed while running.
                     if let Some(part) = part_path {
@@ -532,8 +611,12 @@ impl Inner {
                         }
                         (Outcome::Stopped, None) => item.status = DownloadStatus::Paused,
                     }
+                    let item = item.clone();
                     self.emit(EngineEvent::DownloadChanged(item.clone()));
                     self.save(queue);
+                    if restart && item.status == DownloadStatus::Downloading {
+                        self.spawn(&mut st.active, &item, &queue.dir);
+                    }
                 }
                 self.schedule(st, queue_id);
             }

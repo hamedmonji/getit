@@ -47,7 +47,7 @@ id_type!(
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadStatus {
-    /// Waiting for a free slot in its queue (or for the queue to be resumed).
+    /// Waiting for its queue to start it.
     Queued,
     Downloading,
     Paused,
@@ -73,6 +73,10 @@ pub struct DownloadItem {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
     pub error: Option<String>,
+    /// Started on its own (resumed by the user) rather than by its queue. Such
+    /// downloads don't take up queue slots and aren't stopped by pausing the queue.
+    #[serde(default)]
+    pub manual: bool,
     /// When the download was added, in milliseconds since the Unix epoch.
     pub added_at: u64,
 }
@@ -99,7 +103,7 @@ pub(crate) fn part_path(dir: &Path, file_name: &str) -> PathBuf {
 pub struct QueueSettings {
     /// How many of the queue's downloads may run at once (at least 1).
     pub max_concurrent: usize,
-    /// A paused queue starts nothing; its running downloads go back to `Queued`.
+    /// A paused queue starts nothing; the downloads it started go back to `Queued`.
     pub paused: bool,
 }
 
@@ -168,6 +172,10 @@ pub enum EngineError {
     InvalidUrl(String),
     #[error("queue folder must be an absolute path: {0}")]
     InvalidDir(PathBuf),
+    #[error("{0} has downloads in progress; pause them first")]
+    QueueBusy(PathBuf),
+    #[error("{0} already has a queue")]
+    DirTaken(PathBuf),
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;

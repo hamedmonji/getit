@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AddBar, QueueBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
+import { InputBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
+import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
 import { useDirListing } from "./hooks/useDirListing";
 import { useEngine } from "./hooks/useEngine";
@@ -22,6 +23,16 @@ interface History {
   forward: string[];
 }
 
+/** Most downloads a queue can run at once, as offered in the menu. */
+const MAX_CONCURRENCY = 6;
+
+interface Menu {
+  x: number;
+  y: number;
+  /** A folder path or download id; null for the folder's empty space. */
+  target: string | null;
+}
+
 function report(promise: Promise<unknown>) {
   promise.catch((e) => console.error(e));
 }
@@ -32,6 +43,12 @@ export default function App() {
   const [history, setHistory] = useState<History | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  /** Folder whose name is being edited. */
+  const [editing, setEditing] = useState<string | null>(null);
+  /** Bumped to re-list the folder after changes the engine doesn't report. */
+  const [listNonce, setListNonce] = useState(0);
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
   const [theme, setTheme] = useStoredState<Theme>("getit.theme", ["Light", "Dark"], () =>
     window.matchMedia("(prefers-color-scheme: dark)").matches ? "Dark" : "Light",
   );
@@ -51,8 +68,14 @@ export default function App() {
   }, []);
 
   const cwd = history?.cwd ?? null;
+  useEffect(() => setEditing(null), [cwd]);
   const all = Object.values(state.downloads);
-  const refreshKey = `${all.length}:${all.filter((d) => d.status === "completed").length}`;
+  const refreshKey = [
+    all.length,
+    all.filter((d) => d.status === "completed").length,
+    Object.keys(state.queues).length,
+    listNonce,
+  ].join(":");
   const listing = useDirListing(cwd, refreshKey);
 
   const go = useCallback((path: string, select: string | null = null) => {
@@ -116,6 +139,15 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [selected, state.downloads]);
 
+  // Only getit's own menus; text fields keep the system one for copy and paste.
+  useEffect(() => {
+    const onContextMenu = (e: MouseEvent) => {
+      if (!(e.target instanceof HTMLInputElement)) e.preventDefault();
+    };
+    window.addEventListener("contextmenu", onContextMenu);
+    return () => window.removeEventListener("contextmenu", onContextMenu);
+  }, []);
+
   if (!home || !cwd) return <div className="app" data-theme={theme} />;
 
   const own = stats(state, cwd, false);
@@ -129,6 +161,110 @@ export default function App() {
     .filter(Boolean)
     .join(" · ");
 
+  // Like Finder's New Folder: create it with a default name, then edit the name in place.
+  const newQueue = () => {
+    engine
+      .createQueue(cwd)
+      .then((path) => {
+        setListNonce((n) => n + 1);
+        setSelected(path);
+        setEditing(path);
+      })
+      .catch((e) => console.error(e));
+  };
+
+  const rename = async (path: string, name: string) => {
+    const renamed = await engine.renameFolder(path, name);
+    setEditing(null);
+    setSelected(renamed);
+    setListNonce((n) => n + 1);
+  };
+
+  const backgroundMenu = (): MenuItem[] => {
+    const items: MenuItem[] = [];
+    if (queue) items.push({ kind: "header", label: summary ? `Queue · ${summary}` : "Queue" });
+    items.push(
+      { kind: "action", label: "Add download…", onSelect: () => setAdding(true) },
+      { kind: "action", label: "New queue", onSelect: newQueue },
+    );
+    if (queue) {
+      const { settings } = queue;
+      items.push(
+        { kind: "separator" },
+        {
+          kind: "action",
+          label: settings.paused ? "Resume queue" : "Pause queue",
+          onSelect: () => report(engine.setQueueSettings(queue.id, { ...settings, paused: !settings.paused })),
+        },
+        {
+          kind: "stepper",
+          label: "Downloads at a time",
+          value: settings.max_concurrent,
+          min: 1,
+          max: MAX_CONCURRENCY,
+          onChange: (n) => report(engine.setQueueSettings(queue.id, { ...settings, max_concurrent: n })),
+        },
+        {
+          kind: "action",
+          label: "Clear done",
+          disabled: own.done === 0,
+          onSelect: () => report(engine.clearCompleted(queue.id)),
+        },
+      );
+    }
+    return items;
+  };
+
+  const downloadMenu = (vm: FileVm): MenuItem[] => {
+    const status = state.downloads[vm.id]?.status;
+    const items: MenuItem[] = [];
+    if (vm.done) {
+      items.push({
+        kind: "action",
+        label: "Open",
+        disabled: vm.missing || !vm.path,
+        onSelect: () => onOpenFile(vm),
+      });
+    } else {
+      if (status === "downloading" || status === "queued") {
+        items.push({ kind: "action", label: "Pause", onSelect: () => report(engine.pause(vm.id)) });
+      } else {
+        items.push({
+          kind: "action",
+          label: status === "failed" ? "Retry" : "Resume",
+          onSelect: () => report(engine.resume(vm.id)),
+        });
+      }
+    }
+    items.push(
+      { kind: "separator" },
+      {
+        kind: "action",
+        // A finished file stays on disk; an unfinished one's partial data is deleted.
+        label: vm.done ? "Remove from list" : "Delete",
+        danger: !vm.done,
+        onSelect: () => {
+          report(engine.remove(vm.id));
+          setSelected(null);
+        },
+      },
+    );
+    return items;
+  };
+
+  const menuItems = (target: string | null): MenuItem[] => {
+    if (target === null) return backgroundMenu();
+    const file = files.find((f) => f.id === target);
+    if (file) return downloadMenu(file);
+    if (folders.some((g) => g.path === target)) {
+      return [
+        { kind: "action", label: "Open", onSelect: () => go(target) },
+        { kind: "action", label: "Rename", onSelect: () => setEditing(target) },
+      ];
+    }
+    return [];
+  };
+
   const global = stats(state, "/", true);
   const count = folders.length + files.length;
   const selFile = files.find((f) => f.id === selected);
@@ -141,6 +277,10 @@ export default function App() {
     onOpenFolder: (path) => go(path),
     onOpenFile,
     onAction,
+    onItemMenu: (target, x, y) => setMenu({ x, y, target }),
+    editing,
+    onRename: rename,
+    onCancelRename: () => setEditing(null),
   };
 
   return (
@@ -164,31 +304,29 @@ export default function App() {
       />
 
       {adding && (
-        <AddBar
+        <InputBar
+          label="Download into"
           dirLabel={displayPath(cwd, home)}
-          onAdd={async (url) => {
-            const id = await engine.addDownload(cwd, url);
-            setSelected(id);
+          placeholder="https://…"
+          submitLabel="Add to queue"
+          mono
+          onSubmit={async (raw) => {
+            const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : "https://" + raw;
+            setSelected(await engine.addDownload(cwd, url));
           }}
           onClose={() => setAdding(false)}
         />
       )}
 
-      {queue && (queue.downloads.length > 0 || queue.settings.paused) && (
-        <QueueBar
-          summary={summary}
-          pct={own.pct}
-          maxConcurrent={queue.settings.max_concurrent}
-          paused={queue.settings.paused}
-          onConcurrency={(n) => report(engine.setQueueSettings(queue.id, { ...queue.settings, max_concurrent: n }))}
-          onTogglePause={() =>
-            report(engine.setQueueSettings(queue.id, { ...queue.settings, paused: !queue.settings.paused }))
-          }
-          onClearDone={() => report(engine.clearCompleted(queue.id))}
-        />
-      )}
-
-      <div className="content" onClick={() => setSelected(null)}>
+      <div
+        className="content"
+        onClick={() => setSelected(null)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setSelected(null);
+          setMenu({ x: e.clientX, y: e.clientY, target: null });
+        }}
+      >
         {mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />}
         {count === 0 && listing.loaded && state.loaded && (
           <div className="empty">
@@ -196,13 +334,13 @@ export default function App() {
               ? `Can't open this folder: ${listing.error}`
               : hiddenFolders > 0
                 ? `No downloads here. ${plural(hiddenFolders, "folder")} without downloads ${hiddenFolders === 1 ? "is" : "are"} hidden.`
-                : "This folder is empty. Use Add link to download something into it."}
+                : "This folder is empty. Right-click to add a download or a queue."}
           </div>
         )}
       </div>
 
       <StatusBar
-        itemCount={plural(count, "item")}
+        itemCount={plural(count, "item") + (queue?.settings.paused ? " · Queue paused" : "")}
         selInfo={
           selFile ? selFile.info : selFolder ? `${displayPath(selFolder.path, home)} — double-click to open` : ""
         }
@@ -210,6 +348,8 @@ export default function App() {
         speed={`↓ ${formatSpeed(global.speed)}`}
         warning={state.saveError}
       />
+
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.target)} onClose={closeMenu} />}
     </div>
   );
 }

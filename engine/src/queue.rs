@@ -27,8 +27,9 @@ impl Queue {
         }
     }
 
-    /// Rebuilds a queue from a snapshot. Downloads that were running go back to
-    /// `Queued`, and progress is taken from the `.part` files on disk.
+    /// Rebuilds a queue from a snapshot. Downloads the queue was running go back
+    /// to `Queued`; ones started on their own stay `Downloading` so they can be
+    /// restarted. Progress is taken from the `.part` files on disk.
     pub fn restore(snapshot: QueueSnapshot) -> Self {
         let mut queue = Self {
             id: snapshot.id,
@@ -42,7 +43,7 @@ impl Queue {
                 continue;
             }
             item.queue_id = queue.id;
-            if item.status == DownloadStatus::Downloading {
+            if item.status == DownloadStatus::Downloading && !item.manual {
                 item.status = DownloadStatus::Queued;
             }
             if item.status != DownloadStatus::Completed {
@@ -114,12 +115,18 @@ impl Queue {
         self.order = order;
     }
 
-    /// Queued downloads that fit in the free slots, in queue order.
+    /// The queued downloads to start now, in queue order, to fill the queue's free
+    /// slots. Only downloads the queue started itself take up slots; ones started
+    /// on their own are skipped.
     pub fn next_to_start(&self, is_running: impl Fn(&DownloadId) -> bool) -> Vec<DownloadId> {
         if self.settings.paused {
             return Vec::new();
         }
-        let running = self.order.iter().filter(|id| is_running(id)).count();
+        let running = self
+            .order
+            .iter()
+            .filter(|id| is_running(id) && self.items.get(id).is_some_and(|item| !item.manual))
+            .count();
         let free = self.settings.max_concurrent.saturating_sub(running);
         self.order
             .iter()

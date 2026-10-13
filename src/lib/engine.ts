@@ -22,6 +22,8 @@ export interface DownloadItem {
   etag: string | null;
   last_modified: string | null;
   error: string | null;
+  /** Started on its own rather than by its queue. */
+  manual: boolean;
   added_at: number;
 }
 
@@ -67,8 +69,13 @@ export const engine = {
   listDir: (path: string) => invoke<DirListing>("list_dir", { path }),
   addDownload: (dir: string, url: string) => invoke<DownloadId>("add_download", { dir, url }),
   pause: (id: DownloadId) => invoke<void>("pause_download", { id }),
+  /** Starts a paused or failed download on its own, outside its queue. */
   resume: (id: DownloadId) => invoke<void>("resume_download", { id }),
   remove: (id: DownloadId) => invoke<void>("remove_download", { id }),
+  /** Creates a "New Queue" subfolder with its own queue; returns its path. */
+  createQueue: (parent: string) => invoke<string>("create_queue", { parent }),
+  /** Renames a folder (and moves queues inside it); returns the new path. */
+  renameFolder: (path: string, name: string) => invoke<string>("rename_folder", { path, name }),
   setQueueSettings: (queueId: QueueId, settings: QueueSettings) =>
     invoke<void>("set_queue_settings", { queueId, settings }),
   clearCompleted: (queueId: QueueId) => invoke<number>("clear_completed", { queueId }),

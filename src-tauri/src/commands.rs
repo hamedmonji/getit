@@ -2,7 +2,8 @@
 //! read-only folder listing for the browser.
 
 use std::fs;
-use std::path::Path;
+use std::io;
+use std::path::{Path, PathBuf};
 
 use getit_engine::{DownloadId, DownloadItem, Engine, QueueId, QueueInfo, QueueSettings};
 use serde::Serialize;
@@ -148,6 +149,57 @@ pub fn pause_download(engine: State<'_, Engine>, id: DownloadId) -> CommandResul
 #[tauri::command]
 pub fn resume_download(engine: State<'_, Engine>, id: DownloadId) -> CommandResult<()> {
     engine.resume(id).map_err(err)
+}
+
+const NEW_QUEUE_NAME: &str = "New Queue";
+
+/// Creates a new folder in `parent` named "New Queue" (or "New Queue 2", ...)
+/// with its own queue, and returns its path. The user renames it afterwards.
+#[tauri::command]
+pub fn create_queue(engine: State<'_, Engine>, parent: String) -> CommandResult<String> {
+    for n in 1..1000 {
+        let name = if n == 1 {
+            NEW_QUEUE_NAME.to_string()
+        } else {
+            format!("{NEW_QUEUE_NAME} {n}")
+        };
+        let dir = Path::new(&parent).join(name);
+        match fs::create_dir(&dir) {
+            Ok(()) => {
+                engine.ensure_queue(&dir).map_err(err)?;
+                return Ok(dir.to_string_lossy().into_owned());
+            }
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(err(e)),
+        }
+    }
+    Err("couldn't find a free folder name".into())
+}
+
+/// Renames a folder, moving any queues inside it along. Returns the new path.
+#[tauri::command]
+pub fn rename_folder(engine: State<'_, Engine>, path: String, name: String) -> CommandResult<String> {
+    let name = name.trim();
+    if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+        return Err(format!("\"{name}\" isn't a valid folder name"));
+    }
+    let old = PathBuf::from(&path);
+    let parent = old.parent().ok_or("can't rename this folder")?;
+    let new = parent.join(name);
+    if new == old {
+        return Ok(path);
+    }
+    // On case-insensitive disks, a case-only rename finds the folder itself.
+    let same = fs::canonicalize(&new).ok() == fs::canonicalize(&old).ok();
+    if new.exists() && !same {
+        return Err(format!("\"{name}\" already exists"));
+    }
+    fs::rename(&old, &new).map_err(err)?;
+    if let Err(e) = engine.relocate(&old, &new) {
+        let _ = fs::rename(&new, &old);
+        return Err(err(e));
+    }
+    Ok(new.to_string_lossy().into_owned())
 }
 
 #[tauri::command]

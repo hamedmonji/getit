@@ -94,26 +94,33 @@ export function Toolbar(p: ToolbarProps) {
   );
 }
 
-export function AddBar({
+/** A one-line input under the toolbar: a link to download, or a new queue's name. */
+export function InputBar({
+  label,
   dirLabel,
-  onAdd,
+  placeholder,
+  submitLabel,
+  mono,
+  onSubmit,
   onClose,
 }: {
+  label: string;
   dirLabel: string;
-  onAdd: (url: string) => Promise<void>;
+  placeholder: string;
+  submitLabel: string;
+  mono?: boolean;
+  /** Rejects with a message to show next to the input. */
+  onSubmit: (value: string) => Promise<void>;
   onClose: () => void;
 }) {
-  const [url, setUrl] = useState("");
+  const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
-    const raw = url.trim();
-    if (!raw) return;
-    const full = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : "https://" + raw;
+    const trimmed = value.trim();
+    if (!trimmed) return;
     try {
-      await onAdd(full);
-      setUrl("");
-      setError(null);
+      await onSubmit(trimmed);
       onClose();
     } catch (e) {
       setError(String(e));
@@ -127,64 +134,28 @@ export function AddBar({
   return (
     <div className="add-bar">
       <span className="add-label">
-        Download into <span className="mono ink">{dirLabel}/</span>
+        {label} <span className="mono ink">{dirLabel}/</span>
       </span>
       <div className="add-input-wrap">
         <input
           autoFocus
-          value={url}
+          value={value}
           onChange={(e) => {
-            setUrl(e.target.value);
+            setValue(e.target.value);
             setError(null);
           }}
           onKeyDown={onKey}
-          placeholder="https://…"
+          placeholder={placeholder}
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
-          className={error ? "invalid" : ""}
+          className={(mono ? "mono-input" : "") + (error ? " invalid" : "")}
         />
         {error && <span className="add-error">{error}</span>}
       </div>
       <button className="plain-btn" onClick={submit}>
-        Add to queue
+        {submitLabel}
       </button>
-    </div>
-  );
-}
-
-export interface QueueBarProps {
-  summary: string;
-  pct: number;
-  maxConcurrent: number;
-  paused: boolean;
-  onConcurrency: (n: number) => void;
-  onTogglePause: () => void;
-  onClearDone: () => void;
-}
-
-export const MAX_CONCURRENCY = 6;
-
-export function QueueBar(p: QueueBarProps) {
-  return (
-    <div className="queue-bar">
-      <span className="queue-label">Queue</span>
-      <span>{p.summary}</span>
-      <div className="spacer" />
-      <div className="stepper">
-        <button onClick={() => p.onConcurrency(Math.max(1, p.maxConcurrent - 1))}>−</button>
-        <span>{p.maxConcurrent} at a time</span>
-        <button onClick={() => p.onConcurrency(Math.min(MAX_CONCURRENCY, p.maxConcurrent + 1))}>+</button>
-      </div>
-      <button className="small-btn" onClick={p.onTogglePause}>
-        {p.paused ? "Resume queue" : "Pause queue"}
-      </button>
-      <button className="small-btn" onClick={p.onClearDone}>
-        Clear done
-      </button>
-      <div className="queue-progress">
-        <div style={{ width: p.pct + "%" }} />
-      </div>
     </div>
   );
 }
