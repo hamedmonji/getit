@@ -41,16 +41,31 @@ interface Menu {
   target: string | null;
 }
 
-/** The http(s) links in `text`, each once, in order. */
+/** `raw` as an http(s) URL, if it is one. */
+function asLink(raw: string): string | null {
+  try {
+    const url = new URL(raw);
+    return /^https?:$/.test(url.protocol) && url.hostname ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One link per line of `text`, each once, in order, for pasting a batch. A line
+ * gives its first http(s) link, or is taken whole when it looks like a link
+ * without a scheme (`example.com/file.zip`). Other lines are skipped.
+ */
 function linksIn(text: string): string[] {
-  const links = text.split(/\s+/).filter((token) => {
-    if (!/^https?:\/\//i.test(token)) return false;
-    try {
-      return !!new URL(token).hostname;
-    } catch {
-      return false;
+  const links: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const tokens = line.trim().split(/\s+/).filter(Boolean);
+    let link = tokens.map((t) => (/^https?:\/\//i.test(t) ? asLink(t) : null)).find(Boolean) ?? null;
+    if (!link && tokens.length === 1 && /^[^/\s]+\.[a-z]{2,}(\/|$)/i.test(tokens[0])) {
+      link = asLink("https://" + tokens[0]);
     }
-  });
+    if (link) links.push(link);
+  }
   return [...new Set(links)];
 }
 
@@ -302,11 +317,21 @@ export default function App() {
       ?.scrollIntoView({ block: "nearest" });
   };
 
+  /** Adds every link it can, then rejects with how many failed, if any did. */
   const addLinks = async (urls: string[]) => {
     if (!cwd) return;
     const ids: string[] = [];
-    for (const url of urls) ids.push(await engine.addDownload(cwd, url));
+    const failed: unknown[] = [];
+    for (const url of urls) {
+      try {
+        ids.push(await engine.addDownload(cwd, url));
+      } catch (e) {
+        failed.push(e);
+      }
+    }
     select(ids);
+    if (failed.length === 1 && urls.length === 1) throw failed[0];
+    if (failed.length) throw `${plural(failed.length, "link")} of ${urls.length} couldn't be added: ${failed[0]}`;
   };
 
   // Command-V adds the links on the clipboard to this folder's queue, after

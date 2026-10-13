@@ -188,30 +188,41 @@ export function PasteBar({
     }
   };
 
+  const batch = urls.length > 1;
   return (
-    <div className="add-bar">
-      <span className="add-label">
-        Add {urls.length === 1 ? "link" : `${urls.length} links`} to <span className="mono ink">{dirLabel}/</span>
-      </span>
-      <span className="paste-urls mono ellipsis" title={urls.join("\n")}>
-        {urls[0]}
-        {urls.length > 1 && <span className="muted"> and {urls.length - 1} more</span>}
-      </span>
-      {error && (
-        <span className="status-warning ellipsis" title={error}>
-          {error}
+    <div className="paste-prompt">
+      <div className="add-bar">
+        <span className="add-label">
+          Add {batch ? `${urls.length} links` : "link"} to <span className="mono ink">{dirLabel}/</span>
         </span>
+        <span className="paste-urls mono ellipsis" title={batch ? undefined : urls[0]}>
+          {batch ? "" : urls[0]}
+        </span>
+        {error && (
+          <span className="status-warning ellipsis" title={error}>
+            {error}
+          </span>
+        )}
+        <label className="paste-always">
+          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
+          Don't ask again
+        </label>
+        <button className="plain-btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="plain-btn" autoFocus onClick={add}>
+          Add to queue
+        </button>
+      </div>
+      {batch && (
+        <ol className="paste-list mono">
+          {urls.map((url) => (
+            <li key={url} className="ellipsis" title={url}>
+              {url}
+            </li>
+          ))}
+        </ol>
       )}
-      <label className="paste-always">
-        <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
-        Don't ask again
-      </label>
-      <button className="plain-btn" onClick={onClose}>
-        Cancel
-      </button>
-      <button className="plain-btn" autoFocus onClick={add}>
-        Add to queue
-      </button>
     </div>
   );
 }

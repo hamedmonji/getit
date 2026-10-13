@@ -240,6 +240,31 @@ input::placeholder {
   background: var(--panel);
 }
 
+.paste-prompt {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.paste-prompt > .add-bar {
+  border-bottom: 0;
+}
+
+.paste-list {
+  max-height: 140px;
+  overflow: auto;
+  margin: 0;
+  padding: 0 12px 10px 36px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--panel);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.paste-list li {
+  line-height: 20px;
+}
+
 .paste-urls {
   flex: 1;
   min-width: 0;
