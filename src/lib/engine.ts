@@ -74,6 +74,11 @@ export const engine = {
   resume: (id: DownloadId) => invoke<void>("resume_download", { id }),
   /** Puts paused or failed downloads back in line; their queue starts them when it has room. */
   requeue: (ids: DownloadId[]) => invoke<void>("requeue_downloads", { ids }),
+  /**
+   * Moves downloads (with their finished files) and folders (with everything in
+   * them, removing their queues) to the Trash.
+   */
+  moveToTrash: (ids: DownloadId[], paths: string[]) => invoke<void>("move_to_trash", { ids, paths }),
   remove: (id: DownloadId) => invoke<void>("remove_download", { id }),
   /** Creates a "New Queue" subfolder with its own queue; returns its path. */
   createQueue: (parent: string) => invoke<string>("create_queue", { parent }),

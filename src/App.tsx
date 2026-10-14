@@ -317,6 +317,19 @@ export default function App() {
       ?.scrollIntoView({ block: "nearest" });
   };
 
+  /** Moves downloads (by id) and folders (by path) to the Trash, files and all. */
+  const trashItems = (keys: string[]) => {
+    if (!keys.length) return;
+    const ids = keys.filter((key) => key in state.downloads);
+    const paths = keys.filter((key) => !(key in state.downloads));
+    engine
+      .moveToTrash(ids, paths)
+      .then(() => setNotice(null))
+      .catch((e) => setNotice(String(e)))
+      .finally(() => setListNonce((n) => n + 1));
+    select([]);
+  };
+
   /** Adds every link it can, then rejects with how many failed, if any did. */
   const addLinks = async (urls: string[]) => {
     if (!cwd) return;
@@ -352,7 +365,8 @@ export default function App() {
       .catch(() => {});
   };
 
-  // Delete/Backspace removes the selected downloads (finished files stay);
+  // Command-Delete moves the selection to the Trash; Delete/Backspace alone
+  // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
   // item and Command-Up goes to the enclosing folder (Control-A and Alt-arrows elsewhere).
   useEffect(() => {
@@ -372,6 +386,8 @@ export default function App() {
       } else if (arrow && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         moveSelection(e.key, e.shiftKey);
+      } else if ((e.key === "Delete" || e.key === "Backspace") && command) {
+        trashItems(selection);
       } else if (e.key === "Delete" || e.key === "Backspace") {
         const ids = selectedFiles.map((f) => f.id);
         if (!ids.length) return;
@@ -504,31 +520,36 @@ export default function App() {
         });
       }
     }
-    items.push(
-      { kind: "separator" },
-      {
+    items.push({ kind: "separator" });
+    if (vm.done) {
+      // The file stays on disk.
+      items.push({
         kind: "action",
-        // A finished file stays on disk; an unfinished one's partial data is deleted.
-        label: vm.done ? "Remove from list" : "Delete",
-        danger: !vm.done,
+        label: "Remove from list",
         onSelect: () => {
           report(engine.remove(vm.id));
           select([]);
         },
-      },
-    );
+      });
+    }
+    items.push({ kind: "action", label: "Move to Trash", danger: true, onSelect: () => trashItems([vm.id]) });
     return items;
   };
 
   const selectionMenu = (): MenuItem[] => {
     const items: MenuItem[] = [{ kind: "header", label: `${plural(selection.length, "item")} selected` }];
-    if (!selectedFiles.length) return items;
+    const trash: MenuItem = {
+      kind: "action",
+      label: `Move ${plural(selection.length, "item")} to Trash`,
+      danger: true,
+      onSelect: () => trashItems(selection),
+    };
+    if (!selectedFiles.length) return [...items, trash];
     const status = (f: FileVm) => state.downloads[f.id]?.status;
     const queuePaused = queue?.settings.paused ?? false;
     const pausable = selectedFiles.filter((f) => status(f) === "downloading" || status(f) === "queued");
     const resumable = selectedFiles.filter((f) => status(f) === "paused" || status(f) === "failed");
-    const unfinished = selectedFiles.some((f) => !f.done);
-    const count = plural(selectedFiles.length, "download");
+    const done = selectedFiles.filter((f) => f.done);
     items.push(
       {
         kind: "action",
@@ -547,17 +568,19 @@ export default function App() {
             : report(engine.requeue(resumable.map((f) => f.id))),
       },
       { kind: "separator" },
-      {
+    );
+    if (done.length) {
+      // The files stay on disk.
+      items.push({
         kind: "action",
-        // Finished files stay on disk; unfinished ones' partial data is deleted.
-        label: unfinished ? `Delete ${count}` : `Remove ${count} from list`,
-        danger: unfinished,
+        label: `Remove ${plural(done.length, "finished download")} from list`,
         onSelect: () => {
-          selectedFiles.forEach((f) => report(engine.remove(f.id)));
+          done.forEach((f) => report(engine.remove(f.id)));
           select([]);
         },
-      },
-    );
+      });
+    }
+    items.push(trash);
     return items;
   };
 
@@ -570,6 +593,8 @@ export default function App() {
       return [
         { kind: "action", label: "Open", onSelect: () => go(target) },
         { kind: "action", label: "Rename", onSelect: () => setEditing(target) },
+        { kind: "separator" },
+        { kind: "action", label: "Move to Trash", danger: true, onSelect: () => trashItems([target]) },
       ];
     }
     return [];

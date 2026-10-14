@@ -5,7 +5,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use getit_engine::{DownloadId, DownloadItem, Engine, QueueId, QueueInfo, QueueSettings};
+use getit_engine::{DownloadId, DownloadItem, DownloadStatus, Engine, QueueId, QueueInfo, QueueSettings};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -242,6 +242,53 @@ pub fn move_downloads(engine: State<'_, Engine>, ids: Vec<DownloadId>, dir: Stri
 #[tauri::command]
 pub fn requeue_downloads(engine: State<'_, Engine>, ids: Vec<DownloadId>) -> CommandResult<()> {
     engine.requeue(&ids).map_err(err)
+}
+
+/// Moves `path` to the Trash. On macOS this goes through the file manager API
+/// rather than scripting Finder, so the app needs no extra permission.
+fn trash(path: &Path) -> CommandResult<()> {
+    #[allow(unused_mut)]
+    let mut trash = trash::TrashContext::default();
+    #[cfg(target_os = "macos")]
+    {
+        use trash::macos::{DeleteMethod, TrashContextExtMacos};
+        trash.set_delete_method(DeleteMethod::NsFileManager);
+    }
+    trash
+        .delete(path)
+        .map_err(|e| format!("couldn't move {} to the Trash: {e}", path.display()))
+}
+
+/// Moves downloads and folders to the Trash. Downloads leave the list, taking
+/// their finished files to the Trash (unfinished ones' partial data is deleted);
+/// a folder goes with everything inside it, and the queues in it are removed.
+/// Stops at the first item that can't be trashed; the ones before it stay trashed.
+#[tauri::command]
+pub fn move_to_trash(engine: State<'_, Engine>, ids: Vec<DownloadId>, paths: Vec<String>) -> CommandResult<()> {
+    for id in ids {
+        let Some(item) = engine.get(id) else { continue };
+        if item.status == DownloadStatus::Completed
+            && let Some(queue) = engine.queue(item.queue_id)
+            && let Some(file) = item.file_path(&queue.dir)
+            && file.exists()
+        {
+            trash(&file)?;
+        }
+        engine.remove(id).map_err(err)?;
+    }
+    for path in paths {
+        let dir = PathBuf::from(&path);
+        if !dir.is_absolute() || dir.parent().is_none() {
+            return Err(format!("won't move {path} to the Trash"));
+        }
+        trash(&dir)?;
+        for queue in engine.queues() {
+            if queue.dir.starts_with(&dir) {
+                engine.remove_queue(queue.id).map_err(err)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
