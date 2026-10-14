@@ -127,6 +127,7 @@ input::placeholder {
 }
 
 .crumbs {
+  cursor: text;
   flex: 1;
   min-width: 0;
   height: 30px;
@@ -884,4 +885,101 @@ input::placeholder {
 .name-editor.invalid {
   border-color: var(--danger);
   outline-color: color-mix(in oklch, var(--danger) 20%, transparent);
+}
+
+/* Address bar while typing a path or search */
+
+.crumbs.address {
+  gap: 6px;
+  padding: 0 4px 0 9px;
+  border-color: var(--accent);
+  background: var(--panel);
+  cursor: text;
+}
+
+.crumbs.address.invalid {
+  border-color: var(--danger);
+}
+
+.address-icon {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  flex: none;
+}
+
+.crumbs.address input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.address-error {
+  flex: none;
+  max-width: 50%;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.address-clear {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--track);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.address-clear:hover {
+  color: var(--ink);
+}
+
+.address-scope {
+  height: 22px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.address-scope:hover {
+  background: var(--hover);
+}
+
+.address-scope.all {
+  background: var(--accentSoft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.address-scope kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel2);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 400;
 }

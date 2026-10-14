@@ -20,12 +20,35 @@ export function displayPath(path: string, home: string): string {
   return isWithin(path, home) ? "~" + path.slice(home.length) : path;
 }
 
-/** Folders from `home` down to `path`, for the breadcrumbs. */
+/** The last part of `path`. */
+export function baseName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1) || "/";
+}
+
+/** Whether address-bar text is a path to go to rather than a search. */
+export function isPathLike(raw: string): boolean {
+  return /^[~/]/.test(raw.trim());
+}
+
+/** Address-bar text as an absolute path: expands `~` and resolves `.`, `..` and extra slashes. */
+export function resolvePath(raw: string, home: string): string {
+  let path = raw.trim();
+  if (path === "~" || path.startsWith("~/")) path = home + path.slice(1);
+  const parts: string[] = [];
+  for (const part of path.split("/")) {
+    if (part === "..") parts.pop();
+    else if (part && part !== ".") parts.push(part);
+  }
+  return "/" + parts.join("/");
+}
+
+/** Folders from `home` (or the root, outside it) down to `path`, for the breadcrumbs. */
 export function crumbsFrom(home: string, path: string): { label: string; path: string }[] {
-  const crumbs = [{ label: "~", path: home }];
-  if (!isWithin(path, home) || path === home) return crumbs;
-  let current = home;
-  for (const part of path.slice(home.length + 1).split("/").filter(Boolean)) {
+  const inHome = isWithin(path, home);
+  const root = inHome ? home : "/";
+  const crumbs = [{ label: inHome ? "~" : "/", path: root }];
+  let current = root;
+  for (const part of path.slice(root.length).split("/").filter(Boolean)) {
     current = joinPath(current, part);
     crumbs.push({ label: part, path: current });
   }

@@ -4,7 +4,7 @@
 import type { EngineState } from "../hooks/useEngine";
 import type { DownloadItem, QueueInfo } from "./engine";
 import { formatEta, formatSize, formatSpeed } from "./format";
-import { isWithin, joinPath } from "./paths";
+import { baseName, isWithin, joinPath, parentPath } from "./paths";
 
 export type ViewMode = "Icons" | "List";
 export type FileAction = "pause" | "resume" | "retry";
@@ -87,7 +87,8 @@ export function fileVm(
   queue: QueueInfo,
   state: EngineState,
   mode: ViewMode,
-  present: Set<string>,
+  /** File names in the queue's folder; null when not listed, so none count as missing. */
+  present: Set<string> | null,
 ): FileVm {
   const name = displayName(item);
   const ext = (name.includes(".") ? name.split(".").pop()! : "").toUpperCase().slice(0, 4);
@@ -95,7 +96,7 @@ export function fileVm(
   const exact = percent(item);
   const pct = Math.floor(exact);
   const done = item.status === "completed";
-  const missing = done && !!item.file_name && !present.has(item.file_name);
+  const missing = done && !!item.file_name && !!present && !present.has(item.file_name);
   const active = item.status === "downloading";
   const waiting = item.status === "queued" && queue.settings.paused;
   const speed = state.speeds[item.id] ?? 0;
@@ -191,12 +192,7 @@ export function queueForDir(state: EngineState, dir: string): QueueInfo | undefi
   return Object.values(state.queues).find((q) => q.dir === dir);
 }
 
-export function folderVm(
-  state: EngineState,
-  parent: string,
-  folder: { name: string; items: number },
-): FolderVm {
-  const path = joinPath(parent, folder.name);
+export function folderVm(state: EngineState, path: string): FolderVm {
   const st = stats(state, path, true);
   const hasQueue = Object.values(state.queues).some((q) => isWithin(q.dir, path));
   const ownPaused = queueForDir(state, path)?.settings.paused ?? false;
@@ -208,7 +204,7 @@ export function folderVm(
   else if (st.queued) sub = `${st.queued} queued`;
 
   return {
-    name: folder.name,
+    name: baseName(path),
     path,
     sub,
     sizeLabel: st.total ? formatSize(st.total) : "—",
@@ -220,4 +216,46 @@ export function folderVm(
     tint: paused ? "var(--muted)" : "var(--accent)",
     hasQueue,
   };
+}
+
+/** Whether `name` contains every word in `words`, ignoring case. */
+function matches(name: string, words: string[]): boolean {
+  const lower = name.toLowerCase();
+  return words.every((w) => lower.includes(w));
+}
+
+/**
+ * Folders and downloads under `root` (anywhere, when null) whose names match
+ * `query`. The folders searched are the listed folder's subfolders and every
+ * folder on the way to a queue, from `root` or else from home; the downloads
+ * are those of every queue under `root`.
+ */
+export function searchResults(
+  state: EngineState,
+  root: string | null,
+  /** The folder on screen, whose contents are known. */
+  listed: { dir: string; folders: string[]; present: Set<string> },
+  home: string,
+  query: string,
+  mode: ViewMode,
+): { folders: FolderVm[]; files: FileVm[] } {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const paths = new Set(listed.folders.map((name) => joinPath(listed.dir, name)));
+  const files: FileVm[] = [];
+  for (const queue of Object.values(state.queues)) {
+    if (root !== null && !isWithin(queue.dir, root)) continue;
+    const top = root ?? (isWithin(queue.dir, home) ? home : "/");
+    for (let p = queue.dir; p !== top && p !== "/"; p = parentPath(p)) paths.add(p);
+    for (const id of queue.downloads) {
+      const item = state.downloads[id];
+      if (item && matches(displayName(item), words)) {
+        files.push(fileVm(item, queue, state, mode, queue.dir === listed.dir ? listed.present : null));
+      }
+    }
+  }
+  const folders = [...paths]
+    .filter((path) => matches(baseName(path), words))
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map((path) => folderVm(state, path));
+  return { folders, files };
 }

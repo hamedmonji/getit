@@ -106,3 +106,20 @@ export function RetryIcon({ size = 11 }: IconProps) {
     </svg>
   );
 }
+
+export function SearchIcon({ size = 13 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16">
+      <circle cx="7" cy="7" r="4.5" {...stroke} strokeWidth={1.6} />
+      <path d="M10.5 10.5L14 14" {...stroke} strokeWidth={1.6} />
+    </svg>
+  );
+}
+
+export function CloseIcon({ size = 10 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16">
+      <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" {...stroke} strokeWidth={2} />
+    </svg>
+  );
+}

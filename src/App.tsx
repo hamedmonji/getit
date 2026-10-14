@@ -9,13 +9,15 @@ import { useMarquee } from "./hooks/useMarquee";
 import { useStoredState } from "./hooks/useStoredState";
 import { engine } from "./lib/engine";
 import { formatSpeed, plural } from "./lib/format";
-import { crumbsFrom, displayPath, isWithin, parentPath } from "./lib/paths";
+import { crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import {
   fileVm,
   folderVm,
   queueForDir,
+  searchResults,
   stats,
   type FileVm,
+  type FolderVm,
   type ViewMode,
 } from "./lib/viewModels";
 
@@ -111,6 +113,15 @@ export default function App() {
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
   /** Links from the clipboard waiting for the user to confirm. */
   const [pasting, setPasting] = useState<string[] | null>(null);
+  /** Whether the address bar is being typed in. */
+  const [addressOpen, setAddressOpen] = useState(false);
+  /** The search shown in place of the folder's contents; empty when browsing. */
+  const [query, setQuery] = useState("");
+  /** Whether the search covers every queue rather than this folder. */
+  const [searchAll, setSearchAll] = useState(false);
+  useEffect(() => {
+    if (!addressOpen && !query) setSearchAll(false);
+  }, [addressOpen, query]);
 
   useEffect(() => {
     Promise.all([engine.homeDir(), engine.initialDir()]).then(([home, start]) => {
@@ -123,6 +134,8 @@ export default function App() {
   useEffect(() => {
     setEditing(null);
     setPasting(null);
+    setQuery("");
+    setAddressOpen(false);
   }, [cwd]);
   const all = Object.values(state.downloads);
   const refreshKey = [
@@ -138,6 +151,7 @@ export default function App() {
   const go = useCallback(
     (path: string, focus: string | null = null) => {
       setHistory((h) => (h && h.cwd !== path ? { cwd: path, back: [...h.back, h.cwd], forward: [] } : h));
+      setQuery("");
       select(focus ? [focus] : []);
     },
     [select],
@@ -156,21 +170,22 @@ export default function App() {
     setHistory({ cwd, back: [...history.back, history.cwd], forward });
     select([]);
   };
-  const canUp = !!home && !!cwd && cwd !== home && isWithin(cwd, home);
+  // Up stops at home, or at the root for folders outside it.
+  const canUp = !!home && !!cwd && cwd !== home && cwd !== "/";
   const goUp = () => {
     if (canUp && cwd) go(parentPath(cwd), cwd);
   };
 
   const queue = shown ? queueForDir(state, shown) : undefined;
   const allFolders = useMemo(
-    () => (shown ? listing.folders.map((f) => folderVm(state, shown, f)) : []),
+    () => (shown ? listing.folders.map((f) => folderVm(state, joinPath(shown, f.name))) : []),
     [state, shown, listing],
   );
-  const folders = showAllFolders ? allFolders : allFolders.filter((g) => g.hasQueue);
-  const hiddenFolders = allFolders.length - folders.length;
+  const shownFolders = (list: FolderVm[]) => (showAllFolders ? list : list.filter((g) => g.hasQueue));
+  const hiddenFolders = allFolders.length - shownFolders(allFolders).length;
   // Follows the listing, so subfolders and downloads appear together instead of
   // the downloads shifting when the subfolders arrive.
-  const files = useMemo(
+  const folderFiles = useMemo(
     () =>
       queue
         ? queue.downloads
@@ -180,6 +195,22 @@ export default function App() {
         : [],
     [state, queue, mode, listing],
   );
+  const results = useMemo(
+    () =>
+      query && shown && home
+        ? searchResults(
+            state,
+            searchAll ? null : shown,
+            { dir: shown, folders: listing.folders.map((f) => f.name), present: listing.present },
+            home,
+            query,
+            mode,
+          )
+        : null,
+    [state, shown, listing, home, query, searchAll, mode],
+  );
+  const folders = shownFolders(results?.folders ?? allFolders);
+  const files = results?.files ?? folderFiles;
 
   /** Every item in view, in display order. */
   const order = [...folders.map((g) => g.path), ...files.map((f) => f.id)];
@@ -347,6 +378,19 @@ export default function App() {
     if (failed.length) throw `${plural(failed.length, "link")} of ${urls.length} couldn't be added: ${failed[0]}`;
   };
 
+  /** The folder a download's file goes in. */
+  const dirOf = (id: string) => state.queues[state.downloads[id]?.queue_id]?.dir;
+  /** Goes to the folder holding a search result, with the result selected. */
+  const showInFolder = (key: string) => {
+    const dir = key in state.downloads ? dirOf(key) : parentPath(key);
+    if (dir) go(dir, key);
+  };
+  const showInFolderItem = (key: string): MenuItem => ({
+    kind: "action",
+    label: "Show in Enclosing Folder",
+    onSelect: () => showInFolder(key),
+  });
+
   // Command-V adds the links on the clipboard to this folder's queue, after
   // asking unless the user chose not to be asked.
   const paste = () => {
@@ -396,8 +440,13 @@ export default function App() {
       } else if (e.key.toLowerCase() === "v" && command) {
         e.preventDefault();
         paste();
+      } else if ((e.key.toLowerCase() === "f" || e.key.toLowerCase() === "l") && command) {
+        e.preventDefault();
+        setAddressOpen(true);
       } else if (e.key === "Escape" && pasting) {
         setPasting(null);
+      } else if (e.key === "Escape" && query) {
+        setQuery("");
       } else if (e.key.toLowerCase() === "a" && command) {
         e.preventDefault();
         setSelected(new Set(order));
@@ -520,6 +569,7 @@ export default function App() {
         });
       }
     }
+    if (query) items.push(showInFolderItem(vm.id));
     items.push({ kind: "separator" });
     if (vm.done) {
       // The file stays on disk.
@@ -546,7 +596,7 @@ export default function App() {
     };
     if (!selectedFiles.length) return [...items, trash];
     const status = (f: FileVm) => state.downloads[f.id]?.status;
-    const queuePaused = queue?.settings.paused ?? false;
+    const queuePaused = (f: FileVm) => state.queues[state.downloads[f.id]?.queue_id]?.settings.paused ?? false;
     const pausable = selectedFiles.filter((f) => status(f) === "downloading" || status(f) === "queued");
     const resumable = selectedFiles.filter((f) => status(f) === "paused" || status(f) === "failed");
     const done = selectedFiles.filter((f) => f.done);
@@ -562,10 +612,11 @@ export default function App() {
         label: "Resume",
         disabled: !resumable.length,
         // Back in line, so the queue's limit holds; a paused queue gets them started on their own.
-        onSelect: () =>
-          queuePaused
-            ? resumable.forEach((f) => report(engine.resume(f.id)))
-            : report(engine.requeue(resumable.map((f) => f.id))),
+        onSelect: () => {
+          resumable.filter(queuePaused).forEach((f) => report(engine.resume(f.id)));
+          const requeued = resumable.filter((f) => !queuePaused(f)).map((f) => f.id);
+          if (requeued.length) report(engine.requeue(requeued));
+        },
       },
       { kind: "separator" },
     );
@@ -592,6 +643,7 @@ export default function App() {
     if (folders.some((g) => g.path === target)) {
       return [
         { kind: "action", label: "Open", onSelect: () => go(target) },
+        ...(query ? [showInFolderItem(target)] : []),
         { kind: "action", label: "Rename", onSelect: () => setEditing(target) },
         { kind: "separator" },
         { kind: "action", label: "Move to Trash", danger: true, onSelect: () => trashItems([target]) },
@@ -639,6 +691,24 @@ export default function App() {
         crumbs={crumbsFrom(home, cwd)}
         onCrumb={(path) => go(path)}
         dropTarget={drag?.target ?? null}
+        cwdLabel={displayPath(cwd, home)}
+        addressOpen={addressOpen}
+        onAddressOpen={setAddressOpen}
+        query={query}
+        onQuery={setQuery}
+        searchAll={searchAll}
+        onSearchAll={setSearchAll}
+        onGoTo={async (raw) => {
+          const path = resolvePath(raw, home);
+          await engine.listDir(path);
+          go(path);
+          setAddressOpen(false);
+        }}
+        onSearchResults={() => {
+          if (!order.length) return;
+          select([order[0]]);
+          lead.current = order[0];
+        }}
         mode={mode}
         onMode={setMode}
         showAllFolders={showAllFolders}
@@ -695,20 +765,28 @@ export default function App() {
         {marquee.box && <div className="marquee" style={marquee.box} />}
         {count === 0 && shown === cwd && state.loaded && (
           <div className="empty">
-            {listing.error
-              ? `Can't open this folder: ${listing.error}`
-              : hiddenFolders > 0
-                ? `No downloads here. ${plural(hiddenFolders, "folder")} without downloads ${hiddenFolders === 1 ? "is" : "are"} hidden.`
-                : "This folder is empty. Right-click to add a download or a queue."}
+            {query
+              ? `Nothing${searchAll ? "" : ` in ${displayPath(cwd, home)}`} matches “${query}”.`
+              : listing.error
+                ? `Can't open this folder: ${listing.error}`
+                : hiddenFolders > 0
+                  ? `No downloads here. ${plural(hiddenFolders, "folder")} without downloads ${hiddenFolders === 1 ? "is" : "are"} hidden.`
+                  : "This folder is empty. Right-click to add a download or a queue."}
           </div>
         )}
       </div>
 
       <StatusBar
-        itemCount={plural(count, "item") + (queue?.settings.paused ? " · Queue paused" : "")}
+        itemCount={
+          query
+            ? plural(count, "result")
+            : plural(count, "item") + (queue?.settings.paused ? " · Queue paused" : "")
+        }
         selInfo={
           selFile
-            ? selFile.info
+            ? query
+              ? `${displayPath(dirOf(selFile.id) ?? cwd, home)} — ${selFile.info}`
+              : selFile.info
             : selFolder
               ? `${displayPath(selFolder.path, home)} — double-click to open`
               : selection.length > 1

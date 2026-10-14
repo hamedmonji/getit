@@ -1,6 +1,18 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { isPathLike } from "../lib/paths";
 import type { ViewMode } from "../lib/viewModels";
-import { BackIcon, FolderIcon, ForwardIcon, GridIcon, ListIcon, PlusIcon, ThemeIcon, UpIcon } from "./icons";
+import {
+  BackIcon,
+  CloseIcon,
+  FolderIcon,
+  ForwardIcon,
+  GridIcon,
+  ListIcon,
+  PlusIcon,
+  SearchIcon,
+  ThemeIcon,
+  UpIcon,
+} from "./icons";
 
 export type Theme = "Light" | "Dark";
 
@@ -18,6 +30,21 @@ export interface ToolbarProps {
   onCrumb: (path: string) => void;
   /** Crumb that items being dragged would be dropped on. */
   dropTarget: string | null;
+  /** The current folder as shown to the user, such as `~/Movies`. */
+  cwdLabel: string;
+  /** Whether the address bar is being typed in. */
+  addressOpen: boolean;
+  onAddressOpen: (open: boolean) => void;
+  /** The search being shown; empty when browsing. */
+  query: string;
+  onQuery: (query: string) => void;
+  /** Whether the search covers every queue rather than this folder; Tab switches. */
+  searchAll: boolean;
+  onSearchAll: (all: boolean) => void;
+  /** Goes to a typed path; rejects with a message to show. */
+  onGoTo: (raw: string) => Promise<void>;
+  /** Moves from the search field to its results. */
+  onSearchResults: () => void;
   mode: ViewMode;
   onMode: (mode: ViewMode) => void;
   /** Whether folders without a queue inside them are shown. */
@@ -44,24 +71,7 @@ export function Toolbar(p: ToolbarProps) {
           <UpIcon />
         </button>
       </div>
-      <div className="crumbs">
-        {p.crumbs.map((c, i) => {
-          const last = i === p.crumbs.length - 1;
-          return (
-            <span key={c.path} className="crumb-wrap">
-              {i > 0 && <span className="crumb-sep">/</span>}
-              <button
-                className={"crumb" + (p.dropTarget === c.path ? " drop-target" : "")}
-                data-drop={c.path}
-                style={{ color: last ? "var(--ink)" : "var(--muted)", fontWeight: last ? 600 : 400 }}
-                onClick={() => p.onCrumb(c.path)}
-              >
-                {c.label}
-              </button>
-            </span>
-          );
-        })}
-      </div>
+      <AddressBar {...p} />
       <button
         className={"square-btn" + (p.showAllFolders ? "" : " toggled")}
         title={p.showAllFolders ? "Hide folders without downloads" : "Show all folders"}
@@ -93,6 +103,126 @@ export function Toolbar(p: ToolbarProps) {
       >
         <ThemeIcon />
       </button>
+    </div>
+  );
+}
+
+/**
+ * The breadcrumbs, which turn into a field when clicked: text starting with `/`
+ * or `~` is a path to go to on Enter, anything else searches as it's typed.
+ * The field stays while a search is shown.
+ */
+function AddressBar(p: ToolbarProps) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!p.addressOpen) return;
+    if (!p.query) setText(p.cwdLabel);
+    setError(null);
+    input.current?.focus();
+    input.current?.select();
+  }, [p.addressOpen]);
+
+  if (!p.addressOpen && !p.query) {
+    return (
+      <div
+        className="crumbs"
+        title="Click to enter a path or search"
+        onClick={(e) => {
+          if (!(e.target as Element).closest(".crumb")) p.onAddressOpen(true);
+        }}
+      >
+        {p.crumbs.map((c, i) => {
+          const last = i === p.crumbs.length - 1;
+          return (
+            <span key={c.path} className="crumb-wrap">
+              {i > 0 && p.crumbs[i - 1].label !== "/" && <span className="crumb-sep">/</span>}
+              <button
+                className={"crumb" + (p.dropTarget === c.path ? " drop-target" : "")}
+                data-drop={c.path}
+                style={{ color: last ? "var(--ink)" : "var(--muted)", fontWeight: last ? 600 : 400 }}
+                onClick={() => p.onCrumb(c.path)}
+              >
+                {c.label}
+              </button>
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
+  const close = () => {
+    p.onQuery("");
+    p.onAddressOpen(false);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      close();
+    } else if (e.key === "Tab") {
+      // Switches where to search, unless a path is being typed. The current
+      // folder's path, as the field opens with, gives way to the search.
+      e.preventDefault();
+      if (isPathLike(text) && text !== p.cwdLabel) return;
+      if (isPathLike(text)) setText("");
+      p.onSearchAll(!p.searchAll);
+    } else if (e.key === "Enter" && isPathLike(text)) {
+      p.onGoTo(text).catch((err) => setError(String(err)));
+    } else if ((e.key === "Enter" || e.key === "ArrowDown") && p.query) {
+      e.preventDefault();
+      input.current?.blur();
+      p.onSearchResults();
+    }
+  };
+
+  const typingPath = isPathLike(text) && text !== p.cwdLabel;
+  return (
+    <div className={"crumbs address" + (error ? " invalid" : "")}>
+      <span className="address-icon">{isPathLike(text) ? <FolderIcon size={13} /> : <SearchIcon />}</span>
+      <input
+        ref={input}
+        value={text}
+        onChange={(e) => {
+          setText(e.target.value);
+          setError(null);
+          p.onQuery(isPathLike(e.target.value) ? "" : e.target.value.trim());
+        }}
+        onKeyDown={onKey}
+        onFocus={() => p.onAddressOpen(true)}
+        onBlur={() => p.onAddressOpen(false)}
+        placeholder={`Search ${p.searchAll ? "everywhere" : p.cwdLabel} or enter a path`}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+      />
+      {error && <span className="address-error ellipsis" title={error}>{error}</span>}
+      {!typingPath && (p.addressOpen || p.searchAll) && (
+        <button
+          className={"address-scope" + (p.searchAll ? " all" : "")}
+          title={p.searchAll ? `Search only ${p.cwdLabel} (Tab)` : "Search everywhere (Tab)"}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (isPathLike(text)) setText("");
+            p.onSearchAll(!p.searchAll);
+            input.current?.focus();
+          }}
+        >
+          {p.addressOpen && <kbd>Tab</kbd>}
+          {p.searchAll ? "Everywhere" : "Search everywhere"}
+        </button>
+      )}
+      {p.query && (
+        <button
+          className="address-clear"
+          title="Clear search"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={close}
+        >
+          <CloseIcon />
+        </button>
+      )}
     </div>
   );
 }
