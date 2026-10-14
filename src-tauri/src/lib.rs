@@ -36,6 +36,8 @@ pub fn run() {
             commands::rename_folder,
             commands::move_folders,
             commands::move_downloads,
+            commands::copy_folders,
+            commands::copy_downloads,
             commands::remove_download,
             commands::move_to_trash,
             commands::set_queue_settings,

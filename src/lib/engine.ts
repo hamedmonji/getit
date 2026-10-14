@@ -3,7 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openPath } from "@tauri-apps/plugin-opener";
 
 export type DownloadId = string;
@@ -88,12 +88,17 @@ export const engine = {
   moveFolders: (paths: string[], dest: string) => invoke<void>("move_folders", { paths, dest }),
   /** Moves downloads, with their files, to the queue for `dir`. */
   moveDownloads: (ids: DownloadId[], dir: string) => invoke<void>("move_downloads", { ids, dir }),
+  /** Copies downloads, with their files, to the queue for `dir`; returns the copies' ids. */
+  copyDownloads: (ids: DownloadId[], dir: string) => invoke<DownloadId[]>("copy_downloads", { ids, dir }),
+  /** Copies folders, with their queues, into `dest`; returns the copies' paths. */
+  copyFolders: (paths: string[], dest: string) => invoke<string[]>("copy_folders", { paths, dest }),
   setQueueSettings: (queueId: QueueId, settings: QueueSettings) =>
     invoke<void>("set_queue_settings", { queueId, settings }),
   clearCompleted: (queueId: QueueId) => invoke<number>("clear_completed", { queueId }),
   openPath: (path: string) => openPath(path),
   /** The clipboard's text; rejects when it holds no text. */
   readClipboard: () => readText(),
+  writeClipboard: (text: string) => writeText(text),
 };
 
 export function onEngineEvent(handler: (event: EngineEvent) => void): Promise<UnlistenFn> {

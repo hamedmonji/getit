@@ -361,6 +361,111 @@ impl Engine {
         result
     }
 
+    /// Copies downloads to the end of the queue for `dir` (creating it if needed),
+    /// with their files: a finished file is copied whole, and an unfinished one's
+    /// partial file is copied so the copy carries on from there. Copies get free
+    /// file names, so copying into the same folder works. Unfinished copies wait
+    /// in their queue, or stay paused if the original was paused or had failed.
+    /// Files are copied without holding up other downloads. Returns the copies'
+    /// ids; stops at the first file that can't be copied, keeping the copies made.
+    pub fn copy_downloads(&self, ids: &[DownloadId], dir: impl AsRef<Path>) -> Result<Vec<DownloadId>> {
+        let dir = normalize(dir.as_ref())?;
+        let sources: Vec<(DownloadItem, PathBuf)> = {
+            let st = self.inner.lock();
+            ids.iter()
+                .map(|id| {
+                    let queue = st
+                        .owner
+                        .get(id)
+                        .and_then(|queue_id| st.queues.get(queue_id))
+                        .ok_or(EngineError::DownloadNotFound(*id))?;
+                    Ok((queue.items[id].clone(), queue.dir.clone()))
+                })
+                .collect::<Result<_>>()?
+        };
+        let mut copies = Vec::new();
+        let mut result = Ok(());
+        for (item, from) in &sources {
+            match copy_file(item, from, &dir) {
+                Ok((file_name, downloaded)) => {
+                    let mut copy = copy_of(item);
+                    copy.file_name = file_name;
+                    copy.downloaded = downloaded;
+                    copies.push(copy);
+                }
+                Err(e) => {
+                    result = Err(EngineError::CopyFailed {
+                        name: item.file_name.clone().unwrap_or_else(|| item.url.clone()),
+                        error: e.to_string(),
+                    });
+                    break;
+                }
+            }
+        }
+        let mut guard = self.inner.lock();
+        let st = &mut *guard;
+        let target = self.inner.ensure_queue(st, dir);
+        let queue = st.queues.get_mut(&target).expect("target queue exists");
+        let ids: Vec<DownloadId> = copies.iter().map(|copy| copy.id).collect();
+        for mut copy in copies {
+            copy.queue_id = target;
+            st.owner.insert(copy.id, target);
+            queue.push(copy.clone());
+            self.inner.emit(EngineEvent::DownloadAdded(copy));
+        }
+        self.inner.save(queue);
+        self.inner.emit(EngineEvent::QueueChanged(queue.info()));
+        self.inner.schedule(st, target);
+        result.map(|()| ids)
+    }
+
+    /// Gives `new`, a copy of the folder `old` already made on disk, copies of
+    /// the queues in `old` and the folders inside it, with their downloads.
+    /// Unfinished copies carry on from the partial files copied along. Fails
+    /// without changing anything if a queue already uses one of the new folders.
+    /// Returns how many queues were copied.
+    pub fn copy_queues(&self, old: impl AsRef<Path>, new: impl AsRef<Path>) -> Result<usize> {
+        let old = normalize(old.as_ref())?;
+        let new = normalize(new.as_ref())?;
+        let mut guard = self.inner.lock();
+        let st = &mut *guard;
+        let copies: Vec<(QueueId, PathBuf)> = st
+            .queues
+            .values()
+            .filter_map(|queue| {
+                let rest = queue.dir.strip_prefix(&old).ok()?;
+                Some((queue.id, normalize(&new.join(rest)).ok()?))
+            })
+            .collect();
+        if let Some((_, dir)) = copies.iter().find(|(_, dir)| st.by_dir.contains_key(dir)) {
+            return Err(EngineError::DirTaken(dir.clone()));
+        }
+        for (id, dir) in &copies {
+            let source = &st.queues[id];
+            let mut queue = Queue::new(dir.clone());
+            queue.settings = source.settings;
+            for item in source.downloads() {
+                let mut copy = copy_of(&item);
+                copy.queue_id = queue.id;
+                if copy.status != DownloadStatus::Completed {
+                    copy.downloaded = partial_len(&copy, dir);
+                }
+                queue.push(copy);
+            }
+            for copy in queue.downloads() {
+                st.owner.insert(copy.id, queue.id);
+                self.inner.emit(EngineEvent::DownloadAdded(copy));
+            }
+            self.inner.save(&queue);
+            self.inner.emit(EngineEvent::QueueChanged(queue.info()));
+            st.by_dir.insert(dir.clone(), queue.id);
+            let queue_id = queue.id;
+            st.queues.insert(queue_id, queue);
+            self.inner.schedule(st, queue_id);
+        }
+        Ok(copies.len())
+    }
+
     /// Adds `url` to the end of a queue.
     pub fn add(&self, queue_id: QueueId, url: &str) -> Result<DownloadId> {
         let url = validate_url(url)?;
@@ -813,6 +918,54 @@ fn move_file(item: &DownloadItem, from: &Path, to: &Path) -> io::Result<Option<S
         }
     }
     Ok(Some(name))
+}
+
+/// A new download like `item`, for copying it: not yet in any queue, and
+/// waiting rather than running (paused if `item` was paused or had failed).
+fn copy_of(item: &DownloadItem) -> DownloadItem {
+    let status = match item.status {
+        DownloadStatus::Completed => DownloadStatus::Completed,
+        DownloadStatus::Queued | DownloadStatus::Downloading => DownloadStatus::Queued,
+        DownloadStatus::Paused | DownloadStatus::Failed => DownloadStatus::Paused,
+    };
+    DownloadItem {
+        id: DownloadId::new(),
+        status,
+        manual: false,
+        error: None,
+        added_at: now_millis(),
+        ..item.clone()
+    }
+}
+
+/// How much of an unfinished download is in its partial file in `dir`.
+fn partial_len(item: &DownloadItem, dir: &Path) -> u64 {
+    item.part_path(dir)
+        .and_then(|part| std::fs::metadata(part).ok())
+        .map_or(0, |meta| meta.len())
+}
+
+/// Copies a download's file (finished or partial) from `from` to `to`, picking a
+/// free name there. Returns the copy's file name and, for an unfinished
+/// download, how much of it was copied. A partial file still being written is
+/// copied as far as it goes.
+fn copy_file(item: &DownloadItem, from: &Path, to: &Path) -> io::Result<(Option<String>, u64)> {
+    let Some(name) = &item.file_name else {
+        return Ok((None, 0));
+    };
+    let done = item.status == DownloadStatus::Completed;
+    let src = if done { from.join(name) } else { part_path(from, name) };
+    if !src.exists() {
+        if done {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "the file is missing"));
+        }
+        return Ok((None, 0));
+    }
+    std::fs::create_dir_all(to)?;
+    let name = free_file_name(to, name)?;
+    let dest = if done { to.join(&name) } else { part_path(to, &name) };
+    let copied = std::fs::copy(&src, &dest)?;
+    Ok((Some(name), if done { item.downloaded } else { copied }))
 }
 
 /// `candidate`, or `candidate (1)`, `(2)`, ... if a file or partial download

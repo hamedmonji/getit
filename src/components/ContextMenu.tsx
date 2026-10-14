@@ -9,6 +9,8 @@ export type MenuItem =
       danger?: boolean;
       /** Shows a check mark column; true checks it. */
       checked?: boolean;
+      /** Keyboard shortcut shown on the right, such as "⌘C". */
+      shortcut?: string;
     }
   | { kind: "separator" }
   | { kind: "header"; label: string }
@@ -122,6 +124,7 @@ export function ContextMenu({
               >
                 {item.checked !== undefined && <span className="menu-check">{item.checked ? "✓" : ""}</span>}
                 {item.label}
+                {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
               </button>
             );
         }

@@ -1054,3 +1054,61 @@ async fn requeue_puts_paused_downloads_back_in_line() {
     ctx.assert_file_matches(first);
     ctx.assert_file_matches(second);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn copy_downloads_copies_files_and_partial_progress() {
+    let ctx = Ctx::new().await;
+    let done = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_status(&ctx.engine, done, DownloadStatus::Completed).await;
+    let source = ctx.engine.get(done).unwrap().queue_id;
+    let partial = ctx.engine.add(source, &ctx.url("/file.bin")).unwrap();
+    wait_for_progress(&ctx.engine, partial).await;
+    ctx.engine.pause(partial).unwrap();
+    settle().await;
+
+    // Copying into the same folder gives the copies free names.
+    let copies = ctx.engine.copy_downloads(&[done, partial], ctx.folder("a")).unwrap();
+    assert_eq!(copies.len(), 2);
+    assert_eq!(ctx.engine.queue(source).unwrap().downloads[2..], copies[..]);
+    let copy = ctx.engine.get(copies[0]).unwrap();
+    assert_eq!(copy.status, DownloadStatus::Completed);
+    assert_ne!(copy.file_name, ctx.engine.get(done).unwrap().file_name);
+    ctx.assert_file_matches(done);
+    ctx.assert_file_matches(copies[0]);
+
+    // The paused copy carries on from the copied partial file.
+    let copy = ctx.engine.get(copies[1]).unwrap();
+    assert_eq!(copy.status, DownloadStatus::Paused);
+    assert!(copy.downloaded > 0);
+    ctx.engine.resume(copies[1]).unwrap();
+    wait_for_status(&ctx.engine, copies[1], DownloadStatus::Completed).await;
+    ctx.assert_file_matches(copies[1]);
+    assert_eq!(ctx.engine.get(partial).unwrap().status, DownloadStatus::Paused);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn copy_queues_gives_a_copied_folder_its_own_queues() {
+    let ctx = Ctx::new().await;
+    let done = ctx
+        .engine
+        .enqueue(ctx.folder("a/inner"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_status(&ctx.engine, done, DownloadStatus::Completed).await;
+    let name = ctx.engine.get(done).unwrap().file_name.unwrap();
+    std::fs::create_dir_all(ctx.folder("b/inner")).unwrap();
+    std::fs::copy(ctx.folder(&format!("a/inner/{name}")), ctx.folder(&format!("b/inner/{name}"))).unwrap();
+
+    assert_eq!(ctx.engine.copy_queues(ctx.folder("a"), ctx.folder("b")).unwrap(), 1);
+    let queue = ctx.engine.queue_for_dir(ctx.folder("b/inner")).unwrap();
+    let copies = ctx.engine.queue(queue).unwrap().downloads;
+    assert_eq!(copies.len(), 1);
+    assert_ne!(copies[0], done);
+    ctx.assert_file_matches(copies[0]);
+    assert_eq!(ctx.engine.get(done).unwrap().queue_id, ctx.engine.queue_for_dir(ctx.folder("a/inner")).unwrap());
+
+    // A folder that already has a queue isn't copied over.
+    assert!(ctx.engine.copy_queues(ctx.folder("a"), ctx.folder("b")).is_err());
+}

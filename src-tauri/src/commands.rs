@@ -237,6 +237,87 @@ pub fn move_downloads(engine: State<'_, Engine>, ids: Vec<DownloadId>, dir: Stri
     engine.move_downloads(&ids, dir).map_err(err)
 }
 
+/// Copies downloads, with their files, into the queue for `dir`. Returns the
+/// copies' ids. Runs off the main thread, since big files take a while.
+#[tauri::command]
+pub async fn copy_downloads(
+    engine: State<'_, Engine>,
+    ids: Vec<DownloadId>,
+    dir: String,
+) -> CommandResult<Vec<DownloadId>> {
+    let engine = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.copy_downloads(&ids, dir))
+        .await
+        .map_err(err)?
+        .map_err(err)
+}
+
+/// Copies folders, with everything in them and copies of their queues, into
+/// `dest`. A copy whose name is taken there is named "<name> copy" (or
+/// "<name> copy 2", ...), so copying next to the original works. Returns the
+/// copies' paths. Stops at the first folder that can't be copied; the ones
+/// before it stay copied.
+#[tauri::command]
+pub async fn copy_folders(engine: State<'_, Engine>, paths: Vec<String>, dest: String) -> CommandResult<Vec<String>> {
+    let engine = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let dest = PathBuf::from(dest);
+        let mut copies = Vec::new();
+        for path in paths {
+            let old = PathBuf::from(&path);
+            let name = old.file_name().ok_or("can't copy this folder")?.to_string_lossy().into_owned();
+            if dest.starts_with(&old) {
+                return Err(format!("can't copy \"{name}\" into itself"));
+            }
+            let new = free_folder_path(&dest, &name)?;
+            let copied = copy_dir(&old, &new).map_err(|e| format!("couldn't copy \"{name}\": {e}"));
+            if let Err(e) = copied.and_then(|()| engine.copy_queues(&old, &new).map_err(err)) {
+                let _ = fs::remove_dir_all(&new);
+                return Err(e);
+            }
+            copies.push(new.to_string_lossy().into_owned());
+        }
+        Ok(copies)
+    })
+    .await
+    .map_err(err)?
+}
+
+/// `dest/name`, or `dest/name copy`, `dest/name copy 2`, ... if that's taken.
+fn free_folder_path(dest: &Path, name: &str) -> CommandResult<PathBuf> {
+    for n in 0..1000 {
+        let candidate = match n {
+            0 => name.to_string(),
+            1 => format!("{name} copy"),
+            _ => format!("{name} copy {n}"),
+        };
+        let path = dest.join(candidate);
+        if !path.exists() {
+            return Ok(path);
+        }
+    }
+    Err(format!("couldn't find a free name for \"{name}\""))
+}
+
+/// Copies a folder and everything in it. Symbolic links are copied as links.
+fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let (src, dest) = (entry.path(), to.join(entry.file_name()));
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            copy_dir(&src, &dest)?;
+        } else if kind.is_symlink() {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(fs::read_link(&src)?, &dest)?;
+        } else {
+            fs::copy(&src, &dest)?;
+        }
+    }
+    Ok(())
+}
+
 /// Puts paused or failed downloads back in line in their queues.
 #[tauri::command]
 pub fn requeue_downloads(engine: State<'_, Engine>, ids: Vec<DownloadId>) -> CommandResult<()> {

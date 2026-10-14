@@ -9,7 +9,7 @@ import { useMarquee } from "./hooks/useMarquee";
 import { useStoredState } from "./hooks/useStoredState";
 import { engine } from "./lib/engine";
 import { formatSpeed, plural } from "./lib/format";
-import { displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
+import { baseName, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import {
   fileVm,
   folderVm,
@@ -29,6 +29,9 @@ interface History {
 
 /** On macOS, Control-click opens the context menu and Command adds to the selection. */
 const IS_MAC = navigator.userAgent.includes("Mac");
+
+/** Prefix for keyboard shortcuts shown in menus. */
+const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
 /** How long a failed move's message stays in the status bar. */
 const NOTICE_MS = 6000;
@@ -70,6 +73,16 @@ function linksIn(text: string): string[] {
   }
   return [...new Set(links)];
 }
+
+/** Items cut or copied, waiting to be pasted: download ids and folder paths. */
+interface Clip {
+  keys: string[];
+  /** Pasting moves them rather than copying them. */
+  cut: boolean;
+}
+
+/** Downloads are keyed by id, folders by their absolute path. */
+const isFolderKey = (key: string) => key.startsWith("/");
 
 function report(promise: Promise<unknown>) {
   promise.catch((e) => console.error(e));
@@ -113,6 +126,9 @@ export default function App() {
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
   /** Links from the clipboard waiting for the user to confirm. */
   const [pasting, setPasting] = useState<string[] | null>(null);
+  const [clip, setClip] = useState<Clip | null>(null);
+  /** What cutting or copying last put on the system clipboard; null if that failed. */
+  const clipText = useRef<string | null>(null);
   /** Whether the address bar is being typed in. */
   const [addressOpen, setAddressOpen] = useState(false);
   /** The search shown in place of the folder's contents; empty when browsing. */
@@ -391,24 +407,87 @@ export default function App() {
     onSelect: () => showInFolder(key),
   });
 
-  // Command-V adds the links on the clipboard to this folder's queue, after
-  // asking unless the user chose not to be asked.
+  // Cut and copy also put the items' paths on the system clipboard, so they can
+  // be pasted in other apps, and so copying something else takes over Command-V.
+  const clipItems = (keys: string[], cut: boolean) => {
+    if (!keys.length) return;
+    const text = keys
+      .map((key) => (isFolderKey(key) ? key : (files.find((f) => f.id === key)?.path ?? state.downloads[key]?.url)))
+      .filter(Boolean)
+      .join("\n");
+    setClip({ keys, cut });
+    clipText.current = text;
+    engine.writeClipboard(text).catch(() => (clipText.current = null));
+  };
+
+  /** Moves (after a cut) or copies the clipped items into `dest`, selecting them if they land here. */
+  const pasteItems = (dest: string) => {
+    if (!clip) return;
+    const { keys, cut } = clip;
+    const ids = keys.filter((key) => !isFolderKey(key) && key in state.downloads);
+    const paths = keys.filter(isFolderKey);
+    const pasted = cut
+      ? Promise.all([
+          ids.length ? engine.moveDownloads(ids, dest) : null,
+          paths.length ? engine.moveFolders(paths, dest) : null,
+        ]).then(() => [...paths.map((path) => joinPath(dest, baseName(path))), ...ids])
+      : Promise.all([
+          paths.length ? engine.copyFolders(paths, dest) : [],
+          ids.length ? engine.copyDownloads(ids, dest) : [],
+        ]).then(([folders, downloads]) => [...folders, ...downloads]);
+    // Cut items move once; copied ones can be pasted again.
+    if (cut) setClip(null);
+    pasted
+      .then((keys) => {
+        setNotice(null);
+        if (dest === cwd) select(keys);
+      })
+      .catch((e) => setNotice(`Couldn't paste: ${e}`))
+      .finally(() => setListNonce((n) => n + 1));
+  };
+
+  // Like Finder's New Folder: create it with a default name, then edit the name in place.
+  const newQueue = () => {
+    if (!cwd) return;
+    engine
+      .createQueue(cwd)
+      .then((path) => {
+        setListNonce((n) => n + 1);
+        select([path]);
+        setEditing(path);
+      })
+      .catch((e) => console.error(e));
+  };
+
+  /** Adds the links in `text` to this folder's queue, after asking unless the user chose not to be asked. */
+  const pasteLinks = (text: string) => {
+    const urls = linksIn(text);
+    if (!urls.length) return;
+    if (pasteMode === "always") {
+      addLinks(urls).catch((e) => setNotice(`Couldn't add: ${e}`));
+    } else {
+      setAdding(false);
+      setPasting(urls);
+    }
+  };
+
+  // Command-V pastes cut or copied items into this folder while the clipboard
+  // still holds them, and otherwise adds the links on it.
   const paste = () => {
+    if (!cwd) return;
     engine
       .readClipboard()
       .then((text) => {
-        const urls = linksIn(text);
-        if (!urls.length) return;
-        if (pasteMode === "always") {
-          addLinks(urls).catch((e) => setNotice(`Couldn't add: ${e}`));
-        } else {
-          setAdding(false);
-          setPasting(urls);
-        }
+        if (clip && (clipText.current === null || text === clipText.current)) pasteItems(cwd);
+        else if (text !== clipText.current) pasteLinks(text);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (clip && clipText.current === null) pasteItems(cwd);
+      });
   };
 
+  // Command-X and Command-C cut and copy the selection, for pasting elsewhere;
+  // Command-N makes a new folder with its own queue;
   // Command-Delete moves the selection to the Trash; Delete/Backspace alone
   // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
@@ -440,6 +519,12 @@ export default function App() {
       } else if (e.key.toLowerCase() === "v" && command) {
         e.preventDefault();
         paste();
+      } else if ((e.key.toLowerCase() === "c" || e.key.toLowerCase() === "x") && command && selection.length) {
+        e.preventDefault();
+        clipItems(selection, e.key.toLowerCase() === "x");
+      } else if (e.key.toLowerCase() === "n" && command) {
+        e.preventDefault();
+        newQueue();
       } else if ((e.key.toLowerCase() === "f" || e.key.toLowerCase() === "l") && command) {
         e.preventDefault();
         setAddressOpen(true);
@@ -447,6 +532,8 @@ export default function App() {
         setPasting(null);
       } else if (e.key === "Escape" && query) {
         setQuery("");
+      } else if (e.key === "Escape" && clip?.cut) {
+        setClip(null);
       } else if (e.key.toLowerCase() === "a" && command) {
         e.preventDefault();
         setSelected(new Set(order));
@@ -479,18 +566,6 @@ export default function App() {
     .filter(Boolean)
     .join(" · ");
 
-  // Like Finder's New Folder: create it with a default name, then edit the name in place.
-  const newQueue = () => {
-    engine
-      .createQueue(cwd)
-      .then((path) => {
-        setListNonce((n) => n + 1);
-        select([path]);
-        setEditing(path);
-      })
-      .catch((e) => console.error(e));
-  };
-
   const rename = async (path: string, name: string) => {
     const renamed = await engine.renameFolder(path, name);
     setEditing(null);
@@ -498,13 +573,26 @@ export default function App() {
     setListNonce((n) => n + 1);
   };
 
+  const clipMenu = (keys: string[]): MenuItem[] => [
+    { kind: "action", label: "Cut", shortcut: `${MOD}X`, onSelect: () => clipItems(keys, true) },
+    { kind: "action", label: "Copy", shortcut: `${MOD}C`, onSelect: () => clipItems(keys, false) },
+  ];
+  const pasteLabel = clip ? `Paste ${plural(clip.keys.length, "item")}` : "Paste";
+
   const backgroundMenu = (): MenuItem[] => {
     const items: MenuItem[] = [];
     if (queue) items.push({ kind: "header", label: summary ? `Queue · ${summary}` : "Queue" });
     items.push(
       { kind: "action", label: "Add download…", onSelect: () => setAdding(true) },
-      { kind: "action", label: "Paste link", onSelect: paste },
-      { kind: "action", label: "New queue", onSelect: newQueue },
+      ...(clip
+        ? [{ kind: "action", label: pasteLabel, shortcut: `${MOD}V`, onSelect: () => pasteItems(cwd) } as const]
+        : []),
+      {
+        kind: "action",
+        label: "Paste link",
+        onSelect: () => engine.readClipboard().then(pasteLinks).catch(() => {}),
+      },
+      { kind: "action", label: "New queue", shortcut: `${MOD}N`, onSelect: newQueue },
       {
         kind: "action",
         label: "Ask before adding pasted links",
@@ -570,7 +658,7 @@ export default function App() {
       }
     }
     if (query) items.push(showInFolderItem(vm.id));
-    items.push({ kind: "separator" });
+    items.push({ kind: "separator" }, ...clipMenu([vm.id]), { kind: "separator" });
     if (vm.done) {
       // The file stays on disk.
       items.push({
@@ -594,6 +682,7 @@ export default function App() {
       danger: true,
       onSelect: () => trashItems(selection),
     };
+    items.push(...clipMenu(selection), { kind: "separator" });
     if (!selectedFiles.length) return [...items, trash];
     const status = (f: FileVm) => state.downloads[f.id]?.status;
     const queuePaused = (f: FileVm) => state.queues[state.downloads[f.id]?.queue_id]?.settings.paused ?? false;
@@ -646,6 +735,11 @@ export default function App() {
         ...(query ? [showInFolderItem(target)] : []),
         { kind: "action", label: "Rename", onSelect: () => setEditing(target) },
         { kind: "separator" },
+        ...clipMenu([target]),
+        ...(clip && !clip.keys.includes(target)
+          ? [{ kind: "action", label: `${pasteLabel} Into Folder`, onSelect: () => pasteItems(target) } as const]
+          : []),
+        { kind: "separator" },
         { kind: "action", label: "Move to Trash", danger: true, onSelect: () => trashItems([target]) },
       ];
     }
@@ -677,6 +771,7 @@ export default function App() {
     onCancelRename: () => setEditing(null),
     dragging: new Set(drag?.keys),
     dropTarget: drag?.target ?? null,
+    cut: new Set(clip?.cut ? clip.keys : []),
   };
 
   return (

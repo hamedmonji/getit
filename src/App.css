@@ -975,3 +975,14 @@ input::placeholder {
   font-size: 10px;
   font-weight: 400;
 }
+
+.menu-shortcut {
+  float: right;
+  margin-left: 24px;
+  color: var(--muted);
+}
+
+.menu-item:hover:not(:disabled) .menu-shortcut {
+  color: inherit;
+  opacity: 0.8;
+}

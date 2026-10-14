@@ -23,6 +23,8 @@ export interface ItemViewProps {
   /** Items being dragged, and the folder they'd be dropped on. */
   dragging: Set<string>;
   dropTarget: string | null;
+  /** Items cut, waiting to be pasted somewhere else. */
+  cut: Set<string>;
 }
 
 /** Inline name field, like Finder's: Enter or clicking away saves, Escape cancels. */
@@ -130,7 +132,7 @@ function stateClass(props: ItemViewProps, key: string) {
   return (
     (props.selected.has(key) ? " selected" : "") +
     (props.dropTarget === key ? " drop-target" : "") +
-    (props.dragging.has(key) ? " dragging" : "")
+    (props.dragging.has(key) || props.cut.has(key) ? " dragging" : "")
   );
 }
 
