@@ -3,7 +3,7 @@
 
 import type { EngineState } from "../hooks/useEngine";
 import type { DownloadItem, QueueInfo } from "./engine";
-import { formatEta, formatSize, formatSpeed, plural } from "./format";
+import { formatEta, formatSize, formatSpeed } from "./format";
 import { isWithin, joinPath } from "./paths";
 
 export type ViewMode = "Icons" | "List";
@@ -202,7 +202,7 @@ export function folderVm(
   const ownPaused = queueForDir(state, path)?.settings.paused ?? false;
   const paused = ownPaused && st.pending > 0;
 
-  let sub = plural(folder.items, "item");
+  let sub = "";
   if (paused) sub = `Paused · ${st.pending} waiting`;
   else if (st.active) sub = `${st.active} ↓ · ${formatSpeed(st.speed)}`;
   else if (st.queued) sub = `${st.queued} queued`;

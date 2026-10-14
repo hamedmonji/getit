@@ -42,8 +42,7 @@ pub fn initial_dir(app: AppHandle) -> CommandResult<String> {
     if cfg!(debug_assertions) {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
-            .expect("src-tauri has a parent")
-            .join("test-downloads");
+            .expect("src-tauri has a parent");
         fs::create_dir_all(&dir).map_err(err)?;
         return Ok(dir.to_string_lossy().into_owned());
     }
