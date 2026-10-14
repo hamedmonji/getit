@@ -44,7 +44,6 @@ export interface FolderVm {
   showBar: boolean;
   pct: number;
   barColor: string;
-  tint: string;
   /** Whether a queue downloads into this folder or one inside it. */
   hasQueue: boolean;
 }
@@ -213,7 +212,6 @@ export function folderVm(state: EngineState, path: string): FolderVm {
     showBar: st.pending > 0,
     pct: st.pct,
     barColor: st.active ? "var(--accent)" : "var(--muted)",
-    tint: paused ? "var(--muted)" : "var(--accent)",
     hasQueue,
   };
 }

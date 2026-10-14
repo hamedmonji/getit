@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent } from "react";
+import type { MouseEvent } from "react";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { PauseIcon, PlayIcon, RetryIcon } from "./icons";
 
@@ -34,13 +34,13 @@ export function FileGlyph({ vm, size }: { vm: FileVm; size: Size }) {
   );
 }
 
+/** Folder icon in Finder's colours; grey while its queue is paused. */
 export function FolderGlyph({ vm, size }: { vm: FolderVm; size: Size }) {
-  const tab: CSSProperties = { background: `color-mix(in oklch, ${vm.tint} 55%, var(--panel2))` };
-  const body: CSSProperties = { background: `color-mix(in oklch, ${vm.tint} 38%, var(--panel2))` };
   return (
-    <div className={`folder-glyph ${size}`}>
-      <div className="folder-tab" style={tab} />
-      <div className="folder-body" style={body} />
+    <div className={`folder-glyph ${size}` + (vm.paused ? " paused" : "")}>
+      {/* The back with its tab, mostly hidden behind the front. */}
+      <div className="folder-back" />
+      <div className="folder-body" />
       {size === "large" && vm.active > 0 && <span className="folder-count">{vm.active}</span>}
       {size === "large" && vm.paused && (
         <span className="folder-paused">
