@@ -487,7 +487,8 @@ export default function App() {
   };
 
   // Command-X and Command-C cut and copy the selection, for pasting elsewhere;
-  // Command-N makes a new folder with its own queue;
+  // Command-N makes a new folder with its own queue; Command-[ and Command-]
+  // go back and forward;
   // Command-Delete moves the selection to the Trash; Delete/Backspace alone
   // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
@@ -522,6 +523,10 @@ export default function App() {
       } else if ((e.key.toLowerCase() === "c" || e.key.toLowerCase() === "x") && command && selection.length) {
         e.preventDefault();
         clipItems(selection, e.key.toLowerCase() === "x");
+      } else if ((e.key === "[" || e.key === "]") && command) {
+        e.preventDefault();
+        if (e.key === "[") goBack();
+        else goForward();
       } else if (e.key.toLowerCase() === "n" && command) {
         e.preventDefault();
         newQueue();

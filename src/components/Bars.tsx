@@ -18,6 +18,7 @@ export type Theme = "Light" | "Dark";
 
 /** Room for the native macOS window buttons, which sit over the toolbar. */
 const IS_MAC = navigator.userAgent.includes("Mac");
+const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
 export interface ToolbarProps {
   canBack: boolean;
@@ -62,10 +63,10 @@ export function Toolbar(p: ToolbarProps) {
     <div className="toolbar" data-tauri-drag-region>
       {IS_MAC && <div className="traffic-light-space" data-tauri-drag-region />}
       <div className="nav-buttons">
-        <button {...nav(p.canBack)} title="Back" onClick={p.onBack}>
+        <button {...nav(p.canBack)} title={`Back (${MOD}[)`} onClick={p.onBack}>
           <BackIcon />
         </button>
-        <button {...nav(p.canForward)} title="Forward" onClick={p.onForward}>
+        <button {...nav(p.canForward)} title={`Forward (${MOD}])`} onClick={p.onForward}>
           <ForwardIcon />
         </button>
         <button {...nav(p.canUp)} title="Enclosing folder" onClick={p.onUp}>
