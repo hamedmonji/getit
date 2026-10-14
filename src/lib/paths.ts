@@ -41,16 +41,3 @@ export function resolvePath(raw: string, home: string): string {
   }
   return "/" + parts.join("/");
 }
-
-/** Folders from `home` (or the root, outside it) down to `path`, for the breadcrumbs. */
-export function crumbsFrom(home: string, path: string): { label: string; path: string }[] {
-  const inHome = isWithin(path, home);
-  const root = inHome ? home : "/";
-  const crumbs = [{ label: inHome ? "~" : "/", path: root }];
-  let current = root;
-  for (const part of path.slice(root.length).split("/").filter(Boolean)) {
-    current = joinPath(current, part);
-    crumbs.push({ label: part, path: current });
-  }
-  return crumbs;
-}

@@ -9,7 +9,7 @@ import { useMarquee } from "./hooks/useMarquee";
 import { useStoredState } from "./hooks/useStoredState";
 import { engine } from "./lib/engine";
 import { formatSpeed, plural } from "./lib/format";
-import { crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
+import { displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import {
   fileVm,
   folderVm,
@@ -688,9 +688,6 @@ export default function App() {
         onBack={goBack}
         onForward={goForward}
         onUp={goUp}
-        crumbs={crumbsFrom(home, cwd)}
-        onCrumb={(path) => go(path)}
-        dropTarget={drag?.target ?? null}
         cwdLabel={displayPath(cwd, home)}
         addressOpen={addressOpen}
         onAddressOpen={setAddressOpen}

@@ -26,10 +26,6 @@ export interface ToolbarProps {
   onBack: () => void;
   onForward: () => void;
   onUp: () => void;
-  crumbs: { label: string; path: string }[];
-  onCrumb: (path: string) => void;
-  /** Crumb that items being dragged would be dropped on. */
-  dropTarget: string | null;
   /** The current folder as shown to the user, such as `~/Movies`. */
   cwdLabel: string;
   /** Whether the address bar is being typed in. */
@@ -108,7 +104,7 @@ export function Toolbar(p: ToolbarProps) {
 }
 
 /**
- * The breadcrumbs, which turn into a field when clicked: text starting with `/`
+ * The current folder's path, which turns into a field when clicked: text starting with `/`
  * or `~` is a path to go to on Enter, anything else searches as it's typed.
  * The field stays while a search is shown.
  */
@@ -126,30 +122,13 @@ function AddressBar(p: ToolbarProps) {
   }, [p.addressOpen]);
 
   if (!p.addressOpen && !p.query) {
+    // The folder's name stays whole; its parents shrink first when space runs out.
+    const cut = p.cwdLabel.lastIndexOf("/") + 1;
+    const name = p.cwdLabel.slice(cut) || p.cwdLabel;
     return (
-      <div
-        className="crumbs"
-        title="Click to enter a path or search"
-        onClick={(e) => {
-          if (!(e.target as Element).closest(".crumb")) p.onAddressOpen(true);
-        }}
-      >
-        {p.crumbs.map((c, i) => {
-          const last = i === p.crumbs.length - 1;
-          return (
-            <span key={c.path} className="crumb-wrap">
-              {i > 0 && p.crumbs[i - 1].label !== "/" && <span className="crumb-sep">/</span>}
-              <button
-                className={"crumb" + (p.dropTarget === c.path ? " drop-target" : "")}
-                data-drop={c.path}
-                style={{ color: last ? "var(--ink)" : "var(--muted)", fontWeight: last ? 600 : 400 }}
-                onClick={() => p.onCrumb(c.path)}
-              >
-                {c.label}
-              </button>
-            </span>
-          );
-        })}
+      <div className="address-bar" title="Click to enter a path or search" onClick={() => p.onAddressOpen(true)}>
+        {cut > 0 && name !== p.cwdLabel && <span className="address-parent">{p.cwdLabel.slice(0, cut)}</span>}
+        <span className="address-name">{name}</span>
       </div>
     );
   }
@@ -179,7 +158,7 @@ function AddressBar(p: ToolbarProps) {
 
   const typingPath = isPathLike(text) && text !== p.cwdLabel;
   return (
-    <div className={"crumbs address" + (error ? " invalid" : "")}>
+    <div className={"address-bar editing" + (error ? " invalid" : "")}>
       <span className="address-icon">{isPathLike(text) ? <FolderIcon size={13} /> : <SearchIcon />}</span>
       <input
         ref={input}
