@@ -149,6 +149,23 @@ input::placeholder {
   color: var(--muted);
 }
 
+.address-segment {
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.address-segment:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.address-segment.drop-target {
+  background: var(--accentSoft);
+  box-shadow: 0 0 0 2px var(--accent);
+  color: var(--accent);
+}
+
 .address-name {
   flex: none;
   max-width: 100%;

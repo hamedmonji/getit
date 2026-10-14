@@ -28,6 +28,11 @@ export interface ToolbarProps {
   onUp: () => void;
   /** The current folder as shown to the user, such as `~/Movies`. */
   cwdLabel: string;
+  /** The folders from home (or the root) down to the current one. */
+  crumbs: { label: string; path: string }[];
+  onCrumb: (path: string) => void;
+  /** Folder in the path that items being dragged would be dropped on. */
+  dropTarget: string | null;
   /** Whether the address bar is being typed in. */
   addressOpen: boolean;
   onAddressOpen: (open: boolean) => void;
@@ -122,13 +127,33 @@ function AddressBar(p: ToolbarProps) {
   }, [p.addressOpen]);
 
   if (!p.addressOpen && !p.query) {
-    // The folder's name stays whole; its parents shrink first when space runs out.
-    const cut = p.cwdLabel.lastIndexOf("/") + 1;
-    const name = p.cwdLabel.slice(cut) || p.cwdLabel;
+    // Reads as one line of text, but each parent folder can be clicked to go
+    // there or dropped onto. The folder's name stays whole; its parents shrink
+    // first when space runs out.
+    const parents = p.crumbs.slice(0, -1);
+    const current = p.crumbs[p.crumbs.length - 1];
     return (
       <div className="address-bar" title="Click to enter a path or search" onClick={() => p.onAddressOpen(true)}>
-        {cut > 0 && name !== p.cwdLabel && <span className="address-parent">{p.cwdLabel.slice(0, cut)}</span>}
-        <span className="address-name">{name}</span>
+        {parents.length > 0 && (
+          <span className="address-parent">
+            {parents.map((c) => (
+              <span key={c.path}>
+                <span
+                  className={"address-segment" + (p.dropTarget === c.path ? " drop-target" : "")}
+                  data-drop={c.path}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    p.onCrumb(c.path);
+                  }}
+                >
+                  {c.label}
+                </span>
+                {c.label !== "/" && "/"}
+              </span>
+            ))}
+          </span>
+        )}
+        <span className="address-name">{current.label}</span>
       </div>
     );
   }
