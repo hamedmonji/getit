@@ -1119,7 +1119,6 @@ export default function App() {
               action: !item ? `Show in ${FILE_MANAGER}` : canStart(item) ? "Start" : "Show",
             };
           })}
-          dirLabel={displayPath(duplicates.dir, home)}
           mainLabel={
             duplicates.items.some((d) => canStart(currentOf(d)))
               ? "Start existing"

@@ -398,7 +398,6 @@ export interface DuplicateRow {
  */
 export function DuplicatePanel({
   rows,
-  dirLabel,
   mainLabel,
   onMain,
   onRow,
@@ -407,8 +406,6 @@ export function DuplicatePanel({
   onClose,
 }: {
   rows: DuplicateRow[];
-  /** The folder the links were being added to. */
-  dirLabel: string;
   /** "Start existing" when any can start, otherwise "Show existing" (or "Show in Finder"). */
   mainLabel: string;
   onMain: () => void;

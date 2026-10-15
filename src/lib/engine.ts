@@ -70,6 +70,7 @@ export const engine = {
   fileNameFor: (url: string) => invoke<string>("file_name_for", { url }),
   /** Whether `name` is taken in `dir` by a file or a partial download. */
   fileExists: (dir: string, name: string) => invoke<boolean>("file_exists", { dir, name }),
+  /** Adds a link to the queue for `dir`: in line if the queue runs, started right away if it's paused. */
   addDownload: (dir: string, url: string) => invoke<DownloadId>("add_download", { dir, url }),
   pause: (id: DownloadId) => invoke<void>("pause_download", { id }),
   /** Starts a waiting, paused or failed download right away, past its queue's limit or pause. */

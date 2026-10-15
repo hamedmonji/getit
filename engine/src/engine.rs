@@ -455,7 +455,8 @@ impl Engine {
         Ok(copies.len())
     }
 
-    /// Adds `url` to the end of a queue.
+    /// Adds `url` to the end of a queue, where it waits its turn (in a paused
+    /// queue, until the queue is resumed).
     pub fn add(&self, queue_id: QueueId, url: &str) -> Result<DownloadId> {
         let url = validate_url(url)?;
         let mut guard = self.inner.lock();
@@ -475,13 +476,26 @@ impl Engine {
             .map_err(|error| EngineError::NameLookupFailed { url, error })
     }
 
-    /// Adds `url` to the queue for `dir`, creating the queue if needed.
+    /// Adds `url` to the queue for `dir`, creating the queue if needed, as the
+    /// user adding a link. In a running queue it goes to the end and starts when
+    /// the queue's limit allows; in a paused queue it starts right away on its
+    /// own, as if resumed, and the queue stays paused.
     pub fn enqueue(&self, dir: impl AsRef<Path>, url: &str) -> Result<DownloadId> {
         let dir = normalize(dir.as_ref())?;
         let url = validate_url(url)?;
         let mut guard = self.inner.lock();
-        let queue_id = self.inner.ensure_queue(&mut guard, dir);
-        Ok(self.inner.add(&mut guard, queue_id, url))
+        let st = &mut *guard;
+        let queue_id = self.inner.ensure_queue(st, dir);
+        let id = self.inner.add(st, queue_id, url);
+        let queue = st.queues.get_mut(&queue_id).expect("queue exists");
+        if queue.settings.paused {
+            let item = queue.items.get_mut(&id).expect("just added");
+            item.status = DownloadStatus::Downloading;
+            self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
+            self.inner.spawn(&mut st.active, queue, id);
+            self.inner.save(queue);
+        }
+        Ok(id)
     }
 
     /// Pauses a downloading or queued download. The partial file is kept.

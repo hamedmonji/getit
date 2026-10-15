@@ -392,6 +392,37 @@ async fn the_same_link_twice_in_a_queue_gets_its_own_name() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn enqueue_starts_right_away_in_a_paused_queue() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let waiting = ctx.engine.add(queue, &url).unwrap();
+
+    let added = ctx.engine.enqueue(ctx.folder("a"), &url).unwrap();
+    assert_eq!(ctx.engine.get(added).unwrap().status, DownloadStatus::Downloading);
+    wait_for_status(&ctx.engine, added, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(added);
+    // The queue stays paused and what was waiting keeps waiting.
+    assert!(ctx.engine.queue(queue).unwrap().settings.paused);
+    assert_eq!(ctx.engine.get(waiting).unwrap().status, DownloadStatus::Queued);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn enqueue_respects_the_limit_of_a_running_queue() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let first = ctx.engine.add(queue, &url).unwrap();
+    ctx.unpause(queue);
+    wait_for_progress(&ctx.engine, first).await;
+
+    let added = ctx.engine.enqueue(ctx.folder("a"), &url).unwrap();
+    assert_eq!(ctx.engine.get(added).unwrap().status, DownloadStatus::Queued);
+    wait_for_status(&ctx.engine, added, DownloadStatus::Completed).await;
+    assert_eq!(ctx.engine.get(first).unwrap().status, DownloadStatus::Completed);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn pause_and_resume_continues_with_a_range_request() {
     let ctx = Ctx::new().await;
     let id = ctx
