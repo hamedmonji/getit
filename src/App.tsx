@@ -669,6 +669,10 @@ export default function App() {
       });
     } else {
       if (status === "downloading" || status === "queued") {
+        if (vm.action === "resume") {
+          // Waiting in a paused queue: start it on its own.
+          items.push({ kind: "action", label: "Resume", onSelect: () => report(engine.resume(vm.id)) });
+        }
         items.push({ kind: "action", label: "Pause", onSelect: () => report(engine.pause(vm.id)) });
       } else {
         items.push({
@@ -709,7 +713,10 @@ export default function App() {
     const status = (f: FileVm) => state.downloads[f.id]?.status;
     const queuePaused = (f: FileVm) => state.queues[state.downloads[f.id]?.queue_id]?.settings.paused ?? false;
     const pausable = selectedFiles.filter((f) => status(f) === "downloading" || status(f) === "queued");
-    const resumable = selectedFiles.filter((f) => status(f) === "paused" || status(f) === "failed");
+    // Downloads waiting in a paused queue can be started on their own too.
+    const resumable = selectedFiles.filter(
+      (f) => status(f) === "paused" || status(f) === "failed" || (status(f) === "queued" && queuePaused(f)),
+    );
     const done = selectedFiles.filter((f) => f.done);
     items.push(
       {

@@ -108,7 +108,7 @@ export function fileVm(
     status = total
       ? `${pct}% · ${formatSpeed(speed)} · ${formatEta(etaS)}`
       : `${formatSize(item.downloaded)} · ${formatSpeed(speed)}`;
-  } else if (waiting) status = `Queue paused · ${pct}%`;
+  } else if (waiting) status = `${pct}%`;
   else if (item.status === "queued") status = `Queued #${queuedIds.indexOf(item.id) + 1}`;
   else if (item.status === "paused") status = `Paused · ${pct}%`;
   else if (item.status === "failed") status = `Failed at ${pct}%`;
@@ -122,7 +122,7 @@ export function fileVm(
     ? null
     : failed
       ? "retry"
-      : item.status === "paused"
+      : item.status === "paused" || waiting
         ? "resume"
         : "pause";
   const sizeLabel = total ? formatSize(total) : item.downloaded ? formatSize(item.downloaded) : "—";

@@ -509,9 +509,9 @@ impl Engine {
         Ok(())
     }
 
-    /// Starts a paused or failed download right away, on its own, continuing from
-    /// its partial file. It runs whether or not its queue is paused or full, takes
-    /// no queue slot, and starts nothing else.
+    /// Starts a waiting, paused or failed download right away, on its own,
+    /// continuing from its partial file. It runs whether or not its queue is paused
+    /// or full, takes no queue slot, and starts nothing else.
     pub fn resume(&self, id: DownloadId) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
@@ -520,7 +520,10 @@ impl Engine {
             .items
             .get_mut(&id)
             .ok_or(EngineError::DownloadNotFound(id))?;
-        if !matches!(item.status, DownloadStatus::Paused | DownloadStatus::Failed) {
+        if !matches!(
+            item.status,
+            DownloadStatus::Queued | DownloadStatus::Paused | DownloadStatus::Failed
+        ) {
             return Err(invalid("resume", item));
         }
         item.status = DownloadStatus::Downloading;

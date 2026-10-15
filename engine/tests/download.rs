@@ -771,6 +771,25 @@ async fn resume_starts_only_that_download() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn resume_starts_a_download_waiting_in_a_paused_queue() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let first = ctx.engine.add(queue, &url).unwrap();
+    let second = ctx.engine.add(queue, &url).unwrap();
+
+    ctx.engine.resume(second).unwrap();
+    assert!(ctx.engine.get(second).unwrap().manual);
+    wait_for_status(&ctx.engine, second, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(second);
+    assert!(ctx.engine.queue(queue).unwrap().settings.paused);
+    assert_eq!(
+        ctx.engine.get(first).unwrap().status,
+        DownloadStatus::Queued
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn resume_right_after_pause_continues_the_download() {
     let ctx = Ctx::new().await;
     let id = ctx
