@@ -8,6 +8,8 @@ import {
   ForwardIcon,
   GridIcon,
   ListIcon,
+  PauseIcon,
+  PlayIcon,
   PlusIcon,
   SearchIcon,
   ThemeIcon,
@@ -52,6 +54,9 @@ export interface ToolbarProps {
   /** Whether folders without a queue inside them are shown. */
   showAllFolders: boolean;
   onToggleFolders: () => void;
+  /** The current folder's queue: whether it's stopped or running; null when it has none. */
+  queueState: "stopped" | "running" | null;
+  onToggleQueue: () => void;
   onToggleAdd: () => void;
   theme: Theme;
   onToggleTheme: () => void;
@@ -94,6 +99,15 @@ export function Toolbar(p: ToolbarProps) {
           </button>
         ))}
       </div>
+      {p.queueState && (
+        <button
+          className="square-btn"
+          title={p.queueState === "stopped" ? "Resume queue" : "Pause queue"}
+          onClick={p.onToggleQueue}
+        >
+          {p.queueState === "stopped" ? <PlayIcon size={12} /> : <PauseIcon size={12} />}
+        </button>
+      )}
       <button className="primary-btn" onClick={p.onToggleAdd}>
         <PlusIcon />
         Add link

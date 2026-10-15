@@ -599,6 +599,19 @@ export default function App() {
   ];
   const pasteLabel = clip ? `Paste ${plural(clip.keys.length, "item")}` : "Paste";
 
+  const held = queue ? queue.downloads.filter((id) => state.downloads[id]?.status === "paused") : [];
+  // Downloads paused one by one stop the queue as surely as pausing it does.
+  const queueStopped = !!queue && (queue.settings.paused || (own.active === 0 && own.queued === 0 && held.length > 0));
+  const toggleQueue = () => {
+    if (!queue) return;
+    const { settings } = queue;
+    const resumeQueue = async () => {
+      if (settings.paused) await engine.setQueueSettings(queue.id, { ...settings, paused: false });
+      if (held.length) await engine.requeue(held);
+    };
+    report(queueStopped ? resumeQueue() : engine.setQueueSettings(queue.id, { ...settings, paused: true }));
+  };
+
   const backgroundMenu = (): MenuItem[] => {
     const items: MenuItem[] = [];
     if (queue) items.push({ kind: "header", label: summary ? `Queue · ${summary}` : "Queue" });
@@ -623,20 +636,12 @@ export default function App() {
     );
     if (queue) {
       const { settings } = queue;
-      const held = queue.downloads.filter((id) => state.downloads[id]?.status === "paused");
-      // Downloads paused one by one stop the queue as surely as pausing it does.
-      const stopped = settings.paused || (own.active === 0 && own.queued === 0 && held.length > 0);
-      const resumeQueue = async () => {
-        if (settings.paused) await engine.setQueueSettings(queue.id, { ...settings, paused: false });
-        if (held.length) await engine.requeue(held);
-      };
       items.push(
         { kind: "separator" },
         {
           kind: "action",
-          label: stopped ? "Resume queue" : "Pause queue",
-          onSelect: () =>
-            report(stopped ? resumeQueue() : engine.setQueueSettings(queue.id, { ...settings, paused: true })),
+          label: queueStopped ? "Resume queue" : "Pause queue",
+          onSelect: toggleQueue,
         },
         {
           kind: "stepper",
@@ -838,6 +843,8 @@ export default function App() {
         onMode={setMode}
         showAllFolders={showAllFolders}
         onToggleFolders={() => setFolderFilter(showAllFolders ? "queues" : "all")}
+        queueState={queue ? (queueStopped ? "stopped" : "running") : null}
+        onToggleQueue={toggleQueue}
         onToggleAdd={() => {
           setPasting(null);
           setAdding((a) => !a);
