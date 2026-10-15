@@ -23,8 +23,6 @@ export interface DownloadItem {
   etag: string | null;
   last_modified: string | null;
   error: string | null;
-  /** Started on its own rather than by its queue. */
-  manual: boolean;
   added_at: number;
 }
 
@@ -70,7 +68,7 @@ export const engine = {
   listDir: (path: string) => invoke<DirListing>("list_dir", { path }),
   addDownload: (dir: string, url: string) => invoke<DownloadId>("add_download", { dir, url }),
   pause: (id: DownloadId) => invoke<void>("pause_download", { id }),
-  /** Starts a paused or failed download on its own, outside its queue. */
+  /** Starts a waiting, paused or failed download right away, past its queue's limit or pause. */
   resume: (id: DownloadId) => invoke<void>("resume_download", { id }),
   /** Puts paused or failed downloads back in line; their queue starts them when it has room. */
   requeue: (ids: DownloadId[]) => invoke<void>("requeue_downloads", { ids }),

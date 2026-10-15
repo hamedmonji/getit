@@ -80,9 +80,9 @@ export function Toolbar(p: ToolbarProps) {
       </div>
       <AddressBar {...p} />
       <button
-        className={"square-btn" + (p.showAllFolders ? "" : " toggled")}
-        title={p.showAllFolders ? "Hide folders without downloads" : "Show all folders"}
-        aria-pressed={!p.showAllFolders}
+        className={"square-btn" + (p.showAllFolders ? " toggled" : "")}
+        title={`${p.showAllFolders ? "Show only folders with downloads" : "Show all folders"} (${MOD}.)`}
+        aria-pressed={p.showAllFolders}
         onClick={p.onToggleFolders}
       >
         <FolderIcon />

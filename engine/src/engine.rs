@@ -241,9 +241,9 @@ impl Engine {
         Ok(moves.len())
     }
 
-    /// Replaces a queue's settings. Pausing stops the downloads the queue started
-    /// and puts them back to `Queued` (downloads started on their own keep going);
-    /// unpausing or adding slots lets the queue start more.
+    /// Replaces a queue's settings. Pausing stops every running download in the
+    /// queue and puts it back to `Queued`; unpausing or adding slots lets the
+    /// queue start more.
     pub fn set_queue_settings(&self, id: QueueId, settings: QueueSettings) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
@@ -258,7 +258,6 @@ impl Engine {
                     st.active.get_mut(download_id),
                     queue.items.get_mut(download_id),
                 ) && item.status == DownloadStatus::Downloading
-                    && !item.manual
                 {
                     item.status = DownloadStatus::Queued;
                     active.stop(Stop::Pause);
@@ -289,8 +288,8 @@ impl Engine {
     }
 
     /// Moves downloads to the end of the queue for `dir` (creating it if needed),
-    /// taking their files along. Downloads the old queue was running wait in the
-    /// new one; ones started on their own restart there. A file whose name is
+    /// taking their files along. Running downloads stop and wait in the new one,
+    /// which starts them when it has room. A file whose name is
     /// taken in `dir` gets a free one. Downloads already in that queue stay put.
     pub fn move_downloads(&self, ids: &[DownloadId], dir: impl AsRef<Path>) -> Result<()> {
         let dir = normalize(dir.as_ref())?;
@@ -325,12 +324,10 @@ impl Engine {
             }
             let mut item = from.remove(id).expect("owned download exists");
             if let Some(active) = st.active.get_mut(&id) {
-                let manual = item.status == DownloadStatus::Downloading && item.manual;
-                if item.status == DownloadStatus::Downloading && !manual {
+                if item.status == DownloadStatus::Downloading {
                     item.status = DownloadStatus::Queued;
                 }
                 active.stop(Stop::Pause);
-                active.restart = manual;
                 active.moved_from.get_or_insert_with(|| from.dir.clone());
             }
             item.queue_id = target;
@@ -501,9 +498,9 @@ impl Engine {
         Ok(())
     }
 
-    /// Starts a waiting, paused or failed download right away, on its own,
-    /// continuing from its partial file. It runs whether or not its queue is paused
-    /// or full, takes no queue slot, and starts nothing else.
+    /// Starts a waiting, paused or failed download right away, continuing from its
+    /// partial file. It runs whether or not its queue is paused or full, and starts
+    /// nothing else. While it runs it takes up one of the queue's slots.
     pub fn resume(&self, id: DownloadId) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
@@ -519,7 +516,6 @@ impl Engine {
             return Err(invalid("resume", item));
         }
         item.status = DownloadStatus::Downloading;
-        item.manual = true;
         item.error = None;
         self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
         match st.active.get_mut(&id) {
@@ -549,7 +545,6 @@ impl Engine {
                 continue;
             }
             item.status = DownloadStatus::Queued;
-            item.manual = false;
             item.error = None;
             // A worker still stopping after a pause stays stopped; the queue starts it again.
             if let Some(active) = st.active.get_mut(id) {
@@ -684,7 +679,6 @@ impl Inner {
             etag: None,
             last_modified: None,
             error: None,
-            manual: false,
             added_at: now_millis(),
         };
         let id = item.id;
@@ -709,7 +703,6 @@ impl Inner {
                 continue;
             };
             item.status = DownloadStatus::Downloading;
-            item.manual = false;
             self.emit(EngineEvent::DownloadChanged(item.clone()));
             self.spawn(&mut st.active, item, &queue.dir);
         }
@@ -926,7 +919,6 @@ fn copy_of(item: &DownloadItem) -> DownloadItem {
     DownloadItem {
         id: DownloadId::new(),
         status,
-        manual: false,
         error: None,
         added_at: now_millis(),
         ..item.clone()

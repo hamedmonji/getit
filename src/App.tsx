@@ -120,9 +120,10 @@ export default function App() {
   const [folderFilter, setFolderFilter] = useStoredState<"all" | "queues">(
     "getit.folders",
     ["all", "queues"],
-    () => "all",
+    () => "queues",
   );
   const showAllFolders = folderFilter === "all";
+  const toggleFolders = () => setFolderFilter(showAllFolders ? "queues" : "all");
   /** Whether pasting links asks first or adds them right away. */
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
   /** Links from the clipboard waiting for the user to confirm. */
@@ -503,7 +504,7 @@ export default function App() {
 
   // Command-X and Command-C cut and copy the selection, for pasting elsewhere;
   // Command-N makes a new folder with its own queue; Command-[ and Command-]
-  // go back and forward;
+  // go back and forward; Command-. shows or hides folders without downloads;
   // Command-Delete moves the selection to the Trash; Delete/Backspace alone
   // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
@@ -542,6 +543,9 @@ export default function App() {
         e.preventDefault();
         if (e.key === "[") goBack();
         else goForward();
+      } else if (e.key === "." && command) {
+        e.preventDefault();
+        toggleFolders();
       } else if (e.key.toLowerCase() === "n" && command) {
         e.preventDefault();
         newQueue();
@@ -842,7 +846,7 @@ export default function App() {
         mode={mode}
         onMode={setMode}
         showAllFolders={showAllFolders}
-        onToggleFolders={() => setFolderFilter(showAllFolders ? "queues" : "all")}
+        onToggleFolders={toggleFolders}
         queueState={queue ? (queueStopped ? "stopped" : "running") : null}
         onToggleQueue={toggleQueue}
         onToggleAdd={() => {
@@ -920,7 +924,7 @@ export default function App() {
               ? `${displayPath(dirOf(selFile.id) ?? cwd, home)} — ${selFile.info}`
               : selFile.info
             : selFolder
-              ? `${displayPath(selFolder.path, home)} — double-click to open`
+              ? `${displayPath(selFolder.path, home)}`
               : selection.length > 1
                 ? `${plural(selection.length, "item")} selected — drag onto a folder to move`
                 : ""

@@ -45,7 +45,6 @@ impl Queue {
             item.queue_id = queue.id;
             if item.status == DownloadStatus::Downloading {
                 item.status = DownloadStatus::Paused;
-                item.manual = false;
             }
             if item.status != DownloadStatus::Completed {
                 item.downloaded = item
@@ -117,8 +116,8 @@ impl Queue {
     }
 
     /// The queued downloads to start now, in queue order, to fill the queue's free
-    /// slots. Only downloads the queue started itself take up slots; ones started
-    /// on their own are skipped.
+    /// slots. Every running download takes up a slot, including ones the user
+    /// started past the limit.
     pub fn next_to_start(&self, is_running: impl Fn(&DownloadId) -> bool) -> Vec<DownloadId> {
         if self.settings.paused {
             return Vec::new();
@@ -126,7 +125,7 @@ impl Queue {
         let running = self
             .order
             .iter()
-            .filter(|id| is_running(id) && self.items.get(id).is_some_and(|item| !item.manual))
+            .filter(|id| is_running(id))
             .count();
         let free = self.settings.max_concurrent.saturating_sub(running);
         self.order
