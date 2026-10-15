@@ -135,6 +135,20 @@ fn count_visible(dir: &Path) -> usize {
     })
 }
 
+/// Whether `name` is already taken in `dir` by a file or a partial download.
+#[tauri::command]
+pub fn file_exists(dir: String, name: String) -> bool {
+    let dir = Path::new(&dir);
+    dir.join(&name).exists() || dir.join(format!("{name}.part")).exists()
+}
+
+/// The file name the server gives `url`, for checking it against existing
+/// downloads and files before adding it.
+#[tauri::command]
+pub async fn file_name_for(engine: State<'_, Engine>, url: String) -> CommandResult<String> {
+    engine.file_name_for(&url).await.map_err(err)
+}
+
 #[tauri::command]
 pub fn add_download(engine: State<'_, Engine>, dir: String, url: String) -> CommandResult<DownloadId> {
     engine.enqueue(dir, &url).map_err(err)

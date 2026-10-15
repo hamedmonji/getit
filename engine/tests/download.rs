@@ -377,6 +377,21 @@ async fn enqueue_downloads_into_the_folder_queue() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn the_same_link_twice_in_a_queue_gets_its_own_name() {
+    let ctx = Ctx::new().await;
+    let url = ctx.url("/file.bin");
+    let first = ctx.engine.enqueue(ctx.folder("a"), &url).unwrap();
+    wait_for_status(&ctx.engine, first, DownloadStatus::Completed).await;
+    // Even with the first file gone from disk, its name stays its own.
+    std::fs::remove_file(ctx.folder("a/file.bin")).unwrap();
+
+    let second = ctx.engine.enqueue(ctx.folder("a"), &url).unwrap();
+    let item = wait_for_status(&ctx.engine, second, DownloadStatus::Completed).await;
+    assert_eq!(item.file_name.as_deref(), Some("file (1).bin"));
+    ctx.assert_file_matches(second);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn pause_and_resume_continues_with_a_range_request() {
     let ctx = Ctx::new().await;
     let id = ctx
@@ -597,6 +612,22 @@ async fn clear_completed_keeps_files_and_unfinished_downloads() {
     assert!(ctx.engine.get(done).is_none());
     assert_eq!(ctx.engine.queue(queue).unwrap().downloads, vec![waiting]);
     assert!(item.file_path(&ctx.folder("a")).unwrap().exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn file_name_for_asks_the_server() {
+    let ctx = Ctx::new().await;
+    assert_eq!(
+        ctx.engine.file_name_for(&ctx.url("/attachment")).await.unwrap(),
+        "report final.pdf"
+    );
+    assert_eq!(
+        ctx.engine.file_name_for(&ctx.url("/file.bin?sig=1")).await.unwrap(),
+        "file.bin"
+    );
+    assert!(ctx.engine.file_name_for(&ctx.url("/missing")).await.is_err());
+    // Nothing was added.
+    assert!(ctx.engine.queues().is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]

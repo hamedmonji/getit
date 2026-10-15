@@ -66,6 +66,10 @@ export const engine = {
   /** Where the browser opens: a test folder in development, home otherwise. */
   initialDir: () => invoke<string>("initial_dir"),
   listDir: (path: string) => invoke<DirListing>("list_dir", { path }),
+  /** The file name the server gives `url`; rejects if it can't be reached. */
+  fileNameFor: (url: string) => invoke<string>("file_name_for", { url }),
+  /** Whether `name` is taken in `dir` by a file or a partial download. */
+  fileExists: (dir: string, name: string) => invoke<boolean>("file_exists", { dir, name }),
   addDownload: (dir: string, url: string) => invoke<DownloadId>("add_download", { dir, url }),
   pause: (id: DownloadId) => invoke<void>("pause_download", { id }),
   /** Starts a waiting, paused or failed download right away, past its queue's limit or pause. */

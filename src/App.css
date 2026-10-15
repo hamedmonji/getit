@@ -846,6 +846,127 @@ input::placeholder {
 
 /* Status bar */
 
+/* Links being added, before they're downloads */
+
+.tile.pending,
+.row.pending {
+  opacity: 0.6;
+  cursor: default;
+  animation: pending-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pending-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Already-downloaded prompt, above the status bar */
+
+.dup-panel {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.06);
+}
+
+.dup-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dup-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.dup-sub {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.dup-rows {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dup-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+}
+
+.dup-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dup-name {
+  font-weight: 600;
+}
+
+.dup-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.dup-status {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accentSoft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.dup-where {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dup-where:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.dup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .status-bar {
   height: 28px;
   flex: none;

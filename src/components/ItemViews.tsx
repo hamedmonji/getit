@@ -5,6 +5,8 @@ import { ActionButton, FileGlyph, FolderGlyph, ProgressBar } from "./Glyphs";
 export interface ItemViewProps {
   folders: FolderVm[];
   files: FileVm[];
+  /** Links being added that aren't downloads yet; shown dimmed, and can't be selected. */
+  pending: FileVm[];
   /** Selected folder paths and download ids. */
   selected: Set<string>;
   /** Press on a folder (by path) or download (by id); may start a drag. */
@@ -169,6 +171,15 @@ export function IconView(props: ItemViewProps) {
           </div>
         </div>
       ))}
+      {props.pending.map((f) => (
+        <div key={f.id} className="tile pending" title={f.info}>
+          <FileGlyph vm={f} size="large" />
+          <div className="tile-name clamp" style={{ color: f.nameColor }}>
+            {f.name}
+          </div>
+          <div className="tile-sub ellipsis">{f.status}</div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -217,6 +228,18 @@ export function ListView(props: ItemViewProps) {
             <div className="row-actions">
               <ActionButton className="row-action" vm={f} onAction={props.onAction} />
             </div>
+          </div>
+        ))}
+        {props.pending.map((f) => (
+          <div key={f.id} className="row file-row pending" title={f.info}>
+            <FileGlyph vm={f} size="small" />
+            <span className="row-name" style={{ color: f.nameColor }}>
+              {f.name}
+            </span>
+            <span className="row-status">{f.status}</span>
+            <span className="row-size">{f.sizeLabel}</span>
+            <span />
+            <span />
           </div>
         ))}
       </div>

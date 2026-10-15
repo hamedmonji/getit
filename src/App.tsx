@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { InputBar, PasteBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
+import { DuplicatePanel, InputBar, PasteBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
 import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
 import { useDirListing } from "./hooks/useDirListing";
@@ -7,12 +7,15 @@ import { useEngine } from "./hooks/useEngine";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
 import { useStoredState } from "./hooks/useStoredState";
-import { engine } from "./lib/engine";
+import { engine, type DownloadItem, type DownloadStatus } from "./lib/engine";
 import { formatSpeed, plural } from "./lib/format";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import {
+  displayName,
   fileVm,
   folderVm,
+  nameFromUrl,
+  pendingVm,
   queueForDir,
   searchResults,
   stats,
@@ -20,6 +23,57 @@ import {
   type FolderVm,
   type ViewMode,
 } from "./lib/viewModels";
+
+/** Links being added that are already downloads, waiting for the user to decide. */
+interface Duplicates {
+  /** Folder the links were being added to. */
+  dir: string;
+  items: Duplicate[];
+}
+
+/**
+ * What a link being added clashes with: a download of the same link anywhere, or
+ * in the target folder a download or a file with the name it would get.
+ */
+type Duplicate = (
+  | { url: string; kind: "link" | "name"; existing: DownloadItem }
+  | { url: string; kind: "file"; name: string }
+) & {
+  /** The temporary item shown for the link while it was checked, if any. */
+  pendingKey?: string;
+};
+
+/** A link being added that isn't a download yet: shown while the server is asked
+ * for its file name, and while the user decides about it if it's a duplicate. */
+interface PendingAdd {
+  key: string;
+  url: string;
+  dir: string;
+  /** The server's name for it, once known. */
+  name: string | null;
+}
+
+const STATUS_WORDS: Record<DownloadStatus, string> = {
+  queued: "Waiting",
+  downloading: "Downloading",
+  paused: "Paused",
+  completed: "Finished",
+  failed: "Failed",
+};
+
+/** `name` without the ` (1)`, ` (2)`, ... added to keep copies apart, so copies compare equal. */
+function withoutCopyNumber(name: string): string {
+  return name.replace(/ \(\d+\)(\.[^.]*)?$/, "$1");
+}
+
+/** A URL as the engine stores it, so the same link compares equal however it was written. */
+function sameUrl(url: string): string {
+  try {
+    return new URL(url).href;
+  } catch {
+    return url;
+  }
+}
 
 interface History {
   cwd: string;
@@ -91,6 +145,9 @@ function report(promise: Promise<unknown>) {
 
 export default function App() {
   const state = useEngine();
+  // For code that runs after waiting on the server, which needs the state as it is then.
+  const stateRef = useRef(state);
+  stateRef.current = state;
   const [home, setHome] = useState<string | null>(null);
   const [history, setHistory] = useState<History | null>(null);
   /** Selected folder paths and download ids. */
@@ -128,6 +185,8 @@ export default function App() {
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
   /** Links from the clipboard waiting for the user to confirm. */
   const [pasting, setPasting] = useState<string[] | null>(null);
+  const [duplicates, setDuplicates] = useState<Duplicates | null>(null);
+  const [pendingAdds, setPendingAdds] = useState<PendingAdd[]>([]);
   const [clip, setClip] = useState<Clip | null>(null);
   /** What cutting or copying last put on the system clipboard; null if that failed. */
   const clipText = useRef<string | null>(null);
@@ -379,21 +438,140 @@ export default function App() {
     select([]);
   };
 
-  /** Adds every link it can, then rejects with how many failed, if any did. */
-  const addLinks = async (urls: string[]) => {
-    if (!cwd) return;
+  /** Of several matching downloads, the one in `dir`'s queue, else an unfinished one. */
+  const bestMatch = (matches: DownloadItem[], dir: string) => {
+    const here = queueForDir(stateRef.current, dir)?.id;
+    return matches.find((d) => d.queue_id === here) ?? matches.find((d) => d.status !== "completed") ?? matches[0];
+  };
+
+  /** A download of the same link, finished or not, in any queue. Answered from memory. */
+  const findByLink = (url: string, dir: string): Duplicate | undefined => {
+    const key = sameUrl(url);
+    const existing = bestMatch(
+      Object.values(stateRef.current.downloads).filter((d) => sameUrl(d.url) === key),
+      dir,
+    );
+    return existing && { url, kind: "link", existing };
+  };
+
+  /**
+   * A download with the same file name in any queue (signed links differ each
+   * time for the same file), ignoring copy numbers; else a file or partial
+   * download with that name in `dir`.
+   */
+  const findByName = async (url: string, name: string, dir: string): Promise<Duplicate | undefined> => {
+    const base = withoutCopyNumber(name);
+    const existing = bestMatch(
+      Object.values(stateRef.current.downloads).filter((d) => withoutCopyNumber(displayName(d)) === base),
+      dir,
+    );
+    if (existing) return { url, kind: "name", existing };
+    if (await engine.fileExists(dir, name).catch(() => false)) return { url, kind: "file", name };
+    return undefined;
+  };
+
+  /** Adds the links' downloads to `dir`, selecting them; rejects with how many failed, if any did. */
+  const addNow = async (urls: string[], dir: string) => {
     const ids: string[] = [];
     const failed: unknown[] = [];
     for (const url of urls) {
       try {
-        ids.push(await engine.addDownload(cwd, url));
+        ids.push(await engine.addDownload(dir, url));
       } catch (e) {
         failed.push(e);
       }
     }
-    select(ids);
+    if (ids.length) select(ids);
     if (failed.length === 1 && urls.length === 1) throw failed[0];
     if (failed.length) throw `${plural(failed.length, "link")} of ${urls.length} couldn't be added: ${failed[0]}`;
+  };
+
+  /** Asks about these duplicates too, alongside any already being asked about for `dir`. */
+  const askAbout = (dir: string, items: Duplicate[]) =>
+    setDuplicates((prev) => (prev && prev.dir === dir ? { dir, items: [...prev.items, ...items] } : { dir, items }));
+
+  /** Drops the temporary items of duplicates that have been dealt with. */
+  const dropPending = (items: Duplicate[]) => {
+    const keys = new Set(items.map((d) => d.pendingKey));
+    setPendingAdds((list) => list.filter((p) => !keys.has(p.key)));
+  };
+
+  /**
+   * Adds links to `dir`, unless they already exist; then the user is asked.
+   * Links already in the list are found at once. The rest show as temporary
+   * items while the server is asked for their file names, which are checked
+   * against other downloads and the files in `dir`; each becomes a download, or
+   * stays until the user decides. `again` adds them all without checking.
+   * Rejects with how many failed to add, if any did.
+   */
+  const addLinks = async (urls: string[], dir = cwd, again = false) => {
+    if (!dir) return;
+    if (again) return addNow(urls, dir);
+
+    const byLink = urls.flatMap((url) => findByLink(url, dir) ?? []);
+    if (byLink.length) askAbout(dir, byLink);
+    const rest = urls.filter((url) => !byLink.some((d) => d.url === url));
+    if (!rest.length) return;
+
+    const pending: PendingAdd[] = rest.map((url) => ({ key: `pending:${crypto.randomUUID()}`, url, dir, name: null }));
+    setPendingAdds((list) => [...list, ...pending]);
+    const checked = await Promise.all(
+      pending.map(async (p) => {
+        // The name in the link stands in when the server can't be asked.
+        const name = await engine.fileNameFor(p.url).catch(() => nameFromUrl(p.url));
+        const duplicate = await findByName(p.url, name, dir);
+        return { p, name, duplicate: duplicate && { ...duplicate, pendingKey: p.key } };
+      }),
+    );
+
+    const byName = checked.flatMap((c) => c.duplicate ?? []);
+    if (byName.length) {
+      const names = new Map(checked.map((c) => [c.p.key, c.name]));
+      setPendingAdds((list) => list.map((p) => (names.has(p.key) ? { ...p, name: names.get(p.key)! } : p)));
+      askAbout(dir, byName);
+    }
+    const fresh = checked.filter((c) => !c.duplicate).map((c) => c.p);
+    if (!fresh.length) return;
+    try {
+      await addNow(
+        fresh.map((p) => p.url),
+        dir,
+      );
+    } finally {
+      // The downloads have replaced them by now.
+      const keys = new Set(fresh.map((p) => p.key));
+      setPendingAdds((list) => list.filter((p) => !keys.has(p.key)));
+    }
+  };
+
+  /** A duplicate's existing download as it is now; null for a file. */
+  const currentOf = (d: Duplicate): DownloadItem | null =>
+    d.kind === "file" ? null : (state.downloads[d.existing.id] ?? d.existing);
+  /** Unfinished and not running, so starting it means something. */
+  const canStart = (item: DownloadItem | null) =>
+    !!item && (item.status === "queued" || item.status === "paused" || item.status === "failed");
+
+  // Goes to a duplicate's existing download with it selected, or shows its file in Finder.
+  const showDuplicate = (dir: string, d: Duplicate) => {
+    const item = currentOf(d);
+    if (d.kind === "file" || !item) {
+      if (d.kind === "file") report(engine.reveal([joinPath(dir, d.name)]));
+      return;
+    }
+    const where = state.queues[item.queue_id]?.dir;
+    if (where) go(where, item.id);
+  };
+
+  // Starts the existing downloads that aren't finished, then shows the first
+  // download; with only files, shows them all in Finder.
+  const startExisting = (dir: string, items: Duplicate[]) => {
+    for (const d of items) {
+      const item = currentOf(d);
+      if (item && canStart(item)) report(engine.resume(item.id));
+    }
+    const first = items.find((d) => d.kind !== "file");
+    if (first) showDuplicate(dir, first);
+    else report(engine.reveal(items.flatMap((d) => (d.kind === "file" ? [joinPath(dir, d.name)] : []))));
   };
 
   /** The folder a download's file goes in. */
@@ -556,6 +734,9 @@ export default function App() {
       } else if ((e.key.toLowerCase() === "f" || e.key.toLowerCase() === "l") && command) {
         e.preventDefault();
         setAddressOpen(true);
+      } else if (e.key === "Escape" && duplicates) {
+        setDuplicates(null);
+        dropPending(duplicates.items);
       } else if (e.key === "Escape" && pasting) {
         setPasting(null);
       } else if (e.key === "Escape" && query) {
@@ -796,9 +977,18 @@ export default function App() {
   const selFolder = folders.find((g) => g.path === single);
   const nameOf = (key: string) =>
     folders.find((g) => g.path === key)?.name ?? files.find((f) => f.id === key)?.name ?? key;
+  // Temporary items for links being added here: while checked, and while the
+  // user decides about the duplicates among them.
+  const asked = new Set(duplicates?.items.map((d) => d.pendingKey));
+  const pending = results
+    ? []
+    : pendingAdds
+        .filter((p) => p.dir === shown && (p.name === null || asked.has(p.key)))
+        .map((p) => pendingVm(p.key, p.url, p.name, p.name === null ? "Checking…" : "Already downloaded"));
   const viewProps: ItemViewProps = {
     folders,
     files,
+    pending,
     selected,
     onItemMouseDown,
     onItemClick,
@@ -870,7 +1060,7 @@ export default function App() {
           mono
           onSubmit={async (raw) => {
             const url = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : "https://" + raw;
-            select([await engine.addDownload(cwd, url)]);
+            await addLinks([url]);
           }}
           onClose={() => setAdding(false)}
         />
@@ -903,7 +1093,7 @@ export default function App() {
       >
         {mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />}
         {marquee.box && <div className="marquee" style={marquee.box} />}
-        {count === 0 && shown === cwd && state.loaded && (
+        {count === 0 && !pending.length && shown === cwd && state.loaded && (
           <div className="empty">
             {query
               ? `Nothing${searchAll ? "" : ` in ${displayPath(cwd, home)}`} matches “${query}”.`
@@ -915,6 +1105,60 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {duplicates && (
+        <DuplicatePanel
+          rows={duplicates.items.map((d) => {
+            const item = currentOf(d);
+            return {
+              key: d.url,
+              name: item ? displayName(item) : d.kind === "file" ? d.name : d.url,
+              where: displayPath(item ? (state.queues[item.queue_id]?.dir ?? duplicates.dir) : duplicates.dir, home),
+              status: item ? STATUS_WORDS[item.status] : "File",
+              note: d.kind === "name" ? "same name, different link" : undefined,
+              action: !item ? `Show in ${FILE_MANAGER}` : canStart(item) ? "Start" : "Show",
+            };
+          })}
+          dirLabel={displayPath(duplicates.dir, home)}
+          mainLabel={
+            duplicates.items.some((d) => canStart(currentOf(d)))
+              ? "Start existing"
+              : duplicates.items.some((d) => d.kind !== "file")
+                ? "Show existing"
+                : `Show in ${FILE_MANAGER}`
+          }
+          onMain={() => {
+            setDuplicates(null);
+            dropPending(duplicates.items);
+            startExisting(duplicates.dir, duplicates.items);
+          }}
+          onRow={(i) => {
+            const d = duplicates.items[i];
+            const item = currentOf(d);
+            if (canStart(item)) report(engine.resume(item!.id));
+            showDuplicate(duplicates.dir, d);
+            // That one is dealt with; the prompt stays for the rest.
+            dropPending([d]);
+            const rest = duplicates.items.filter((_, j) => j !== i);
+            setDuplicates(rest.length ? { ...duplicates, items: rest } : null);
+          }}
+          onWhere={(i) => showDuplicate(duplicates.dir, duplicates.items[i])}
+          onAdd={() => {
+            setDuplicates(null);
+            addLinks(
+              duplicates.items.map((d) => d.url),
+              duplicates.dir,
+              true,
+            )
+              .catch((e) => setNotice(`Couldn't add: ${e}`))
+              .finally(() => dropPending(duplicates.items));
+          }}
+          onClose={() => {
+            setDuplicates(null);
+            dropPending(duplicates.items);
+          }}
+        />
+      )}
 
       <StatusBar
         itemCount={

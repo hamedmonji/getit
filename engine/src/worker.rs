@@ -4,7 +4,7 @@
 //! `.part` file's length is the resume offset, so a stopped download can carry on
 //! with a `Range` request whenever the server supports it.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::error::Error as StdError;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -28,6 +28,8 @@ const SPEED_WINDOW: Duration = Duration::from_secs(3);
 const WRITE_BUFFER: usize = 256 * 1024;
 const MAX_FILE_NAME_BYTES: usize = 200;
 const FALLBACK_FILE_NAME: &str = "download";
+/// How long a file name lookup waits for the server's response headers.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) enum WorkerMsg {
     Meta {
@@ -60,11 +62,13 @@ pub(crate) enum Outcome {
 }
 
 /// What a worker needs to know about a download, copied from its [`DownloadItem`]
-/// and its queue's folder.
+/// and its queue.
 pub(crate) struct Job {
     id: DownloadId,
     url: String,
     dest_dir: PathBuf,
+    /// Names the queue's other downloads use; a new name avoids them.
+    taken: HashSet<String>,
     file_name: Option<String>,
     total_bytes: Option<u64>,
     resumable: Option<bool>,
@@ -73,11 +77,12 @@ pub(crate) struct Job {
 }
 
 impl Job {
-    pub(crate) fn new(item: &DownloadItem, dest_dir: &Path) -> Self {
+    pub(crate) fn new(item: &DownloadItem, dest_dir: &Path, taken: HashSet<String>) -> Self {
         Self {
             id: item.id,
             url: item.url.clone(),
             dest_dir: dest_dir.to_path_buf(),
+            taken,
             file_name: item.file_name.clone(),
             total_bytes: item.total_bytes,
             resumable: item.resumable,
@@ -222,11 +227,8 @@ async fn attempt(
     };
 
     if job.file_name.is_none() {
-        let candidate = filename_from_disposition(headers)
-            .or_else(|| filename_from_url(response.url()))
-            .and_then(|name| sanitize_file_name(&name))
-            .unwrap_or_else(|| FALLBACK_FILE_NAME.to_string());
-        let name = reserve_file_name(&job.dest_dir, &candidate)
+        let candidate = file_name_for(headers, response.url());
+        let name = reserve_file_name(&job.dest_dir, &candidate, &job.taken)
             .await
             .map_err(|e| io_fatal(&job.dest_dir, e))?;
         job.file_name = Some(name);
@@ -427,6 +429,32 @@ fn parse_content_range_total(headers: &HeaderMap) -> Option<u64> {
 }
 
 /// File name from `Content-Disposition`, preferring the RFC 5987 `filename*` form.
+/// The name the server gives a download: from `Content-Disposition`, else the
+/// final URL's last segment, made safe for the file system.
+fn file_name_for(headers: &HeaderMap, url: &Url) -> String {
+    filename_from_disposition(headers)
+        .or_else(|| filename_from_url(url))
+        .and_then(|name| sanitize_file_name(&name))
+        .unwrap_or_else(|| FALLBACK_FILE_NAME.to_string())
+}
+
+/// Asks the server for the name a download of `url` would get, before a free
+/// name is picked in its folder. Reads only the response headers.
+pub(crate) async fn probe_file_name(client: &Client, url: &str) -> Result<String, String> {
+    // A one-byte range keeps servers that honour it from sending the file; the
+    // body is never read either way.
+    let request = client.get(url).header(header::RANGE, "bytes=0-0").send();
+    let response = tokio::time::timeout(PROBE_TIMEOUT, request)
+        .await
+        .map_err(|_| "the server took too long to answer".to_string())?
+        .map_err(|e| describe(&e))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("HTTP {status}"));
+    }
+    Ok(file_name_for(response.headers(), response.url()))
+}
+
 fn filename_from_disposition(headers: &HeaderMap) -> Option<String> {
     let value = headers.get(header::CONTENT_DISPOSITION)?.to_str().ok()?;
     let mut plain = None;
@@ -492,9 +520,10 @@ pub(crate) fn split_extension(name: &str) -> (&str, &str) {
     }
 }
 
-/// Picks a name that's free in `dir`, adding ` (1)`, ` (2)`, ... as needed, and
-/// claims it by creating the `.part` file so concurrent downloads can't take it.
-async fn reserve_file_name(dir: &Path, candidate: &str) -> io::Result<String> {
+/// Picks a name that's free in `dir` and not in `taken`, adding ` (1)`, ` (2)`,
+/// ... as needed, and claims it by creating the `.part` file so concurrent
+/// downloads can't take it.
+async fn reserve_file_name(dir: &Path, candidate: &str, taken: &HashSet<String>) -> io::Result<String> {
     let (stem, ext) = split_extension(candidate);
     for n in 0..10_000 {
         let name = if n == 0 {
@@ -502,7 +531,7 @@ async fn reserve_file_name(dir: &Path, candidate: &str) -> io::Result<String> {
         } else {
             format!("{stem} ({n}){ext}")
         };
-        if fs::try_exists(dir.join(&name)).await? {
+        if taken.contains(&name) || fs::try_exists(dir.join(&name)).await? {
             continue;
         }
         match OpenOptions::new()
@@ -608,15 +637,22 @@ mod tests {
     #[tokio::test]
     async fn reserves_unique_names() {
         let dir = tempfile::tempdir().unwrap();
+        let none = HashSet::new();
         std::fs::write(dir.path().join("a.zip"), b"done").unwrap();
         assert_eq!(
-            reserve_file_name(dir.path(), "a.zip").await.unwrap(),
+            reserve_file_name(dir.path(), "a.zip", &none).await.unwrap(),
             "a (1).zip"
         );
         // The first reservation's .part file now blocks the same name.
         assert_eq!(
-            reserve_file_name(dir.path(), "a.zip").await.unwrap(),
+            reserve_file_name(dir.path(), "a.zip", &none).await.unwrap(),
             "a (2).zip"
+        );
+        // So does a name another download in the queue uses, file or not.
+        let taken = HashSet::from(["a (3).zip".to_string()]);
+        assert_eq!(
+            reserve_file_name(dir.path(), "a.zip", &taken).await.unwrap(),
+            "a (4).zip"
         );
     }
 }

@@ -176,6 +176,8 @@ pub enum EngineError {
     MoveFailed { name: String, error: String },
     #[error("couldn't copy {name}: {error}")]
     CopyFailed { name: String, error: String },
+    #[error("couldn't get the file name for {url}: {error}")]
+    NameLookupFailed { url: String, error: String },
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;

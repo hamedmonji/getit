@@ -59,13 +59,17 @@ export interface Stats {
 }
 
 export function displayName(item: DownloadItem): string {
-  if (item.file_name) return item.file_name;
+  return item.file_name ?? nameFromUrl(item.url);
+}
+
+/** The name a download of `url` would likely get, before the server says otherwise. */
+export function nameFromUrl(raw: string): string {
   try {
-    const url = new URL(item.url);
+    const url = new URL(raw);
     const last = url.pathname.split("/").filter(Boolean).pop();
     return last ? decodeURIComponent(last) : url.hostname;
   } catch {
-    return item.url;
+    return raw;
   }
 }
 
@@ -79,6 +83,34 @@ function percent(item: DownloadItem): number {
   if (item.status === "completed") return 100;
   if (!item.total_bytes) return 0;
   return Math.min(100, (item.downloaded / item.total_bytes) * 100);
+}
+
+/**
+ * A link being added that isn't a download yet, shown while the server is asked
+ * for its file name or while the user decides about a duplicate.
+ */
+export function pendingVm(key: string, url: string, name: string | null, status: string): FileVm {
+  const shown = name ?? nameFromUrl(url);
+  const ext = (shown.includes(".") ? shown.split(".").pop()! : "").toUpperCase().slice(0, 4);
+  return {
+    id: key,
+    name: shown,
+    ext,
+    status,
+    sizeLabel: "—",
+    pct: 0,
+    color: "var(--muted)",
+    nameColor: "var(--muted)",
+    isMedia: MEDIA.includes(ext),
+    done: false,
+    missing: false,
+    hue: hueOf(url),
+    showBar: false,
+    action: null,
+    actionLabel: "",
+    info: url,
+    path: null,
+  };
 }
 
 export function fileVm(

@@ -376,6 +376,94 @@ export function PasteBar({
   );
 }
 
+/** A link being added that's already a download, or a file, somewhere. */
+export interface DuplicateRow {
+  key: string;
+  /** The existing download's or file's name. */
+  name: string;
+  /** Its folder, such as `~/TV Shows/The diplomat`. */
+  where: string;
+  /** Its state, such as "Paused" or "Finished". */
+  status: string;
+  /** Why it counts as the same, when not the same link. */
+  note?: string;
+  /** What its own button does: start it, or show where it is. */
+  action: string;
+}
+
+/**
+ * Shown at the bottom when links being added already exist: lists each existing
+ * download or file and where it is, and offers to start (or show) them, add the
+ * links again, or cancel. Enter picks the main action, Escape cancels.
+ */
+export function DuplicatePanel({
+  rows,
+  dirLabel,
+  mainLabel,
+  onMain,
+  onRow,
+  onWhere,
+  onAdd,
+  onClose,
+}: {
+  rows: DuplicateRow[];
+  /** The folder the links were being added to. */
+  dirLabel: string;
+  /** "Start existing" when any can start, otherwise "Show existing" (or "Show in Finder"). */
+  mainLabel: string;
+  onMain: () => void;
+  /** One row's own button. */
+  onRow: (index: number) => void;
+  /** Goes to one row's folder. */
+  onWhere: (index: number) => void;
+  onAdd: () => void;
+  onClose: () => void;
+}) {
+  const batch = rows.length > 1;
+  return (
+    <div className="dup-panel" role="alertdialog" aria-label="Already downloaded">
+      <div className="dup-head">
+        <div className="dup-title">{batch ? `${rows.length} links are already downloaded` : "Already downloaded"}</div>
+      </div>
+      <ul className="dup-rows">
+        {rows.map((row, i) => (
+          <li key={row.key} className="dup-row">
+            <div className="dup-main">
+              <div className="dup-name ellipsis" title={row.name}>
+                {row.name}
+              </div>
+              <div className="dup-meta">
+                <span className="dup-status">{row.status}</span>
+                <span>in</span>
+                <button className="dup-where mono ellipsis" title={`Go to ${row.where}`} onClick={() => onWhere(i)}>
+                  {row.where}
+                </button>
+                {row.note && <span className="ellipsis">· {row.note}</span>}
+              </div>
+            </div>
+            {batch && (
+              <button className="plain-btn" onClick={() => onRow(i)}>
+                {row.action}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="dup-actions">
+        <button className="plain-btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="plain-btn" onClick={onAdd}>
+          Add as duplicate
+        </button>
+        <button className="primary-btn" autoFocus onClick={onMain}>
+          {mainLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function StatusBar({
   itemCount,
   selInfo,

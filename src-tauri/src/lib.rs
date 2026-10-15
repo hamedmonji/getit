@@ -28,6 +28,8 @@ pub fn run() {
             commands::home_dir,
             commands::initial_dir,
             commands::list_dir,
+            commands::file_name_for,
+            commands::file_exists,
             commands::add_download,
             commands::pause_download,
             commands::resume_download,

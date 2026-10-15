@@ -1,7 +1,7 @@
 //! A queue owns its folder, its settings and its downloads, and knows how to
 //! save and restore itself.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 
@@ -92,6 +92,16 @@ impl Queue {
         let item = self.items.remove(&id)?;
         self.order.retain(|other| *other != id);
         Some(item)
+    }
+
+    /// File names the queue's other downloads use or will use, so a new download
+    /// doesn't take one even when that file is no longer on disk.
+    pub fn names_except(&self, id: DownloadId) -> HashSet<String> {
+        self.items
+            .values()
+            .filter(|item| item.id != id)
+            .filter_map(|item| item.file_name.clone())
+            .collect()
     }
 
     pub fn set_settings(&mut self, settings: QueueSettings) {

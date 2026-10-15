@@ -465,6 +465,16 @@ impl Engine {
         Ok(self.inner.add(&mut guard, queue_id, url))
     }
 
+    /// The file name the server gives `url`, as a download of it would be saved
+    /// before ` (1)`, ` (2)`, ... is added for a name already taken. Makes one
+    /// request and reads only its headers.
+    pub async fn file_name_for(&self, url: &str) -> Result<String> {
+        let url = validate_url(url)?;
+        worker::probe_file_name(&self.inner.client, &url)
+            .await
+            .map_err(|error| EngineError::NameLookupFailed { url, error })
+    }
+
     /// Adds `url` to the queue for `dir`, creating the queue if needed.
     pub fn enqueue(&self, dir: impl AsRef<Path>, url: &str) -> Result<DownloadId> {
         let dir = normalize(dir.as_ref())?;
@@ -521,7 +531,7 @@ impl Engine {
         match st.active.get_mut(&id) {
             // Still stopping after a pause; start again once it has.
             Some(active) => active.restart = true,
-            None => self.inner.spawn(&mut st.active, item, &queue.dir),
+            None => self.inner.spawn(&mut st.active, queue, id),
         }
         self.inner.save(queue);
         Ok(())
@@ -704,11 +714,12 @@ impl Inner {
             };
             item.status = DownloadStatus::Downloading;
             self.emit(EngineEvent::DownloadChanged(item.clone()));
-            self.spawn(&mut st.active, item, &queue.dir);
+            self.spawn(&mut st.active, queue, id);
         }
     }
 
-    fn spawn(&self, active: &mut HashMap<DownloadId, Active>, item: &DownloadItem, dir: &Path) {
+    fn spawn(&self, active: &mut HashMap<DownloadId, Active>, queue: &Queue, id: DownloadId) {
+        let item = &queue.items[&id];
         let token = CancellationToken::new();
         active.insert(
             item.id,
@@ -721,7 +732,7 @@ impl Inner {
         );
         self.runtime.spawn(worker::run(
             self.client.clone(),
-            Job::new(item, dir),
+            Job::new(item, &queue.dir, queue.names_except(id)),
             token,
             self.worker_tx.clone(),
         ));
@@ -823,7 +834,7 @@ impl Inner {
                     self.emit(EngineEvent::DownloadChanged(item.clone()));
                     self.save(queue);
                     if restart && item.status == DownloadStatus::Downloading {
-                        self.spawn(&mut st.active, &item, &queue.dir);
+                        self.spawn(&mut st.active, queue, item.id);
                     }
                 }
                 self.schedule(st, queue_id);
