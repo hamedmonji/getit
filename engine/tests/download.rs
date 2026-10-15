@@ -722,7 +722,7 @@ async fn queues_are_saved_and_restored() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn interrupted_downloads_resume_after_restart() {
+async fn interrupted_downloads_stay_paused_after_restart() {
     let (base, server) = start_server().await;
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(MemoryStore::new());
@@ -738,6 +738,13 @@ async fn interrupted_downloads_resume_after_restart() {
     settle().await;
 
     let engine = Engine::new(store).unwrap();
+    let item = engine.get(id).unwrap();
+    assert_eq!(item.status, DownloadStatus::Paused);
+    assert!(item.downloaded > 0, "progress comes from the partial file");
+    settle().await;
+    assert_eq!(server.requests().len(), 1, "nothing restarts on its own");
+
+    engine.resume(id).unwrap();
     wait_for_status(&engine, id, DownloadStatus::Completed).await;
     assert_file_matches(&engine, id, &server);
     let requests = server.requests();
@@ -859,7 +866,7 @@ async fn pausing_a_queue_keeps_downloads_started_on_their_own() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn downloads_started_on_their_own_restart_after_restart() {
+async fn downloads_started_on_their_own_stay_paused_after_restart() {
     let (base, server) = start_server().await;
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(MemoryStore::new());
@@ -883,8 +890,14 @@ async fn downloads_started_on_their_own_restart_after_restart() {
     drop(engine);
     settle().await;
 
-    // The queue is still paused, but the download was started on its own.
     let engine = Engine::new(store).unwrap();
+    let item = engine.get(id).unwrap();
+    assert_eq!(item.status, DownloadStatus::Paused);
+    assert!(!item.manual);
+    settle().await;
+    assert_eq!(server.requests().len(), 1, "nothing restarts on its own");
+
+    engine.resume(id).unwrap();
     wait_for_status(&engine, id, DownloadStatus::Completed).await;
     assert_file_matches(&engine, id, &server);
     assert_eq!(server.requests()[1].status, 206);

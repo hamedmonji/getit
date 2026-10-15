@@ -84,8 +84,8 @@ enum Stop {
 
 impl Engine {
     /// Loads every saved queue from `store` and starts their queued downloads.
-    /// Downloads that were running when the queues were saved resume from their
-    /// partial files.
+    /// Downloads that were running when the queues were saved come back paused,
+    /// ready to resume from their partial files.
     ///
     /// # Panics
     ///
@@ -127,14 +127,6 @@ impl Engine {
                 st.owner
                     .extend(queue.order.iter().map(|id| (*id, queue.id)));
                 st.queues.insert(queue.id, queue);
-            }
-            // Restart downloads that had been started on their own.
-            for queue in st.queues.values() {
-                for item in queue.items.values() {
-                    if item.status == DownloadStatus::Downloading {
-                        inner.spawn(&mut st.active, item, &queue.dir);
-                    }
-                }
             }
             let ids: Vec<QueueId> = st.queues.keys().copied().collect();
             for id in ids {

@@ -27,9 +27,9 @@ impl Queue {
         }
     }
 
-    /// Rebuilds a queue from a snapshot. Downloads the queue was running go back
-    /// to `Queued`; ones started on their own stay `Downloading` so they can be
-    /// restarted. Progress is taken from the `.part` files on disk.
+    /// Rebuilds a queue from a snapshot. Downloads that were running, whether the
+    /// queue or the user started them, come back `Paused`. Progress is taken from
+    /// the `.part` files on disk.
     pub fn restore(snapshot: QueueSnapshot) -> Self {
         let mut queue = Self {
             id: snapshot.id,
@@ -43,8 +43,9 @@ impl Queue {
                 continue;
             }
             item.queue_id = queue.id;
-            if item.status == DownloadStatus::Downloading && !item.manual {
-                item.status = DownloadStatus::Queued;
+            if item.status == DownloadStatus::Downloading {
+                item.status = DownloadStatus::Paused;
+                item.manual = false;
             }
             if item.status != DownloadStatus::Completed {
                 item.downloaded = item
