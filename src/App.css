@@ -865,6 +865,8 @@ input::placeholder {
 
 .dup-panel {
   flex: none;
+  /* Leaves most of the window to the queue; the list scrolls past this. */
+  max-height: 45vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -875,8 +877,9 @@ input::placeholder {
 }
 
 .dup-head {
+  flex: none;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
@@ -886,14 +889,9 @@ input::placeholder {
   font-weight: 600;
 }
 
-.dup-sub {
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
 .dup-rows {
-  max-height: 180px;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   margin: 0;
   padding: 0;
@@ -961,10 +959,16 @@ input::placeholder {
   text-decoration: underline;
 }
 
-.dup-actions {
+.dup-buttons {
+  flex: none;
   display: flex;
-  justify-content: flex-end;
   gap: 8px;
+}
+
+/* Start or show, whichever label, lines up from row to row. */
+.dup-row .dup-buttons > :last-child {
+  min-width: 112px;
+  justify-content: center;
 }
 
 .status-bar {

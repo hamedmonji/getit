@@ -574,6 +574,32 @@ export default function App() {
     else report(engine.reveal(items.flatMap((d) => (d.kind === "file" ? [joinPath(dir, d.name)] : []))));
   };
 
+  /** A duplicate's folder as shown in the panel: "This Queue" for the folder on screen. */
+  const whereLabel = (dir: string) =>
+    dir === cwd ? { where: "This Queue", here: true } : { where: displayPath(dir, home ?? "") };
+
+  /**
+   * Deals with some of the duplicates being asked about: starts (or shows) their
+   * existing downloads, adds them again, or skips them. The panel stays for the rest.
+   */
+  const settleDuplicates = (handled: Duplicate[], how: "start" | "add" | "skip") => {
+    if (!duplicates) return;
+    const { dir } = duplicates;
+    const urls = new Set(handled.map((d) => d.url));
+    setDuplicates((prev) => {
+      const rest = prev?.items.filter((d) => !urls.has(d.url)) ?? [];
+      return prev && rest.length ? { ...prev, items: rest } : null;
+    });
+    if (how === "start") startExisting(dir, handled);
+    if (how === "add") {
+      addLinks([...urls], dir, true)
+        .catch((e) => setNotice(`Couldn't add: ${e}`))
+        .finally(() => dropPending(handled));
+    } else {
+      dropPending(handled);
+    }
+  };
+
   /** The folder a download's file goes in. */
   const dirOf = (id: string) => state.queues[state.downloads[id]?.queue_id]?.dir;
   /** Goes to the folder holding a search result, with the result selected. */
@@ -735,8 +761,7 @@ export default function App() {
         e.preventDefault();
         setAddressOpen(true);
       } else if (e.key === "Escape" && duplicates) {
-        setDuplicates(null);
-        dropPending(duplicates.items);
+        settleDuplicates(duplicates.items, "skip");
       } else if (e.key === "Escape" && pasting) {
         setPasting(null);
       } else if (e.key === "Escape" && query) {
@@ -1113,49 +1138,26 @@ export default function App() {
             return {
               key: d.url,
               name: item ? displayName(item) : d.kind === "file" ? d.name : d.url,
-              where: displayPath(item ? (state.queues[item.queue_id]?.dir ?? duplicates.dir) : duplicates.dir, home),
+              ...whereLabel(item ? (state.queues[item.queue_id]?.dir ?? duplicates.dir) : duplicates.dir),
               status: item ? STATUS_WORDS[item.status] : "File",
               note: d.kind === "name" ? "same name, different link" : undefined,
-              action: !item ? `Show in ${FILE_MANAGER}` : canStart(item) ? "Start" : "Show",
+              action: !item ? `Show in ${FILE_MANAGER}` : canStart(item) ? "Start existing" : "Show existing",
             };
           })}
           mainLabel={
             duplicates.items.some((d) => canStart(currentOf(d)))
-              ? "Start existing"
+              ? "Start all existing"
               : duplicates.items.some((d) => d.kind !== "file")
                 ? "Show existing"
-                : `Show in ${FILE_MANAGER}`
+                : `Show all in ${FILE_MANAGER}`
           }
-          onMain={() => {
-            setDuplicates(null);
-            dropPending(duplicates.items);
-            startExisting(duplicates.dir, duplicates.items);
-          }}
-          onRow={(i) => {
-            const d = duplicates.items[i];
-            const item = currentOf(d);
-            if (canStart(item)) report(engine.resume(item!.id));
-            showDuplicate(duplicates.dir, d);
-            // That one is dealt with; the prompt stays for the rest.
-            dropPending([d]);
-            const rest = duplicates.items.filter((_, j) => j !== i);
-            setDuplicates(rest.length ? { ...duplicates, items: rest } : null);
-          }}
+          onMain={() => settleDuplicates(duplicates.items, "start")}
+          onAdd={() => settleDuplicates(duplicates.items, "add")}
+          onSkip={() => settleDuplicates(duplicates.items, "skip")}
+          onRowMain={(i) => settleDuplicates([duplicates.items[i]], "start")}
+          onRowAdd={(i) => settleDuplicates([duplicates.items[i]], "add")}
+          onRowSkip={(i) => settleDuplicates([duplicates.items[i]], "skip")}
           onWhere={(i) => showDuplicate(duplicates.dir, duplicates.items[i])}
-          onAdd={() => {
-            setDuplicates(null);
-            addLinks(
-              duplicates.items.map((d) => d.url),
-              duplicates.dir,
-              true,
-            )
-              .catch((e) => setNotice(`Couldn't add: ${e}`))
-              .finally(() => dropPending(duplicates.items));
-          }}
-          onClose={() => {
-            setDuplicates(null);
-            dropPending(duplicates.items);
-          }}
         />
       )}
 
