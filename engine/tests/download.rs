@@ -906,23 +906,41 @@ async fn pausing_a_queue_stops_resumed_downloads_too() {
     let ctx = Ctx::new().await;
     let queue = ctx.paused_queue("a", 1);
     let url = ctx.url("/file.bin");
+    let first = ctx.engine.add(queue, &url).unwrap();
     let resumed = ctx.engine.add(queue, &url).unwrap();
-    let queued = ctx.engine.add(queue, &url).unwrap();
+    ctx.unpause(queue);
+    wait_for_progress(&ctx.engine, first).await;
+    // Past the limit, started by hand.
     ctx.engine.resume(resumed).unwrap();
     wait_for_progress(&ctx.engine, resumed).await;
 
     let mut settings = ctx.engine.queue(queue).unwrap().settings;
     settings.paused = true;
     ctx.engine.set_queue_settings(queue, settings).unwrap();
-    for id in [resumed, queued] {
+    for id in [first, resumed] {
         assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
     }
 
     // Unpausing picks them up again in queue order.
     ctx.unpause(queue);
-    wait_for_status(&ctx.engine, queued, DownloadStatus::Completed).await;
+    wait_for_status(&ctx.engine, resumed, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(first);
     ctx.assert_file_matches(resumed);
-    ctx.assert_file_matches(queued);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn changing_a_paused_queues_limit_keeps_resumed_downloads_going() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let id = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.resume(id).unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+
+    let mut settings = ctx.engine.queue(queue).unwrap().settings;
+    settings.max_concurrent = 3;
+    ctx.engine.set_queue_settings(queue, settings).unwrap();
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Downloading);
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -241,9 +241,11 @@ impl Engine {
         Ok(moves.len())
     }
 
-    /// Replaces a queue's settings. Pausing stops every running download in the
-    /// queue and puts it back to `Queued`; unpausing or adding slots lets the
-    /// queue start more.
+    /// Replaces a queue's settings. Pausing a running queue stops every running
+    /// download in it and puts it back to `Queued`; saving the settings of a queue
+    /// that's already paused (to change its limit, say) stops nothing, so
+    /// downloads started in it on their own keep going. Unpausing or adding slots
+    /// lets the queue start more.
     pub fn set_queue_settings(&self, id: QueueId, settings: QueueSettings) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
@@ -251,8 +253,9 @@ impl Engine {
             .queues
             .get_mut(&id)
             .ok_or(EngineError::QueueNotFound(id))?;
+        let was_paused = queue.settings.paused;
         queue.set_settings(settings);
-        if queue.settings.paused {
+        if queue.settings.paused && !was_paused {
             for download_id in &queue.order {
                 if let (Some(active), Some(item)) = (
                     st.active.get_mut(download_id),

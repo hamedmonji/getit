@@ -814,17 +814,34 @@ export default function App() {
   const pasteLabel = clip ? `Paste ${plural(clip.keys.length, "item")}` : "Paste";
 
   const held = queue ? queue.downloads.filter((id) => state.downloads[id]?.status === "paused") : [];
-  // Downloads paused one by one stop the queue as surely as pausing it does.
-  const queueStopped = !!queue && (queue.settings.paused || (own.active === 0 && own.queued === 0 && held.length > 0));
-  const toggleQueue = () => {
+  // The toolbar shows the queue running while any of its downloads runs,
+  // whether the queue or the user started it, and pausing there stops them all.
+  const queueStopped = !!queue && own.active === 0;
+  // The menu shows the queue's own state: paused, or stopped by pausing its
+  // downloads one by one; downloads started on their own don't count.
+  const queuePaused =
+    !!queue && (queue.settings.paused || (own.active === 0 && own.queued === 0 && held.length > 0));
+  // Unpauses the queue and puts downloads paused one by one back in line.
+  const resumeQueue = () => {
     if (!queue) return;
     const { settings } = queue;
-    const resumeQueue = async () => {
-      if (settings.paused) await engine.setQueueSettings(queue.id, { ...settings, paused: false });
-      if (held.length) await engine.requeue(held);
-    };
-    report(queueStopped ? resumeQueue() : engine.setQueueSettings(queue.id, { ...settings, paused: true }));
+    report(
+      (async () => {
+        if (settings.paused) await engine.setQueueSettings(queue.id, { ...settings, paused: false });
+        if (held.length) await engine.requeue(held);
+      })(),
+    );
   };
+  // Pausing a running queue stops all its downloads; in one that's paused
+  // already, only downloads started on their own run, so they're paused one by one.
+  const pauseQueue = () => {
+    if (!queue) return;
+    const { settings } = queue;
+    if (!settings.paused) return report(engine.setQueueSettings(queue.id, { ...settings, paused: true }));
+    const running = queue.downloads.filter((id) => state.downloads[id]?.status === "downloading");
+    report(Promise.all(running.map((id) => engine.pause(id))));
+  };
+  const toggleQueue = () => (queueStopped ? resumeQueue() : pauseQueue());
 
   const backgroundMenu = (): MenuItem[] => {
     const items: MenuItem[] = [];
@@ -854,8 +871,8 @@ export default function App() {
         { kind: "separator" },
         {
           kind: "action",
-          label: queueStopped ? "Resume queue" : "Pause queue",
-          onSelect: toggleQueue,
+          label: queuePaused ? "Resume queue" : "Pause queue",
+          onSelect: queuePaused ? resumeQueue : pauseQueue,
         },
         {
           kind: "stepper",
