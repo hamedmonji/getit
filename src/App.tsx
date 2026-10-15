@@ -32,6 +32,7 @@ const IS_MAC = navigator.userAgent.includes("Mac");
 
 /** Prefix for keyboard shortcuts shown in menus. */
 const MOD = IS_MAC ? "⌘" : "Ctrl+";
+const FILE_MANAGER = IS_MAC ? "Finder" : navigator.userAgent.includes("Windows") ? "Explorer" : "File Manager";
 
 /** How long a failed move's message stays in the status bar. */
 const NOTICE_MS = 6000;
@@ -406,6 +407,20 @@ export default function App() {
     label: "Show in Enclosing Folder",
     onSelect: () => showInFolder(key),
   });
+  // Unfinished downloads have no file yet, so their folder stands in for them.
+  const diskPath = (key: string) => {
+    if (isFolderKey(key)) return key;
+    const vm = files.find((f) => f.id === key);
+    return vm?.done && !vm.missing && vm.path ? vm.path : dirOf(key);
+  };
+  const revealItem = (keys: string[]): MenuItem => ({
+    kind: "action",
+    label: `Show in ${FILE_MANAGER}`,
+    onSelect: () => {
+      const paths = [...new Set(keys.map(diskPath).filter((p): p is string => !!p))];
+      if (paths.length) report(engine.reveal(paths));
+    },
+  });
 
   // Cut and copy also put the items' paths on the system clipboard, so they can
   // be pasted in other apps, and so copying something else takes over Command-V.
@@ -598,6 +613,7 @@ export default function App() {
         onSelect: () => engine.readClipboard().then(pasteLinks).catch(() => {}),
       },
       { kind: "action", label: "New queue", shortcut: `${MOD}N`, onSelect: newQueue },
+      { kind: "action", label: `Open in ${FILE_MANAGER}`, onSelect: () => report(engine.openPath(cwd)) },
       {
         kind: "action",
         label: "Ask before adding pasted links",
@@ -663,6 +679,7 @@ export default function App() {
       }
     }
     if (query) items.push(showInFolderItem(vm.id));
+    items.push(revealItem([vm.id]));
     items.push({ kind: "separator" }, ...clipMenu([vm.id]), { kind: "separator" });
     if (vm.done) {
       // The file stays on disk.
@@ -687,7 +704,7 @@ export default function App() {
       danger: true,
       onSelect: () => trashItems(selection),
     };
-    items.push(...clipMenu(selection), { kind: "separator" });
+    items.push(revealItem(selection), { kind: "separator" }, ...clipMenu(selection), { kind: "separator" });
     if (!selectedFiles.length) return [...items, trash];
     const status = (f: FileVm) => state.downloads[f.id]?.status;
     const queuePaused = (f: FileVm) => state.queues[state.downloads[f.id]?.queue_id]?.settings.paused ?? false;
@@ -738,6 +755,7 @@ export default function App() {
       return [
         { kind: "action", label: "Open", onSelect: () => go(target) },
         ...(query ? [showInFolderItem(target)] : []),
+        revealItem([target]),
         { kind: "action", label: "Rename", onSelect: () => setEditing(target) },
         { kind: "separator" },
         ...clipMenu([target]),
