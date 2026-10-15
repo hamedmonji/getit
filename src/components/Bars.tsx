@@ -88,10 +88,10 @@ export function Toolbar(p: ToolbarProps) {
         <FolderIcon />
       </button>
       <div className="segmented">
-        {(["Icons", "List"] as const).map((m) => (
+        {(["Icons", "List"] as const).map((m, i) => (
           <button
             key={m}
-            title={m}
+            title={`${m} (${MOD}${i + 1})`}
             className={p.mode === m ? "active" : ""}
             onClick={() => p.onMode(m)}
           >

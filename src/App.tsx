@@ -505,6 +505,7 @@ export default function App() {
   // Command-X and Command-C cut and copy the selection, for pasting elsewhere;
   // Command-N makes a new folder with its own queue; Command-[ and Command-]
   // go back and forward; Command-. shows or hides folders without downloads;
+  // Command-1 and Command-2 switch to icons and list;
   // Command-Delete moves the selection to the Trash; Delete/Backspace alone
   // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
@@ -543,6 +544,9 @@ export default function App() {
         e.preventDefault();
         if (e.key === "[") goBack();
         else goForward();
+      } else if ((e.key === "1" || e.key === "2") && command) {
+        e.preventDefault();
+        setMode(e.key === "1" ? "Icons" : "List");
       } else if (e.key === "." && command) {
         e.preventDefault();
         toggleFolders();
