@@ -10,7 +10,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::queue::Queue;
-use crate::store::QueueStore;
+use crate::store::{QueueSnapshot, QueueStore};
 use crate::types::{
     DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, QueueId, QueueInfo,
     QueueSettings, Result,
@@ -193,6 +193,42 @@ impl Engine {
             });
         }
         self.inner.emit(EngineEvent::QueueRemoved { id });
+        Ok(())
+    }
+
+    /// A queue's full state, to put it back with [`Engine::restore_queue`] after
+    /// it's removed.
+    pub fn queue_snapshot(&self, id: QueueId) -> Option<QueueSnapshot> {
+        self.inner.lock().queues.get(&id).map(Queue::snapshot)
+    }
+
+    /// Puts back a removed queue from a [snapshot](Engine::queue_snapshot) taken
+    /// before, with its ids. Unfinished downloads carry on from their partial
+    /// files; ones that were running wait in line again. Fails if its folder
+    /// has a queue again.
+    pub fn restore_queue(&self, mut snapshot: QueueSnapshot) -> Result<()> {
+        for item in &mut snapshot.downloads {
+            if item.status == DownloadStatus::Downloading {
+                item.status = DownloadStatus::Queued;
+            }
+        }
+        snapshot.dir = normalize(&snapshot.dir)?;
+        let queue = Queue::restore(snapshot);
+        let mut guard = self.inner.lock();
+        let st = &mut *guard;
+        if st.by_dir.contains_key(&queue.dir) || st.queues.contains_key(&queue.id) {
+            return Err(EngineError::DirTaken(queue.dir));
+        }
+        for item in queue.downloads() {
+            st.owner.insert(item.id, queue.id);
+            self.inner.emit(EngineEvent::DownloadAdded(item));
+        }
+        self.inner.save(&queue);
+        self.inner.emit(EngineEvent::QueueChanged(queue.info()));
+        st.by_dir.insert(queue.dir.clone(), queue.id);
+        let queue_id = queue.id;
+        st.queues.insert(queue_id, queue);
+        self.inner.schedule(st, queue_id);
         Ok(())
     }
 
@@ -604,6 +640,37 @@ impl Engine {
             .emit(EngineEvent::DownloadRemoved { id, queue_id });
         self.inner.emit(EngineEvent::QueueChanged(queue.info()));
         self.inner.schedule(st, queue_id);
+        Ok(())
+    }
+
+    /// Puts back removed downloads, with their ids, at the end of the queue for
+    /// `dir` (creating it if needed). Unfinished ones carry on from their
+    /// partial files: ones that were running wait in line again, paused or
+    /// failed ones stay that way. Downloads that are in a queue are skipped.
+    pub fn restore_downloads(&self, items: Vec<DownloadItem>, dir: impl AsRef<Path>) -> Result<()> {
+        let dir = normalize(dir.as_ref())?;
+        let mut guard = self.inner.lock();
+        let st = &mut *guard;
+        let target = self.inner.ensure_queue(st, dir.clone());
+        let queue = st.queues.get_mut(&target).expect("target queue exists");
+        for mut item in items {
+            if st.owner.contains_key(&item.id) {
+                continue;
+            }
+            item.queue_id = target;
+            if item.status == DownloadStatus::Downloading {
+                item.status = DownloadStatus::Queued;
+            }
+            if item.status != DownloadStatus::Completed {
+                item.downloaded = partial_len(&item, &dir);
+            }
+            st.owner.insert(item.id, target);
+            queue.push(item.clone());
+            self.inner.emit(EngineEvent::DownloadAdded(item));
+        }
+        self.inner.save(queue);
+        self.inner.emit(EngineEvent::QueueChanged(queue.info()));
+        self.inner.schedule(st, target);
         Ok(())
     }
 

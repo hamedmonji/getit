@@ -1222,3 +1222,62 @@ async fn copy_queues_gives_a_copied_folder_its_own_queues() {
     // A folder that already has a queue isn't copied over.
     assert!(ctx.engine.copy_queues(ctx.folder("a"), ctx.folder("b")).is_err());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn restored_downloads_carry_on_from_their_partial_files() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    let item = wait_for_progress(&ctx.engine, id).await;
+    // Set the partial file aside, as moving it to the Trash would.
+    let part = item.part_path(&ctx.folder("a")).unwrap();
+    let aside = ctx.dir.path().join("aside.part");
+    std::fs::rename(&part, &aside).unwrap();
+    ctx.engine.remove(id).unwrap();
+    settle().await;
+
+    std::fs::rename(&aside, &part).unwrap();
+    let partial = std::fs::metadata(&part).unwrap().len();
+    ctx.engine
+        .restore_downloads(vec![item], ctx.folder("a"))
+        .unwrap();
+    let restored = ctx.engine.get(id).expect("download is back");
+    assert_eq!(restored.downloaded, partial);
+    assert_ne!(restored.status, DownloadStatus::Paused);
+
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+    let requests = ctx.server.requests();
+    assert_eq!(
+        requests.last().unwrap().range.as_deref(),
+        Some(format!("bytes={partial}-").as_str()),
+        "{requests:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn removed_queues_can_be_restored() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let done = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    let waiting = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.pause(waiting).unwrap();
+    ctx.unpause(queue);
+    wait_for_status(&ctx.engine, done, DownloadStatus::Completed).await;
+
+    let snapshot = ctx.engine.queue_snapshot(queue).unwrap();
+    ctx.engine.remove_queue(queue).unwrap();
+    assert!(ctx.engine.get(done).is_none());
+
+    ctx.engine.restore_queue(snapshot.clone()).unwrap();
+    let info = ctx.engine.queue(queue).expect("queue is back");
+    assert_eq!(info.dir, ctx.folder("a"));
+    assert!(!info.settings.paused);
+    assert_eq!(info.downloads, vec![done, waiting]);
+    assert_eq!(ctx.engine.get(done).unwrap().status, DownloadStatus::Completed);
+    assert_eq!(ctx.engine.get(waiting).unwrap().status, DownloadStatus::Paused);
+    assert_eq!(ctx.engine.queue_for_dir(ctx.folder("a")), Some(queue));
+    assert!(ctx.engine.restore_queue(snapshot).is_err());
+}

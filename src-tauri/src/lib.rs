@@ -42,6 +42,7 @@ pub fn run() {
             commands::copy_downloads,
             commands::remove_download,
             commands::move_to_trash,
+            commands::restore_from_trash,
             commands::set_queue_settings,
             commands::clear_completed,
         ])

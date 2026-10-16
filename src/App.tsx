@@ -131,6 +131,16 @@ function linksIn(text: string): string[] {
   return [...new Set(links)];
 }
 
+/** A change Command-Z can take back. */
+interface Undo {
+  /** What it undoes, such as "Move to Trash". */
+  label: string;
+  run: () => Promise<unknown>;
+}
+
+/** How many changes Command-Z can go back through. */
+const MAX_UNDOS = 50;
+
 /** Items cut or copied, waiting to be pasted: download ids and folder paths. */
 interface Clip {
   keys: string[];
@@ -198,6 +208,9 @@ export default function App() {
   const [duplicates, setDuplicates] = useState<Duplicates | null>(null);
   const [pendingAdds, setPendingAdds] = useState<PendingAdd[]>([]);
   const [clip, setClip] = useState<Clip | null>(null);
+  /** Pastes and trashes that can be undone, newest last. */
+  const [undos, setUndos] = useState<Undo[]>([]);
+  const lastUndo = undos[undos.length - 1];
   /** What cutting or copying last put on the system clipboard; null if that failed. */
   const clipText = useRef<string | null>(null);
   /** Whether the address bar is being typed in. */
@@ -448,6 +461,18 @@ export default function App() {
       ?.scrollIntoView({ block: "nearest" });
   };
 
+  const pushUndo = (undo: Undo) => setUndos((list) => [...list.slice(1 - MAX_UNDOS), undo]);
+  /** Takes back the last paste or trash. */
+  const undo = () => {
+    if (!lastUndo) return;
+    setUndos((list) => list.slice(0, -1));
+    lastUndo
+      .run()
+      .then(() => setNotice(null))
+      .catch((e) => setNotice(`Couldn't undo: ${e}`))
+      .finally(() => setListNonce((n) => n + 1));
+  };
+
   /** Moves downloads (by id) and folders (by path) to the Trash, files and all. */
   const trashItems = (keys: string[]) => {
     if (!keys.length) return;
@@ -455,7 +480,12 @@ export default function App() {
     const paths = keys.filter((key) => !(key in state.downloads));
     engine
       .moveToTrash(ids, paths)
-      .then(() => setNotice(null))
+      .then((trashed) => {
+        setNotice(trashed.error);
+        if (trashed.downloads.length || trashed.folders.length) {
+          pushUndo({ label: "Move to Trash", run: () => engine.restoreFromTrash(trashed) });
+        }
+      })
       .catch((e) => setNotice(String(e)))
       .finally(() => setListNonce((n) => n + 1));
     select([]);
@@ -669,6 +699,13 @@ export default function App() {
     const { keys, cut } = clip;
     const ids = keys.filter((key) => !isFolderKey(key) && key in state.downloads);
     const paths = keys.filter(isFolderKey);
+    // Where cut downloads came from, for undo; those already here stay put.
+    const from = new Map<string, string>();
+    for (const id of ids) {
+      const dir = state.queues[state.downloads[id].queue_id]?.dir;
+      if (dir && dir !== dest) from.set(id, dir);
+    }
+    const movedPaths = paths.filter((path) => parentPath(path) !== dest);
     const pasted = cut
       ? Promise.all([
           ids.length ? engine.moveDownloads(ids, dest) : null,
@@ -684,6 +721,25 @@ export default function App() {
       .then((keys) => {
         setNotice(null);
         if (dest === cwd) select(keys);
+        if (cut) {
+          if (!from.size && !movedPaths.length) return;
+          const back = new Map<string, string[]>();
+          for (const [id, dir] of from) back.set(dir, [...(back.get(dir) ?? []), id]);
+          pushUndo({
+            label: "Move",
+            run: () =>
+              Promise.all([
+                ...[...back].map(([dir, ids]) => engine.moveDownloads(ids, dir)),
+                ...movedPaths.map((path) => engine.moveFolders([joinPath(dest, baseName(path))], parentPath(path))),
+              ]),
+          });
+        } else if (keys.length) {
+          // Copies go to the Trash, as in Finder.
+          pushUndo({
+            label: "Copy",
+            run: () => engine.moveToTrash(keys.filter((key) => !isFolderKey(key)), keys.filter(isFolderKey)),
+          });
+        }
       })
       .catch((e) => setNotice(`Couldn't paste: ${e}`))
       .finally(() => setListNonce((n) => n + 1));
@@ -796,6 +852,9 @@ export default function App() {
         setQuery("");
       } else if (e.key === "Escape" && clip?.cut) {
         setClip(null);
+      } else if (e.key.toLowerCase() === "z" && command && !e.shiftKey) {
+        e.preventDefault();
+        undo();
       } else if (e.key.toLowerCase() === "a" && command) {
         e.preventDefault();
         setSelected(new Set(order));
@@ -888,6 +947,12 @@ export default function App() {
   const backgroundMenu = (): MenuItem[] => {
     const items: MenuItem[] = [];
     if (queue) items.push({ kind: "header", label: summary ? `Queue · ${summary}` : "Queue" });
+    if (lastUndo) {
+      items.push(
+        { kind: "action", label: `Undo ${lastUndo.label}`, shortcut: `${MOD}Z`, onSelect: undo },
+        { kind: "separator" },
+      );
+    }
     items.push(
       { kind: "action", label: "Add download…", onSelect: () => setAdding(true) },
       ...(clip

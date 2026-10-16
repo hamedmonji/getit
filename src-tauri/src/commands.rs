@@ -5,8 +5,8 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use getit_engine::{DownloadId, DownloadItem, DownloadStatus, Engine, QueueId, QueueInfo, QueueSettings};
-use serde::Serialize;
+use getit_engine::{DownloadId, DownloadItem, DownloadStatus, Engine, QueueId, QueueInfo, QueueSettings, QueueSnapshot};
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 type CommandResult<T> = Result<T, String>;
@@ -338,51 +338,143 @@ pub fn requeue_downloads(engine: State<'_, Engine>, ids: Vec<DownloadId>) -> Com
     engine.requeue(&ids).map_err(err)
 }
 
-/// Moves `path` to the Trash. On macOS this goes through the file manager API
-/// rather than scripting Finder, so the app needs no extra permission.
-fn trash(path: &Path) -> CommandResult<()> {
-    #[allow(unused_mut)]
-    let mut trash = trash::TrashContext::default();
-    #[cfg(target_os = "macos")]
-    {
-        use trash::macos::{DeleteMethod, TrashContextExtMacos};
-        trash.set_delete_method(DeleteMethod::NsFileManager);
-    }
-    trash
-        .delete(path)
-        .map_err(|e| format!("couldn't move {} to the Trash: {e}", path.display()))
+/// Moves `path` to the Trash and returns where it went there, so it can be put
+/// back. On macOS this goes through the file manager API rather than scripting
+/// Finder, so the app needs no extra permission. Elsewhere the place in the
+/// Trash isn't known, and the result is `None`.
+#[cfg(target_os = "macos")]
+fn trash(path: &Path) -> CommandResult<Option<PathBuf>> {
+    use objc2_foundation::{NSFileManager, NSURL};
+    let fail = |e: &dyn std::fmt::Display| format!("couldn't move {} to the Trash: {e}", path.display());
+    let url = NSURL::from_file_path(path).ok_or_else(|| fail(&"not a file path"))?;
+    let mut trashed = None;
+    NSFileManager::defaultManager()
+        .trashItemAtURL_resultingItemURL_error(&url, Some(&mut trashed))
+        .map_err(|e| fail(&e.localizedDescription()))?;
+    Ok(trashed.and_then(|url| url.to_file_path()))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn trash(path: &Path) -> CommandResult<Option<PathBuf>> {
+    trash::delete(path).map_err(|e| format!("couldn't move {} to the Trash: {e}", path.display()))?;
+    Ok(None)
+}
+
+/// What [`move_to_trash`] moved, for [`restore_from_trash`] to put back.
+#[derive(Serialize, Deserialize, Default)]
+pub struct Trashed {
+    downloads: Vec<TrashedDownload>,
+    folders: Vec<TrashedFolder>,
+    /// Why it stopped early, if it did. What's listed was trashed all the same.
+    error: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TrashedDownload {
+    item: DownloadItem,
+    /// Its queue's folder.
+    dir: PathBuf,
+    /// Its finished file, if it had one, and where that went in the Trash.
+    file: Option<(PathBuf, Option<PathBuf>)>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TrashedFolder {
+    path: PathBuf,
+    /// Where it went in the Trash, when known.
+    trashed: Option<PathBuf>,
+    /// The queues that were in it.
+    queues: Vec<QueueSnapshot>,
 }
 
 /// Moves downloads and folders to the Trash. Downloads leave the list, taking
-/// their finished files to the Trash (unfinished ones' partial data is deleted);
-/// a folder goes with everything inside it, and the queues in it are removed.
-/// Stops at the first item that can't be trashed; the ones before it stay trashed.
+/// their finished files to the Trash (unfinished ones' partial data is
+/// deleted, so putting them back starts them over); a folder goes with
+/// everything inside it, and the queues in it are removed. Stops at the first
+/// item that can't be trashed; the ones before it stay trashed. Returns what
+/// was trashed, so it can be put back.
 #[tauri::command]
-pub fn move_to_trash(engine: State<'_, Engine>, ids: Vec<DownloadId>, paths: Vec<String>) -> CommandResult<()> {
+pub fn move_to_trash(engine: State<'_, Engine>, ids: Vec<DownloadId>, paths: Vec<String>) -> Trashed {
+    let mut trashed = Trashed::default();
+    if let Err(e) = trash_items(&engine, ids, paths, &mut trashed) {
+        trashed.error = Some(e);
+    }
+    trashed
+}
+
+fn trash_items(engine: &Engine, ids: Vec<DownloadId>, paths: Vec<String>, trashed: &mut Trashed) -> CommandResult<()> {
     for id in ids {
         let Some(item) = engine.get(id) else { continue };
-        if item.status == DownloadStatus::Completed
-            && let Some(queue) = engine.queue(item.queue_id)
-            && let Some(file) = item.file_path(&queue.dir)
-            && file.exists()
-        {
-            trash(&file)?;
-        }
+        let Some(queue) = engine.queue(item.queue_id) else { continue };
+        // Unfinished downloads' partial files are deleted rather than trashed.
+        let file = match item.file_path(&queue.dir).filter(|file| {
+            item.status == DownloadStatus::Completed && file.exists()
+        }) {
+            Some(file) => {
+                let to = trash(&file)?;
+                Some((file, to))
+            }
+            None => None,
+        };
         engine.remove(id).map_err(err)?;
+        trashed.downloads.push(TrashedDownload { item, dir: queue.dir, file });
     }
     for path in paths {
         let dir = PathBuf::from(&path);
         if !dir.is_absolute() || dir.parent().is_none() {
             return Err(format!("won't move {path} to the Trash"));
         }
-        trash(&dir)?;
-        for queue in engine.queues() {
-            if queue.dir.starts_with(&dir) {
-                engine.remove_queue(queue.id).map_err(err)?;
-            }
+        let queues: Vec<QueueSnapshot> = engine
+            .queues()
+            .into_iter()
+            .filter(|queue| queue.dir.starts_with(&dir))
+            .filter_map(|queue| engine.queue_snapshot(queue.id))
+            .collect();
+        let to = trash(&dir)?;
+        for queue in &queues {
+            engine.remove_queue(queue.id).map_err(err)?;
         }
+        trashed.folders.push(TrashedFolder { path: dir, trashed: to, queues });
     }
     Ok(())
+}
+
+/// Puts back what [`move_to_trash`] moved: files and folders return to where
+/// they were, with their downloads and queues. Stops at the first item that
+/// can't be put back, such as one whose place is taken or that's no longer in
+/// the Trash; the ones before it stay put back.
+#[tauri::command]
+pub fn restore_from_trash(engine: State<'_, Engine>, trashed: Trashed) -> CommandResult<()> {
+    // Folders first: a download trashed along with them goes back inside one.
+    for folder in trashed.folders {
+        put_back(&folder.path, folder.trashed.as_deref())?;
+        for queue in folder.queues {
+            engine.restore_queue(queue).map_err(err)?;
+        }
+    }
+    for download in trashed.downloads {
+        if let Some((file, to)) = &download.file {
+            put_back(file, to.as_deref())?;
+        }
+        engine.restore_downloads(vec![download.item], &download.dir).map_err(err)?;
+    }
+    Ok(())
+}
+
+/// Moves `trashed` back to `path`.
+fn put_back(path: &Path, trashed: Option<&Path>) -> CommandResult<()> {
+    let name = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy();
+    let trashed = trashed.ok_or_else(|| format!("can't find \"{name}\" in the Trash"))?;
+    if path.exists() {
+        return Err(format!("\"{name}\" already exists in its old place"));
+    }
+    if !trashed.exists() {
+        return Err(format!("\"{name}\" is no longer in the Trash"));
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(err)?;
+    }
+    fs::rename(trashed, path).map_err(|e| format!("couldn't put back \"{name}\": {e}"))
 }
 
 #[tauri::command]

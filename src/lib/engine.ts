@@ -50,6 +50,14 @@ export type EngineEvent =
     }
   | { type: "save_failed"; data: { queue_id: QueueId; error: string } };
 
+/** What `moveToTrash` moved; `restoreFromTrash` puts it back. */
+export interface Trashed {
+  downloads: unknown[];
+  folders: unknown[];
+  /** Why trashing stopped early, if it did. What's listed was trashed all the same. */
+  error: string | null;
+}
+
 export interface Snapshot {
   queues: QueueInfo[];
   downloads: DownloadItem[];
@@ -78,10 +86,13 @@ export const engine = {
   /** Puts paused or failed downloads back in line; their queue starts them when it has room. */
   requeue: (ids: DownloadId[]) => invoke<void>("requeue_downloads", { ids }),
   /**
-   * Moves downloads (with their finished files) and folders (with everything in
-   * them, removing their queues) to the Trash.
+   * Moves downloads (with their finished files; partial ones are deleted) and
+   * folders (with everything in them, removing their queues) to the Trash.
+   * Resolves with what was trashed.
    */
-  moveToTrash: (ids: DownloadId[], paths: string[]) => invoke<void>("move_to_trash", { ids, paths }),
+  moveToTrash: (ids: DownloadId[], paths: string[]) => invoke<Trashed>("move_to_trash", { ids, paths }),
+  /** Puts back what `moveToTrash` moved, with its downloads and queues. */
+  restoreFromTrash: (trashed: Trashed) => invoke<void>("restore_from_trash", { trashed }),
   remove: (id: DownloadId) => invoke<void>("remove_download", { id }),
   /** Creates a "New Queue" subfolder with its own queue; returns its path. */
   createQueue: (parent: string) => invoke<string>("create_queue", { parent }),
