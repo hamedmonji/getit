@@ -843,7 +843,8 @@ export default function App() {
   // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
   // item and Command-Up goes to the enclosing folder (Control-A and Alt-arrows elsewhere);
-  // Return renames the selected folder, as in Finder.
+  // Return renames the selected folder, as in Finder; / opens the search, like
+  // Command-F and Command-L.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || menu) return;
@@ -893,7 +894,10 @@ export default function App() {
       } else if (e.key.toLowerCase() === "n" && command) {
         e.preventDefault();
         newQueue();
-      } else if ((e.key.toLowerCase() === "f" || e.key.toLowerCase() === "l") && command) {
+      } else if (
+        ((e.key.toLowerCase() === "f" || e.key.toLowerCase() === "l") && command) ||
+        (e.key === "/" && !(e.metaKey || e.ctrlKey || e.altKey))
+      ) {
         e.preventDefault();
         setAddressOpen(true);
       } else if (
