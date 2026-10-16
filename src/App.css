@@ -844,6 +844,232 @@ input::placeholder {
   justify-content: flex-end;
 }
 
+/* Overview: running downloads by queue, on the right */
+
+.main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.main > .content {
+  min-width: 0;
+}
+
+.overview-btn {
+  position: relative;
+}
+
+.overview-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+
+.overview {
+  flex: none;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--panel2);
+}
+
+.overview-head {
+  flex: none;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.overview-title {
+  font-weight: 600;
+}
+
+.overview-total {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.overview-head .icon-btn {
+  color: var(--muted);
+}
+
+.overview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px;
+}
+
+.overview-empty {
+  padding: 24px 8px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* A queue's card; cards of queues in its folders nest inside it. */
+.ov-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.overview-body > .ov-queue + .ov-queue {
+  margin-top: 8px;
+}
+
+.ov-queue .ov-queue {
+  margin-top: 4px;
+  background: var(--panel2);
+}
+
+.ov-queue-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ov-queue-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ov-queue-open:hover {
+  background: var(--hover);
+}
+
+.ov-queue-open svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+.ov-queue-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ov-queue-name {
+  font-weight: 600;
+}
+
+.ov-queue-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ov-queue-pause {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.ov-queue-pause:hover {
+  background: var(--hover);
+}
+
+.overview-stop {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+}
+
+.ov-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ov-file {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ov-file:hover {
+  background: var(--hover);
+}
+
+.ov-file-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ov-file-name {
+  flex: 1;
+  font-size: 12px;
+}
+
+.ov-file-action {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--track);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.ov-file-status {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
 /* Status bar */
 
 /* Links being added, before they're downloads */

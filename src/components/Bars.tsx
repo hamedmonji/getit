@@ -8,6 +8,7 @@ import {
   ForwardIcon,
   GridIcon,
   ListIcon,
+  OverviewIcon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
@@ -60,6 +61,10 @@ export interface ToolbarProps {
   onToggleAdd: () => void;
   theme: Theme;
   onToggleTheme: () => void;
+  overviewOpen: boolean;
+  /** Downloads running anywhere, shown on the overview button. */
+  activeCount: number;
+  onToggleOverview: () => void;
 }
 
 export function Toolbar(p: ToolbarProps) {
@@ -118,6 +123,15 @@ export function Toolbar(p: ToolbarProps) {
         onClick={p.onToggleTheme}
       >
         <ThemeIcon />
+      </button>
+      <button
+        className={"square-btn overview-btn" + (p.overviewOpen ? " toggled" : "")}
+        title={p.overviewOpen ? "Hide overview" : "Show overview"}
+        aria-pressed={p.overviewOpen}
+        onClick={p.onToggleOverview}
+      >
+        <OverviewIcon />
+        {p.activeCount > 0 && <span className="overview-badge">{p.activeCount}</span>}
       </button>
     </div>
   );

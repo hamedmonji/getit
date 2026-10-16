@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { Overview } from "./components/Overview";
 import { DuplicatePanel, InputBar, PasteBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
 import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
@@ -7,7 +8,7 @@ import { useEngine } from "./hooks/useEngine";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
 import { useStoredState } from "./hooks/useStoredState";
-import { engine, type DownloadItem, type DownloadStatus } from "./lib/engine";
+import { engine, type DownloadItem, type DownloadStatus, type QueueInfo } from "./lib/engine";
 import { formatSpeed, plural } from "./lib/format";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import {
@@ -15,6 +16,7 @@ import {
   fileVm,
   folderVm,
   nameFromUrl,
+  overviewTree,
   pendingVm,
   queueForDir,
   searchResults,
@@ -182,6 +184,12 @@ export default function App() {
   const showAllFolders = folderFilter === "all";
   const toggleFolders = () => setFolderFilter(showAllFolders ? "queues" : "all");
   /** Whether pasting links asks first or adds them right away. */
+  const [overviewPanel, setOverviewPanel] = useStoredState<"open" | "closed">(
+    "getit.overview",
+    ["open", "closed"],
+    () => "closed",
+  );
+  const overviewOpen = overviewPanel === "open";
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
   /** Links from the clipboard waiting for the user to confirm. */
   const [pasting, setPasting] = useState<string[] | null>(null);
@@ -832,14 +840,21 @@ export default function App() {
       })(),
     );
   };
-  // Pausing a running queue stops all its downloads; in one that's paused
-  // already, only downloads started on their own run, so they're paused one by one.
-  const pauseQueue = () => {
-    if (!queue) return;
-    const { settings } = queue;
-    if (!settings.paused) return report(engine.setQueueSettings(queue.id, { ...settings, paused: true }));
-    const running = queue.downloads.filter((id) => state.downloads[id]?.status === "downloading");
+  // Stops everything in a queue. Pausing a running queue stops all its
+  // downloads; in one that's paused already, only downloads started on their
+  // own run, so they're paused one by one.
+  const pauseQueueOf = (target: QueueInfo) => {
+    const { settings } = target;
+    if (!settings.paused) return report(engine.setQueueSettings(target.id, { ...settings, paused: true }));
+    const running = target.downloads.filter((id) => state.downloads[id]?.status === "downloading");
     report(Promise.all(running.map((id) => engine.pause(id))));
+  };
+  const pauseQueue = () => queue && pauseQueueOf(queue);
+  /** Stops every queue that has something running. */
+  const pauseAll = () => {
+    for (const q of Object.values(state.queues)) {
+      if (q.downloads.some((id) => state.downloads[id]?.status === "downloading")) pauseQueueOf(q);
+    }
   };
   const toggleQueue = () => (queueStopped ? resumeQueue() : pauseQueue());
 
@@ -1013,6 +1028,7 @@ export default function App() {
   };
 
   const global = stats(state, "/", true);
+  const overview = overviewOpen ? overviewTree(state, home) : [];
   const count = folders.length + files.length;
   const single = selection.length === 1 ? selection[0] : null;
   const selFile = files.find((f) => f.id === single);
@@ -1091,6 +1107,9 @@ export default function App() {
         }}
         theme={theme}
         onToggleTheme={() => setTheme(theme === "Dark" ? "Light" : "Dark")}
+        overviewOpen={overviewOpen}
+        activeCount={global.active}
+        onToggleOverview={() => setOverviewPanel(overviewOpen ? "closed" : "open")}
       />
 
       {adding && (
@@ -1120,31 +1139,44 @@ export default function App() {
         />
       )}
 
-      <div
-        ref={contentRef}
-        className="content"
-        onMouseDown={onContentMouseDown}
-        onClick={(e) => {
-          if (!e.shiftKey && !(IS_MAC ? e.metaKey : e.ctrlKey)) select([]);
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          select([]);
-          setMenu({ x: e.clientX, y: e.clientY, target: null });
-        }}
-      >
-        {mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />}
-        {marquee.box && <div className="marquee" style={marquee.box} />}
-        {count === 0 && !pending.length && shown === cwd && state.loaded && (
-          <div className="empty">
-            {query
-              ? `Nothing${searchAll ? "" : ` in ${displayPath(cwd, home)}`} matches “${query}”.`
-              : listing.error
-                ? `Can't open this folder: ${listing.error}`
-                : hiddenFolders > 0
-                  ? `No downloads here. ${plural(hiddenFolders, "folder")} without downloads ${hiddenFolders === 1 ? "is" : "are"} hidden.`
-                  : "This folder is empty. Right-click to add a download or a queue."}
-          </div>
+      <div className="main">
+        <div
+          ref={contentRef}
+          className="content"
+          onMouseDown={onContentMouseDown}
+          onClick={(e) => {
+            if (!e.shiftKey && !(IS_MAC ? e.metaKey : e.ctrlKey)) select([]);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            select([]);
+            setMenu({ x: e.clientX, y: e.clientY, target: null });
+          }}
+        >
+          {mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />}
+          {marquee.box && <div className="marquee" style={marquee.box} />}
+          {count === 0 && !pending.length && shown === cwd && state.loaded && (
+            <div className="empty">
+              {query
+                ? `Nothing${searchAll ? "" : ` in ${displayPath(cwd, home)}`} matches “${query}”.`
+                : listing.error
+                  ? `Can't open this folder: ${listing.error}`
+                  : hiddenFolders > 0
+                    ? `No downloads here. ${plural(hiddenFolders, "folder")} without downloads ${hiddenFolders === 1 ? "is" : "are"} hidden.`
+                    : "This folder is empty. Right-click to add a download or a queue."}
+            </div>
+          )}
+        </div>
+        {overviewOpen && (
+          <Overview
+            nodes={overview}
+            onOpenQueue={(dir) => go(dir)}
+            onOpenFile={(dir, id) => go(dir, id)}
+            onAction={onAction}
+            onPauseQueue={(id) => state.queues[id] && pauseQueueOf(state.queues[id])}
+            onPauseAll={pauseAll}
+            onClose={() => setOverviewPanel("closed")}
+          />
         )}
       </div>
 
