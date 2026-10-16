@@ -5,3 +5,4 @@
 4. all active downloads overview
    1. show more detail, configure in settings
 6. disk low or no space errors
+7. Refresh an expired link

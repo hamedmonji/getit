@@ -124,6 +124,15 @@ export function CloseIcon({ size = 10 }: IconProps) {
   );
 }
 
+/** A chevron pointing up, or down when `open`, for showing and hiding the details panel. */
+export function ExpandIcon({ size = 12, open = false }: IconProps & { open?: boolean }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16">
+      <path d={open ? "M4 6l4 4 4-4" : "M4 10l4-4 4 4"} {...stroke} strokeWidth={1.7} />
+    </svg>
+  );
+}
+
 /** A window with a panel on its right, for the overview. */
 export function OverviewIcon({ size = 14 }: IconProps) {
   return (

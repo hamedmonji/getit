@@ -4,6 +4,7 @@ import type { ViewMode } from "../lib/viewModels";
 import {
   BackIcon,
   CloseIcon,
+  ExpandIcon,
   FolderIcon,
   ForwardIcon,
   GridIcon,
@@ -568,6 +569,8 @@ export function StatusBar({
   speed,
   warning,
   notice,
+  detailsOpen,
+  onToggleDetails,
 }: {
   itemCount: string;
   selInfo: string;
@@ -576,6 +579,8 @@ export function StatusBar({
   warning: string | null;
   /** A passing message, such as why a move failed. */
   notice: string | null;
+  detailsOpen: boolean;
+  onToggleDetails: () => void;
 }) {
   return (
     <div className="status-bar">
@@ -594,6 +599,14 @@ export function StatusBar({
       )}
       <span>{left}</span>
       <span className="mono ink">{speed}</span>
+      <button
+        className={detailsOpen ? "status-expand on" : "status-expand"}
+        title={`${detailsOpen ? "Hide" : "Show"} details (${MOD}I)`}
+        aria-pressed={detailsOpen}
+        onClick={onToggleDetails}
+      >
+        <ExpandIcon open={detailsOpen} />
+      </button>
     </div>
   );
 }

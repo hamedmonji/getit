@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { Details } from "./components/Details";
 import { Overview } from "./components/Overview";
 import { DuplicatePanel, InputBar, PasteBar, PauseBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
 import { ContextMenu, type MenuItem } from "./components/ContextMenu";
@@ -200,6 +201,13 @@ export default function App() {
     () => "closed",
   );
   const overviewOpen = overviewPanel === "open";
+  const [detailsPanel, setDetailsPanel] = useStoredState<"open" | "closed">(
+    "getit.details",
+    ["open", "closed"],
+    () => "closed",
+  );
+  const detailsOpen = detailsPanel === "open";
+  const toggleDetails = () => setDetailsPanel(detailsOpen ? "closed" : "open");
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
   /** Links from the clipboard waiting for the user to confirm. */
   const [pasting, setPasting] = useState<string[] | null>(null);
@@ -410,8 +418,10 @@ export default function App() {
     if (vm.action === "pause") pauseDownloads([vm.id]);
     else report(engine.resume(vm.id));
   };
+  // Finished files open; unfinished downloads show or hide their details instead.
   const onOpenFile = (vm: FileVm) => {
     if (vm.done && !vm.missing && vm.path) report(engine.openPath(vm.path));
+    else if (!vm.done && vm.id in state.downloads) toggleDetails();
   };
 
   /** Where arrow keys move from: the item last reached with them, if still selected. */
@@ -838,6 +848,9 @@ export default function App() {
         e.preventDefault();
         if (e.key === "[") goBack();
         else goForward();
+      } else if (e.key.toLowerCase() === "i" && command) {
+        e.preventDefault();
+        toggleDetails();
       } else if (e.key.toLowerCase() === "o" && command) {
         e.preventDefault();
         setOverviewPanel(overviewOpen ? "closed" : "open");
@@ -1352,6 +1365,26 @@ export default function App() {
         />
       )}
 
+      {detailsOpen && (
+        <Details
+          item={selFile ? (state.downloads[selFile.id] ?? null) : null}
+          vm={selFile ?? null}
+          speed={selFile ? (state.speeds[selFile.id] ?? 0) : 0}
+          folder={selFile ? displayPath(dirOf(selFile.id) ?? cwd, home) : ""}
+          selectionLabel={
+            selection.length > 1
+              ? `${plural(selection.length, "item")} selected. Select one download to see its details.`
+              : "Select a download to see its details."
+          }
+          onAction={onAction}
+          onCopy={(text) => report(engine.writeClipboard(text))}
+          onReveal={() => {
+            const path = selFile && diskPath(selFile.id);
+            if (path) report(engine.reveal([path]));
+          }}
+        />
+      )}
+
       <StatusBar
         itemCount={
           query
@@ -1373,6 +1406,8 @@ export default function App() {
         speed={`↓ ${formatSpeed(global.speed)}`}
         warning={state.saveError}
         notice={notice}
+        detailsOpen={detailsOpen}
+        onToggleDetails={toggleDetails}
       />
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.target)} onClose={closeMenu} />}

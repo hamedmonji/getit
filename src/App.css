@@ -1229,6 +1229,143 @@ input::placeholder {
   color: var(--danger);
 }
 
+.status-expand {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-right: -6px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.status-expand:hover,
+.status-expand.on {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* Details: the selected download, above the status bar */
+
+.details {
+  flex: none;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 12px;
+}
+
+.details-empty {
+  padding: 10px 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.details-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.details-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.details-status {
+  flex: none;
+  color: var(--muted);
+}
+
+.details-action {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--track);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.details-bar {
+  height: 4px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+
+.details-bar > div {
+  height: 100%;
+  transition: width 0.4s linear;
+}
+
+.details-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 5px 16px;
+  margin: 10px 0 0;
+}
+
+.details-grid dt {
+  color: var(--muted);
+}
+
+.details-grid dd {
+  margin: 0;
+}
+
+.details-value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.details-value.mono {
+  font-size: 11.5px;
+}
+
+.details-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.details-copy {
+  flex: none;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.details-link {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.details-link:hover {
+  text-decoration: underline;
+}
+
 /* Context menu */
 
 .menu {
