@@ -538,7 +538,7 @@ export function CapturedBar({
         <button className="plain-btn" onClick={onClose}>
           Dismiss
         </button>
-        <button className="plain-btn" autoFocus title={`Add to ${dirLabel}/`} onClick={add}>
+        <button className="plain-btn" title={`Add to ${dirLabel}/`} onClick={add}>
           Add here
         </button>
       </div>

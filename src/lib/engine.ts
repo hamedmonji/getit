@@ -126,7 +126,13 @@ export function onResync(handler: () => void): Promise<UnlistenFn> {
   return listen("engine://resync", handler);
 }
 
+/** Links the browser extension captured, with the title of the page they came from. */
+export interface Captured {
+  urls: string[];
+  title: string | null;
+}
+
 /** Fired when the browser extension sends links to add. */
-export function onBrowserLinks(handler: (urls: string[]) => void): Promise<UnlistenFn> {
-  return listen<string[]>("browser://links", (e) => handler(e.payload));
+export function onBrowserLinks(handler: (captured: Captured) => void): Promise<UnlistenFn> {
+  return listen<Captured>("browser://links", (e) => handler(e.payload));
 }

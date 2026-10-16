@@ -29,17 +29,17 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   switch (info.menuItemId) {
     case MENU_LINK:
-      return send([info.linkUrl]);
+      return send([info.linkUrl], tab?.title);
     case MENU_MEDIA:
-      return send([info.srcUrl]);
+      return send([info.srcUrl], tab?.title);
     case MENU_SELECTION:
-      return send(await selectedLinks(tab, info.frameId ?? 0));
+      return send(await selectedLinks(tab, info.frameId ?? 0), tab?.title);
   }
 });
 
 // The toolbar button downloads the page itself, which suits files the browser
 // opened instead of saving (PDFs, videos, archives served inline).
-chrome.action.onClicked.addListener((tab) => send([tab.url]));
+chrome.action.onClicked.addListener((tab) => send([tab.url], tab.title));
 
 /** Links inside the selection in `tab`, plus any URLs written out in its text. */
 async function selectedLinks(tab, frameId) {
@@ -98,24 +98,27 @@ chrome.downloads.onCreated.addListener(async (item) => {
   flashBadge("✓", "#2e7d32");
 });
 
-/** Sends `urls` to the app; rejects if it isn't running or refuses them. */
-async function post(urls) {
+/**
+ * Sends `urls` to the app, with the title of their page, which getit uses to
+ * pick a folder. Rejects if the app isn't running or refuses them.
+ */
+async function post(urls, title) {
   const response = await fetch(`${APP}/add`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ urls }),
+    body: JSON.stringify({ urls, title: title || null }),
   });
   if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
 }
 
-async function send(urls) {
+async function send(urls, title) {
   urls = urls.filter((url) => url && /^https?:/i.test(url));
   if (!urls.length) {
     notify("Nothing to download", "getit only downloads http and https links.");
     return;
   }
   try {
-    await post(urls);
+    await post(urls, title);
     flashBadge("✓", "#2e7d32");
   } catch (e) {
     flashBadge("!", "#c62828");

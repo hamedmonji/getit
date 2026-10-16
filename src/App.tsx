@@ -19,8 +19,9 @@ import { useEngine } from "./hooks/useEngine";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
 import { useStoredState } from "./hooks/useStoredState";
-import { engine, onBrowserLinks, type DownloadItem, type DownloadStatus, type QueueInfo } from "./lib/engine";
+import { engine, onBrowserLinks, type Captured, type DownloadItem, type DownloadStatus, type QueueInfo } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
+import { bestQueueFor } from "./lib/match";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import {
   displayName,
@@ -800,11 +801,20 @@ export default function App() {
   };
 
   // Links sent from the browser extension wait at the bottom, with any captured
-  // before them, until the user adds them to a folder or dismisses them.
+  // before them, until the user adds them to a folder or dismisses them. getit
+  // goes to the queue whose name best matches the first link's file name and
+  // page title; when none does, it opens the search to find a folder.
+  const onCaptured = useRef<(captured: Captured) => void>(() => {});
+  onCaptured.current = ({ urls, title }) => {
+    const links = linksIn(urls.join("\n"));
+    if (!links.length) return;
+    setCaptured((prev) => [...new Set([...(prev ?? []), ...links])]);
+    const match = bestQueueFor(`${nameFromUrl(links[0]).replace(/\.[^.]*$/, "")} ${title ?? ""}`, Object.values(state.queues));
+    if (!match) setAddressOpen(true);
+    else if (match.dir !== cwd) go(match.dir);
+  };
   useEffect(() => {
-    const unlisten = onBrowserLinks((urls) =>
-      setCaptured((prev) => [...new Set([...(prev ?? []), ...linksIn(urls.join("\n"))])]),
-    );
+    const unlisten = onBrowserLinks((captured) => onCaptured.current(captured));
     return () => {
       unlisten.then((f) => f());
     };

@@ -1,19 +1,19 @@
 //! Local listener for the browser extension (see `browser-extension/`).
 //!
-//! The extension POSTs `{"urls": [...]}` to `http://127.0.0.1:PORT/add`; the
+//! The extension POSTs `{"urls": [...], "title": "..."}` to `http://127.0.0.1:PORT/add`; the
 //! links are handed to the frontend, which shows them as captured until the user
 //! adds them to a folder. Only requests from extension pages are accepted, so a
 //! website can't add downloads by calling the port itself.
 
 use std::thread;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 /// Must match `PORT` in `browser-extension/background.js`.
 pub const PORT: u16 = 47615;
-/// Links sent by the extension, as a list of URLs.
+/// Links sent by the extension, with the title of their page.
 const LINKS: &str = "browser://links";
 
 const EXTENSION_ORIGINS: &[&str] = &["chrome-extension://", "moz-extension://", "safari-web-extension://"];
@@ -21,6 +21,16 @@ const EXTENSION_ORIGINS: &[&str] = &["chrome-extension://", "moz-extension://", 
 #[derive(Deserialize)]
 struct AddRequest {
     urls: Vec<String>,
+    /// Title of the page the links came from, if any.
+    #[serde(default)]
+    title: Option<String>,
+}
+
+/// What the frontend gets.
+#[derive(Clone, Serialize)]
+struct Captured {
+    urls: Vec<String>,
+    title: Option<String>,
 }
 
 /// Starts listening on a background thread. If the port is taken the app runs
@@ -51,14 +61,16 @@ fn handle(app: &AppHandle, mut request: Request) {
             if request.as_reader().read_to_string(&mut body).is_err() {
                 return respond(request, 400, "unreadable body");
             }
-            let urls: Vec<String> = match serde_json::from_str::<AddRequest>(&body) {
-                Ok(add) => add.urls.into_iter().filter(|u| is_web_url(u)).collect(),
+            let add = match serde_json::from_str::<AddRequest>(&body) {
+                Ok(add) => add,
                 Err(_) => return respond(request, 400, "expected {\"urls\": [...]}"),
             };
+            let urls: Vec<String> = add.urls.into_iter().filter(|u| is_web_url(u)).collect();
             if urls.is_empty() {
                 return respond(request, 400, "no http(s) links");
             }
-            if app.emit(LINKS, urls).is_err() {
+            let title = add.title.filter(|t| !t.trim().is_empty());
+            if app.emit(LINKS, Captured { urls, title }).is_err() {
                 return respond(request, 500, "couldn't reach the window");
             }
             bring_to_front(app);
