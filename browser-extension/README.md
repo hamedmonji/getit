@@ -1,9 +1,9 @@
 # getit browser extension
 
 Sends links from the browser to the getit app. The app must be running; it
-listens on `http://127.0.0.1:47615` (see `src-tauri/src/browser.rs`) and adds
-the links to the folder it has open, asking first unless "Ask before adding
-pasted links" is off.
+listens on `http://127.0.0.1:47615` (see `src-tauri/src/browser.rs`) and shows
+the links it receives at the bottom of its window as captured, with an "Add here"
+button that adds them to the folder you're in.
 
 - **Right-click a link:** Download Link with getit
 - **Right-click an image, video or audio:** Download with getit

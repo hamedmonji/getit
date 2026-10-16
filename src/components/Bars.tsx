@@ -401,6 +401,67 @@ export function PasteBar({
 }
 
 /**
+ * Links the browser extension captured, waiting at the bottom of the window
+ * until the user adds them to the folder they're in or dismisses them. They
+ * stay while the user goes to another folder, so they can be added there.
+ */
+export function CapturedBar({
+  urls,
+  dirLabel,
+  onAdd,
+  onClose,
+}: {
+  urls: string[];
+  dirLabel: string;
+  /** Adds the links to the current folder. Rejects with a message to show. */
+  onAdd: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+
+  const add = async () => {
+    try {
+      await onAdd();
+      onClose();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const batch = urls.length > 1;
+  return (
+    <div className="paste-prompt captured">
+      <div className="add-bar">
+        <span className="add-label">Captured from browser{batch ? `: ${urls.length} links` : ""}</span>
+        <span className="paste-urls mono ellipsis" title={batch ? undefined : urls[0]}>
+          {batch ? "" : urls[0]}
+        </span>
+        {error && (
+          <span className="status-warning ellipsis" title={error}>
+            {error}
+          </span>
+        )}
+        <button className="plain-btn" onClick={onClose}>
+          Dismiss
+        </button>
+        <button className="plain-btn" autoFocus title={`Add to ${dirLabel}/`} onClick={add}>
+          Add here
+        </button>
+      </div>
+      {batch && (
+        <ol className="paste-list mono">
+          {urls.map((url) => (
+            <li key={url} className="ellipsis" title={url}>
+              {url}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+/**
  * Asks before pausing downloads whose server can't resume them, since pausing
  * throws away what they've downloaded. Enter keeps them going, Escape too.
  */

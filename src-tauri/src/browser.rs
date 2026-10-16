@@ -1,8 +1,8 @@
 //! Local listener for the browser extension (see `browser-extension/`).
 //!
 //! The extension POSTs `{"urls": [...]}` to `http://127.0.0.1:PORT/add`; the
-//! links are handed to the frontend, which adds them to the open folder the same
-//! way pasted links are. Only requests from extension pages are accepted, so a
+//! links are handed to the frontend, which shows them as captured until the user
+//! adds them to a folder. Only requests from extension pages are accepted, so a
 //! website can't add downloads by calling the port itself.
 
 use std::thread;

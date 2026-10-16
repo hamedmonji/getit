@@ -1,6 +1,6 @@
 // Sends links to the getit app, which listens on localhost
-// (src-tauri/src/browser.rs). The app adds them to the folder it has open,
-// asking first unless the user turned that off.
+// (src-tauri/src/browser.rs). The app shows them as captured until the user
+// adds them to a folder.
 
 // Must match `PORT` in src-tauri/src/browser.rs.
 const PORT = 47615;

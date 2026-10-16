@@ -292,6 +292,12 @@ input::placeholder {
   border-bottom: 0;
 }
 
+/* Captured links sit at the bottom, above the details and status bar. */
+.paste-prompt.captured {
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+
 .paste-list {
   max-height: 140px;
   overflow: auto;

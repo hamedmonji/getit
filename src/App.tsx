@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Details } from "./components/Details";
 import { Overview } from "./components/Overview";
-import { DuplicatePanel, InputBar, PasteBar, PauseBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
+import { CapturedBar, DuplicatePanel, InputBar, PasteBar, PauseBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
 import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
 import { useDirListing } from "./hooks/useDirListing";
@@ -209,6 +209,8 @@ export default function App() {
   const detailsOpen = detailsPanel === "open";
   const toggleDetails = () => setDetailsPanel(detailsOpen ? "closed" : "open");
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
+  /** Links the browser extension captured, waiting to be added to a folder. */
+  const [captured, setCaptured] = useState<string[] | null>(null);
   /** Links from the clipboard waiting for the user to confirm. */
   const [pasting, setPasting] = useState<string[] | null>(null);
   /** Downloads waiting for the user to confirm pausing, since they can't resume. */
@@ -780,11 +782,12 @@ export default function App() {
     }
   };
 
-  // Links sent from the browser extension are added like pasted ones.
-  const pasteLinksRef = useRef(pasteLinks);
-  pasteLinksRef.current = pasteLinks;
+  // Links sent from the browser extension wait at the bottom, with any captured
+  // before them, until the user adds them to a folder or dismisses them.
   useEffect(() => {
-    const unlisten = onBrowserLinks((urls) => pasteLinksRef.current(urls.join("\n")));
+    const unlisten = onBrowserLinks((urls) =>
+      setCaptured((prev) => [...new Set([...(prev ?? []), ...linksIn(urls.join("\n"))])]),
+    );
     return () => {
       unlisten.then((f) => f());
     };
@@ -880,6 +883,8 @@ export default function App() {
         setConfirmPause(null);
       } else if (e.key === "Escape" && duplicates) {
         settleDuplicates(duplicates.items, "skip");
+      } else if (e.key === "Escape" && captured) {
+        setCaptured(null);
       } else if (e.key === "Escape" && pasting) {
         setPasting(null);
       } else if (e.key === "Escape" && query) {
@@ -1362,6 +1367,15 @@ export default function App() {
           onRowAdd={(i) => settleDuplicates([duplicates.items[i]], "add")}
           onRowSkip={(i) => settleDuplicates([duplicates.items[i]], "skip")}
           onWhere={(i) => showDuplicate(duplicates.dir, duplicates.items[i])}
+        />
+      )}
+
+      {captured && captured.length > 0 && (
+        <CapturedBar
+          urls={captured}
+          dirLabel={displayPath(cwd, home)}
+          onAdd={() => addLinks(captured)}
+          onClose={() => setCaptured(null)}
         />
       )}
 
