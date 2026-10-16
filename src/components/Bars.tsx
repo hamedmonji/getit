@@ -5,6 +5,7 @@ import {
   BackIcon,
   CloseIcon,
   ExpandIcon,
+  FilterIcon,
   FolderIcon,
   ForwardIcon,
   GridIcon,
@@ -19,6 +20,13 @@ import {
 } from "./icons";
 
 export type Theme = "Light" | "Dark";
+
+/** What a search can be narrowed to. None selected shows both. */
+export type SearchKind = "folders" | "files";
+const SEARCH_KINDS: { kind: SearchKind; label: string }[] = [
+  { kind: "folders", label: "Folders" },
+  { kind: "files", label: "Files" },
+];
 
 /** Room for the native macOS window buttons, which sit over the toolbar. */
 const IS_MAC = navigator.userAgent.includes("Mac");
@@ -47,6 +55,9 @@ export interface ToolbarProps {
   /** Whether the search covers every queue rather than this folder; Tab switches. */
   searchAll: boolean;
   onSearchAll: (all: boolean) => void;
+  /** The kinds of item the search is narrowed to; empty means both. */
+  searchKinds: SearchKind[];
+  onSearchKinds: (kinds: SearchKind[]) => void;
   /** Goes to a typed path; rejects with a message to show. */
   onGoTo: (raw: string) => Promise<void>;
   /** Moves from the search field to its results. */
@@ -156,6 +167,12 @@ function AddressBar(p: ToolbarProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  /** Where the filter dropdown opens, under its button; null while closed. */
+  const [filterAt, setFilterAt] = useState<{ left: number; top: number } | null>(null);
+  const searching = p.addressOpen || !!p.query;
+  useEffect(() => {
+    if (!searching) setFilterAt(null);
+  }, [searching]);
 
   useEffect(() => {
     if (!p.addressOpen) return;
@@ -202,7 +219,9 @@ function AddressBar(p: ToolbarProps) {
     p.onAddressOpen(false);
   };
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") {
+    if (e.key === "Escape" && filterAt) {
+      setFilterAt(null);
+    } else if (e.key === "Escape") {
       close();
     } else if (e.key === "Tab") {
       // Switches where to search, unless a path is being typed. The current
@@ -256,6 +275,26 @@ function AddressBar(p: ToolbarProps) {
           {p.searchAll ? "Everywhere" : "Search everywhere"}
         </button>
       )}
+      {!typingPath && (p.addressOpen || p.query) && (
+        <button
+          className={"address-filter" + (p.searchKinds.length ? " on" : "") + (filterAt ? " open" : "")}
+          title="Search only folders or files"
+          aria-haspopup="menu"
+          aria-expanded={!!filterAt}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setFilterAt(filterAt ? null : { left: r.right, top: r.bottom + 6 });
+            input.current?.focus();
+          }}
+        >
+          <FilterIcon />
+          {p.searchKinds.length === 1 && SEARCH_KINDS.find((k) => k.kind === p.searchKinds[0])!.label}
+        </button>
+      )}
+      {filterAt && (
+        <SearchFilter at={filterAt} kinds={p.searchKinds} onKinds={p.onSearchKinds} onClose={() => setFilterAt(null)} />
+      )}
       {p.query && (
         <button
           className="address-clear"
@@ -266,6 +305,61 @@ function AddressBar(p: ToolbarProps) {
           <CloseIcon />
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * The dropdown under the search's filter button: check folders, files or both
+ * (or neither, which also shows both). Stays open while checking, so both can
+ * be set at once; clicks don't take focus from the search field.
+ */
+function SearchFilter({
+  at,
+  kinds,
+  onKinds,
+  onClose,
+}: {
+  /** Its top right corner, under the button. */
+  at: { left: number; top: number };
+  kinds: SearchKind[];
+  onKinds: (kinds: SearchKind[]) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onPointer = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (!ref.current?.contains(target) && !target.closest?.(".address-filter")) onClose();
+    };
+    window.addEventListener("mousedown", onPointer);
+    return () => window.removeEventListener("mousedown", onPointer);
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="menu search-filter"
+      role="menu"
+      style={{ left: at.left, top: at.top }}
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <div className="menu-header">Show</div>
+      {SEARCH_KINDS.map(({ kind, label }) => {
+        const checked = kinds.includes(kind);
+        return (
+          <button
+            key={kind}
+            className="menu-item"
+            role="menuitemcheckbox"
+            aria-checked={checked}
+            onClick={() => onKinds(checked ? kinds.filter((k) => k !== kind) : [...kinds, kind])}
+          >
+            <span className="menu-check">{checked ? "✓" : ""}</span>
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }

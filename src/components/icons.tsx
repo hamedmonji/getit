@@ -124,6 +124,15 @@ export function CloseIcon({ size = 10 }: IconProps) {
   );
 }
 
+/** A funnel, for filtering search results. */
+export function FilterIcon({ size = 13 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16">
+      <path d="M2.5 3.5h11L9.2 8.6v3.9L6.8 13.7V8.6z" {...stroke} strokeWidth={1.5} />
+    </svg>
+  );
+}
+
 /** A chevron pointing up, or down when `open`, for showing and hiding the details panel. */
 export function ExpandIcon({ size = 12, open = false }: IconProps & { open?: boolean }) {
   return (

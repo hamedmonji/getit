@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Details } from "./components/Details";
 import { Overview } from "./components/Overview";
-import { CapturedBar, DuplicatePanel, InputBar, PasteBar, PauseBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
+import {
+  CapturedBar,
+  DuplicatePanel,
+  InputBar,
+  PasteBar,
+  PauseBar,
+  StatusBar,
+  Toolbar,
+  type SearchKind,
+  type Theme,
+} from "./components/Bars";
 import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
 import { useDirListing } from "./hooks/useDirListing";
@@ -229,8 +239,13 @@ export default function App() {
   const [query, setQuery] = useState("");
   /** Whether the search covers every queue rather than this folder. */
   const [searchAll, setSearchAll] = useState(false);
+  /** Whether the search shows only folders or only files; empty shows both. */
+  const [searchKinds, setSearchKinds] = useState<SearchKind[]>([]);
   useEffect(() => {
-    if (!addressOpen && !query) setSearchAll(false);
+    if (!addressOpen && !query) {
+      setSearchAll(false);
+      setSearchKinds([]);
+    }
   }, [addressOpen, query]);
 
   useEffect(() => {
@@ -319,8 +334,10 @@ export default function App() {
         : null,
     [state, shown, listing, home, query, searchAll, mode],
   );
-  const folders = shownFolders(results?.folders ?? allFolders);
-  const files = results?.files ?? folderFiles;
+  /** Whether the search results include this kind; browsing shows everything. */
+  const showsKind = (kind: SearchKind) => !results || !searchKinds.length || searchKinds.includes(kind);
+  const folders = showsKind("folders") ? shownFolders(results?.folders ?? allFolders) : [];
+  const files = showsKind("files") ? (results?.files ?? folderFiles) : [];
 
   /** Every item in view, in display order. */
   const order = [...folders.map((g) => g.path), ...files.map((f) => f.id)];
@@ -1233,6 +1250,8 @@ export default function App() {
         query={query}
         onQuery={setQuery}
         searchAll={searchAll}
+        searchKinds={searchKinds}
+        onSearchKinds={setSearchKinds}
         onSearchAll={setSearchAll}
         onGoTo={async (raw) => {
           const path = resolvePath(raw, home);
@@ -1318,7 +1337,7 @@ export default function App() {
           {count === 0 && !pending.length && shown === cwd && state.loaded && (
             <div className="empty">
               {query
-                ? `Nothing${searchAll ? "" : ` in ${displayPath(cwd, home)}`} matches “${query}”.`
+                ? `${searchKinds.length === 1 ? `No ${searchKinds[0]}` : "Nothing"}${searchAll ? "" : ` in ${displayPath(cwd, home)}`} ${searchKinds.length === 1 ? "match" : "matches"} “${query}”.`
                 : listing.error
                   ? `Can't open this folder: ${listing.error}`
                   : hiddenFolders > 0
