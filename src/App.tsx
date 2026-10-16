@@ -792,7 +792,8 @@ export default function App() {
   // Command-Delete moves the selection to the Trash; Delete/Backspace alone
   // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
-  // item and Command-Up goes to the enclosing folder (Control-A and Alt-arrows elsewhere).
+  // item and Command-Up goes to the enclosing folder (Control-A and Alt-arrows elsewhere);
+  // Return renames the selected folder, as in Finder.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || menu) return;
@@ -842,6 +843,16 @@ export default function App() {
       } else if ((e.key.toLowerCase() === "f" || e.key.toLowerCase() === "l") && command) {
         e.preventDefault();
         setAddressOpen(true);
+      } else if (
+        e.key === "Enter" &&
+        !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) &&
+        // A focused button, such as a prompt's, takes Return itself.
+        !(e.target instanceof HTMLButtonElement) &&
+        selection.length === 1 &&
+        isFolderKey(selection[0])
+      ) {
+        e.preventDefault();
+        setEditing(selection[0]);
       } else if (e.key === "Escape" && confirmPause) {
         setConfirmPause(null);
       } else if (e.key === "Escape" && duplicates) {
@@ -1125,7 +1136,7 @@ export default function App() {
           : []),
         ...(query ? [showInFolderItem(target)] : []),
         revealItem([target]),
-        { kind: "action", label: "Rename", onSelect: () => setEditing(target) },
+        { kind: "action", label: "Rename", shortcut: IS_MAC ? "↩" : "Enter", onSelect: () => setEditing(target) },
         { kind: "separator" },
         ...clipMenu([target]),
         ...(clip && !clip.keys.includes(target)
