@@ -1,3 +1,4 @@
+mod browser;
 mod commands;
 
 use getit_engine::{Engine, JsonDirStore};
@@ -21,6 +22,7 @@ pub fn run() {
             let engine = async_runtime::block_on(async { Engine::new(store) })?;
             forward_events(app.handle().clone(), &engine);
             app.manage(engine);
+            browser::listen(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

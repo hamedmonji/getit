@@ -16,7 +16,7 @@ Each connection is limited to 10 MB/s by default (about 2 minutes per file). Set
 ```
 http://127.0.0.1:8000/resumable.bin?rate=0           # no limit
 http://127.0.0.1:8000/resumable.bin?rate=2000        # 2 MB/s, about 10 minutes per file
-http://127.0.0.1:8000/non-resumable.bin?rate=50000  # 50 MB/s, about 24 seconds per file
+http://127.0.0.1:8000/non-resumable.bin?rate=2000  # 2 MB/s, about 24 seconds per file
 ```
 
 The limit applies to each connection, so a download split across several connections goes faster in total.

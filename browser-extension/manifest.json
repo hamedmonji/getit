@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "getit",
+  "version": "0.1.0",
+  "description": "Send links to the getit download manager.",
+  "permissions": [
+    "contextMenus",
+    "notifications",
+    "scripting",
+    "activeTab",
+    "downloads",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:47615/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "action": {
+    "default_title": "Download this page with getit",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "getit@hamedmonji.com",
+      "strict_min_version": "121.0"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  }
+}

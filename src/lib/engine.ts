@@ -125,3 +125,8 @@ export function onEngineEvent(handler: (event: EngineEvent) => void): Promise<Un
 export function onResync(handler: () => void): Promise<UnlistenFn> {
   return listen("engine://resync", handler);
 }
+
+/** Fired when the browser extension sends links to add. */
+export function onBrowserLinks(handler: (urls: string[]) => void): Promise<UnlistenFn> {
+  return listen<string[]>("browser://links", (e) => handler(e.payload));
+}

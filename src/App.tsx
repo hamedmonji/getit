@@ -8,7 +8,7 @@ import { useEngine } from "./hooks/useEngine";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
 import { useStoredState } from "./hooks/useStoredState";
-import { engine, type DownloadItem, type DownloadStatus, type QueueInfo } from "./lib/engine";
+import { engine, onBrowserLinks, type DownloadItem, type DownloadStatus, type QueueInfo } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import {
@@ -769,6 +769,16 @@ export default function App() {
       setPasting(urls);
     }
   };
+
+  // Links sent from the browser extension are added like pasted ones.
+  const pasteLinksRef = useRef(pasteLinks);
+  pasteLinksRef.current = pasteLinks;
+  useEffect(() => {
+    const unlisten = onBrowserLinks((urls) => pasteLinksRef.current(urls.join("\n")));
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
 
   // Command-V pastes cut or copied items into this folder while the clipboard
   // still holds them, and otherwise adds the links on it.
