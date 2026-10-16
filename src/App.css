@@ -428,6 +428,25 @@ input::placeholder {
   color: var(--muted);
 }
 
+.no-access p {
+  max-width: 420px;
+  margin: 0 auto 8px;
+  line-height: 1.5;
+}
+
+.no-access .no-access-title {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.no-access-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 .icon-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, 124px);

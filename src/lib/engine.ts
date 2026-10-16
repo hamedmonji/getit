@@ -4,7 +4,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { open } from "@tauri-apps/plugin-dialog";
+import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 export type DownloadId = string;
 export type QueueId = string;
@@ -112,6 +113,16 @@ export const engine = {
   openPath: (path: string) => openPath(path),
   /** Shows the items selected in Finder (or the system file manager). */
   reveal: (paths: string[]) => revealItemInDir(paths),
+  /**
+   * Shows an Open panel at `path` for picking a folder; resolves with the one
+   * chosen, or null if cancelled. On macOS, choosing a protected folder there
+   * lets getit read it.
+   */
+  chooseFolder: (path: string) =>
+    open({ directory: true, defaultPath: path, title: "Grant getit access to this folder" }) as Promise<string | null>,
+  /** Opens macOS's Privacy & Security settings at Files & Folders. */
+  openPrivacySettings: () =>
+    openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"),
   /** The clipboard's text; rejects when it holds no text. */
   readClipboard: () => readText(),
   writeClipboard: (text: string) => writeText(text),

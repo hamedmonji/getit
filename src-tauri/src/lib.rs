@@ -16,6 +16,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let store = JsonDirStore::new(app.path().app_data_dir()?.join("queues"))?;
             // The engine spawns its tasks on the runtime it is created in.

@@ -78,11 +78,19 @@ const PACKAGE_EXTENSIONS: &[&str] = &[
     "kext",
 ];
 
+/// What `list_dir` fails with when the system won't let getit read the folder,
+/// such as a privacy-protected one on macOS (Documents, Desktop, ...).
+const NO_ACCESS: &str = "no access";
+
 #[tauri::command]
 pub async fn list_dir(path: String) -> CommandResult<DirListing> {
     let mut folders = Vec::new();
     let mut files = Vec::new();
-    for entry in fs::read_dir(&path).map_err(err)? {
+    let entries = fs::read_dir(&path).map_err(|e| match e.kind() {
+        io::ErrorKind::PermissionDenied => NO_ACCESS.to_string(),
+        _ => err(e),
+    })?;
+    for entry in entries {
         let Ok(entry) = entry else { continue };
         let name = entry.file_name().to_string_lossy().into_owned();
         // Follows symlinks, so linked folders show up as folders.

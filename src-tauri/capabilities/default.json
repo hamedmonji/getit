@@ -11,11 +11,20 @@
     "opener:default",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
+    "dialog:allow-open",
     {
       "identifier": "opener:allow-open-path",
       "allow": [
         {
           "path": "$HOME/**"
+        }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "x-apple.systempreferences:*"
         }
       ]
     }

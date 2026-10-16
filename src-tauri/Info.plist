@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Shown in macOS's prompt when getit first opens a protected folder. -->
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>getit shows and downloads into the folders in Documents.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>getit shows and downloads into the folders on your Desktop.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>getit shows and downloads into the folders in Downloads.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>getit shows and downloads into folders on removable drives.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>getit shows and downloads into folders on network drives.</string>
+</dict>
+</plist>

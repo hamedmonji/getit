@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Details } from "./components/Details";
+import { NoAccess } from "./components/NoAccess";
 import { Overview } from "./components/Overview";
 import {
   CapturedBar,
@@ -66,6 +67,9 @@ interface PendingAdd {
   /** The server's name for it, once known. */
   name: string | null;
 }
+
+/** What listing a folder fails with when the system won't let getit read it. */
+const NO_ACCESS = "no access";
 
 const STATUS_WORDS: Record<DownloadStatus, string> = {
   queued: "Waiting",
@@ -192,6 +196,8 @@ export default function App() {
   const [editing, setEditing] = useState<string | null>(null);
   /** Bumped to re-list the folder after changes the engine doesn't report. */
   const [listNonce, setListNonce] = useState(0);
+  /** Folders the user tried granting access to, which still can't be opened. */
+  const [accessAsked, setAccessAsked] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<Menu | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const [theme, setTheme] = useStoredState<Theme>("getit.theme", ["Light", "Dark"], () =>
@@ -788,6 +794,20 @@ export default function App() {
       .catch((e) => console.error(e));
   };
 
+  // Choosing a protected folder in the Open panel lets getit read it. Then it's
+  // listed again; a different folder chosen there is gone to instead.
+  const grantAccess = (dir: string) => {
+    engine
+      .chooseFolder(dir)
+      .then((picked) => {
+        if (!picked) return;
+        setAccessAsked((asked) => new Set(asked).add(dir));
+        if (picked === dir) setListNonce((n) => n + 1);
+        else go(picked);
+      })
+      .catch((e) => setNotice(`Couldn't ask for access: ${e}`));
+  };
+
   /** Adds the links in `text` to this folder's queue, after asking unless the user chose not to be asked. */
   const pasteLinks = (text: string) => {
     const urls = linksIn(text);
@@ -1224,6 +1244,8 @@ export default function App() {
     : pendingAdds
         .filter((p) => p.dir === shown && (p.name === null || asked.has(p.key)))
         .map((p) => pendingVm(p.key, p.url, p.name, p.name === null ? "Checking…" : "Already downloaded"));
+  const isEmpty = count === 0 && !pending.length && shown === cwd && state.loaded;
+  const noAccess = !query && listing.error === NO_ACCESS;
   const viewProps: ItemViewProps = {
     folders,
     files,
@@ -1348,7 +1370,15 @@ export default function App() {
         >
           {mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />}
           {marquee.box && <div className="marquee" style={marquee.box} />}
-          {count === 0 && !pending.length && shown === cwd && state.loaded && (
+          {isEmpty && noAccess && (
+            <NoAccess
+              name={baseName(cwd)}
+              asked={accessAsked.has(cwd)}
+              onGrant={() => grantAccess(cwd)}
+              onSettings={() => report(engine.openPrivacySettings())}
+            />
+          )}
+          {isEmpty && !noAccess && (
             <div className="empty">
               {query
                 ? `${searchKinds.length === 1 ? `No ${searchKinds[0]}` : "Nothing"}${searchAll ? "" : ` in ${displayPath(cwd, home)}`} ${searchKinds.length === 1 ? "match" : "matches"} “${query}”.`
