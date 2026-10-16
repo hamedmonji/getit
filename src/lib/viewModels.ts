@@ -230,9 +230,7 @@ export function folderVm(state: EngineState, path: string): FolderVm {
   const paused = ownPaused && st.pending > 0;
 
   let sub = "";
-  if (paused) sub = `Paused · ${st.pending} waiting`;
-  else if (st.active) sub = `${st.active} ↓ · ${formatSpeed(st.speed)}`;
-  else if (st.queued) sub = `${st.queued} queued`;
+  if (st.active) sub = `${st.active} ↓ · ${formatSpeed(st.speed)}`;
 
   return {
     name: baseName(path),

@@ -824,25 +824,30 @@ export default function App() {
   ];
   const pasteLabel = clip ? `Paste ${plural(clip.keys.length, "item")}` : "Paste";
 
-  const held = queue ? queue.downloads.filter((id) => state.downloads[id]?.status === "paused") : [];
+  /** A queue's downloads paused one by one. */
+  const heldIn = (target: QueueInfo) => target.downloads.filter((id) => state.downloads[id]?.status === "paused");
   // The toolbar shows the queue running while any of its downloads runs,
   // whether the queue or the user started it, and pausing there stops them all.
   const queueStopped = !!queue && own.active === 0;
-  // The menu shows the queue's own state: paused, or stopped by pausing its
+  // Menus show a queue's own state: paused, or stopped by pausing its
   // downloads one by one; downloads started on their own don't count.
-  const queuePaused =
-    !!queue && (queue.settings.paused || (own.active === 0 && own.queued === 0 && held.length > 0));
-  // Unpauses the queue and puts downloads paused one by one back in line.
-  const resumeQueue = () => {
-    if (!queue) return;
-    const { settings } = queue;
+  const isQueuePaused = (target: QueueInfo) => {
+    const st = stats(state, target.dir, false);
+    return target.settings.paused || (st.active === 0 && st.queued === 0 && heldIn(target).length > 0);
+  };
+  const queuePaused = !!queue && isQueuePaused(queue);
+  // Unpauses a queue and puts downloads paused one by one back in line.
+  const resumeQueueOf = (target: QueueInfo) => {
+    const { settings } = target;
+    const held = heldIn(target);
     report(
       (async () => {
-        if (settings.paused) await engine.setQueueSettings(queue.id, { ...settings, paused: false });
+        if (settings.paused) await engine.setQueueSettings(target.id, { ...settings, paused: false });
         if (held.length) await engine.requeue(held);
       })(),
     );
   };
+  const resumeQueue = () => queue && resumeQueueOf(queue);
   // Stops everything in a queue. Pausing a running queue stops all its
   // downloads; in one that's paused already, only downloads started on their
   // own run, so they're paused one by one.
@@ -1013,8 +1018,16 @@ export default function App() {
     const file = files.find((f) => f.id === target);
     if (file) return downloadMenu(file);
     if (folders.some((g) => g.path === target)) {
+      const folderQueue = queueForDir(state, target);
       return [
         { kind: "action", label: "Open", onSelect: () => go(target) },
+        ...(folderQueue
+          ? [
+              isQueuePaused(folderQueue)
+                ? ({ kind: "action", label: "Resume queue", onSelect: () => resumeQueueOf(folderQueue) } as const)
+                : ({ kind: "action", label: "Pause queue", onSelect: () => pauseQueueOf(folderQueue) } as const),
+            ]
+          : []),
         ...(query ? [showInFolderItem(target)] : []),
         revealItem([target]),
         { kind: "action", label: "Rename", onSelect: () => setEditing(target) },
