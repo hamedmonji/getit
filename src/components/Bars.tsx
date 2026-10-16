@@ -113,10 +113,6 @@ export function Toolbar(p: ToolbarProps) {
           {p.queueState === "stopped" ? <PlayIcon size={12} /> : <PauseIcon size={12} />}
         </button>
       )}
-      <button className="primary-btn" onClick={p.onToggleAdd}>
-        <PlusIcon />
-        Add link
-      </button>
       <button
         className="square-btn"
         title={p.theme === "Dark" ? "Light mode" : "Dark mode"}
@@ -124,9 +120,12 @@ export function Toolbar(p: ToolbarProps) {
       >
         <ThemeIcon />
       </button>
+      <button className="square-btn" onClick={p.onToggleAdd}>
+        <PlusIcon />
+      </button>
       <button
         className={"square-btn overview-btn" + (p.overviewOpen ? " toggled" : "")}
-        title={p.overviewOpen ? "Hide overview" : "Show overview"}
+        title={`${p.overviewOpen ? "Hide overview" : "Show overview"} (${MOD}O)`}
         aria-pressed={p.overviewOpen}
         onClick={p.onToggleOverview}
       >
