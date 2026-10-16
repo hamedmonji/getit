@@ -165,11 +165,20 @@ input::placeholder {
   cursor: text;
 }
 
+/* Both cut from the start ("…ads/Linux/"), keeping the end nearest the
+   folder's name: right-to-left boxes put the ellipsis on the left, and
+   .address-run keeps the path inside reading left to right. */
 .address-parent {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  direction: rtl;
   color: var(--muted);
+}
+
+.address-run {
+  direction: ltr;
+  unicode-bidi: isolate;
 }
 
 .address-segment {
@@ -194,6 +203,7 @@ input::placeholder {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  direction: rtl;
   color: var(--ink);
   font-weight: 600;
 }
