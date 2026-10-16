@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Overview } from "./components/Overview";
-import { DuplicatePanel, InputBar, PasteBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
+import { DuplicatePanel, InputBar, PasteBar, PauseBar, StatusBar, Toolbar, type Theme } from "./components/Bars";
 import { ContextMenu, type MenuItem } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
 import { useDirListing } from "./hooks/useDirListing";
@@ -9,7 +9,7 @@ import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
 import { useStoredState } from "./hooks/useStoredState";
 import { engine, type DownloadItem, type DownloadStatus, type QueueInfo } from "./lib/engine";
-import { formatSpeed, plural } from "./lib/format";
+import { formatSize, formatSpeed, plural } from "./lib/format";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import {
   displayName,
@@ -193,6 +193,8 @@ export default function App() {
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
   /** Links from the clipboard waiting for the user to confirm. */
   const [pasting, setPasting] = useState<string[] | null>(null);
+  /** Downloads waiting for the user to confirm pausing, since they can't resume. */
+  const [confirmPause, setConfirmPause] = useState<string[] | null>(null);
   const [duplicates, setDuplicates] = useState<Duplicates | null>(null);
   const [pendingAdds, setPendingAdds] = useState<PendingAdd[]>([]);
   const [clip, setClip] = useState<Clip | null>(null);
@@ -379,8 +381,21 @@ export default function App() {
     pressed.current = null;
   };
 
+  /** Running downloads whose server can't resume them, so pausing starts them over. */
+  const losesProgress = (id: string) => {
+    const item = state.downloads[id];
+    return item?.status === "downloading" && item.resumable === false;
+  };
+  /** Pauses downloads, asking first about any that would lose their progress. */
+  const pauseDownloads = (ids: string[]) => {
+    ids.filter((id) => !losesProgress(id)).forEach((id) => report(engine.pause(id)));
+    const ask = ids.filter(losesProgress);
+    if (ask.length) setConfirmPause(ask);
+  };
+
   const onAction = (vm: FileVm) => {
-    report(vm.action === "pause" ? engine.pause(vm.id) : engine.resume(vm.id));
+    if (vm.action === "pause") pauseDownloads([vm.id]);
+    else report(engine.resume(vm.id));
   };
   const onOpenFile = (vm: FileVm) => {
     if (vm.done && !vm.missing && vm.path) report(engine.openPath(vm.path));
@@ -771,6 +786,8 @@ export default function App() {
       } else if ((e.key.toLowerCase() === "f" || e.key.toLowerCase() === "l") && command) {
         e.preventDefault();
         setAddressOpen(true);
+      } else if (e.key === "Escape" && confirmPause) {
+        setConfirmPause(null);
       } else if (e.key === "Escape" && duplicates) {
         settleDuplicates(duplicates.items, "skip");
       } else if (e.key === "Escape" && pasting) {
@@ -935,7 +952,7 @@ export default function App() {
           // Waiting in a paused queue: start it on its own.
           items.push({ kind: "action", label: "Resume", onSelect: () => report(engine.resume(vm.id)) });
         }
-        items.push({ kind: "action", label: "Pause", onSelect: () => report(engine.pause(vm.id)) });
+        items.push({ kind: "action", label: "Pause", onSelect: () => pauseDownloads([vm.id]) });
       } else {
         items.push({
           kind: "action",
@@ -985,7 +1002,7 @@ export default function App() {
         kind: "action",
         label: "Pause",
         disabled: !pausable.length,
-        onSelect: () => pausable.forEach((f) => report(engine.pause(f.id))),
+        onSelect: () => pauseDownloads(pausable.map((f) => f.id)),
       },
       {
         kind: "action",
@@ -1165,6 +1182,16 @@ export default function App() {
             await addLinks(pasting);
           }}
           onClose={() => setPasting(null)}
+        />
+      )}
+
+      {confirmPause && (
+        <PauseBar
+          names={confirmPause.flatMap((id) => (state.downloads[id] ? [displayName(state.downloads[id])] : []))}
+          lost={formatSize(confirmPause.reduce((sum, id) => sum + (state.downloads[id]?.downloaded ?? 0), 0))}
+          // Only those still running; any that finished or stopped meanwhile are left alone.
+          onPause={() => confirmPause.filter(losesProgress).forEach((id) => report(engine.pause(id)))}
+          onClose={() => setConfirmPause(null)}
         />
       )}
 

@@ -399,6 +399,60 @@ export function PasteBar({
   );
 }
 
+/**
+ * Asks before pausing downloads whose server can't resume them, since pausing
+ * throws away what they've downloaded. Enter keeps them going, Escape too.
+ */
+export function PauseBar({
+  names,
+  lost,
+  onPause,
+  onClose,
+}: {
+  /** The downloads being paused. */
+  names: string[];
+  /** How much they've downloaded between them, such as "340 MB". */
+  lost: string;
+  onPause: () => void;
+  onClose: () => void;
+}) {
+  const batch = names.length > 1;
+  return (
+    <div className="paste-prompt" role="alertdialog" aria-label="Pause download">
+      <div className="add-bar">
+        <span className="add-label">
+          Pause {batch ? `${names.length} downloads` : <span className="ink">{names[0]}</span>}?
+        </span>
+        <span className="paste-urls muted ellipsis">
+          The server can't resume {batch ? "them" : "it"}, so the {lost} downloaded so far will be lost and{" "}
+          {batch ? "they start" : "it starts"} over.
+        </span>
+        <button className="plain-btn" autoFocus onClick={onClose}>
+          Keep downloading
+        </button>
+        <button
+          className="plain-btn"
+          onClick={() => {
+            onPause();
+            onClose();
+          }}
+        >
+          Pause anyway
+        </button>
+      </div>
+      {batch && (
+        <ol className="paste-list">
+          {names.map((name, i) => (
+            <li key={i} className="ellipsis" title={name}>
+              {name}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 /** A link being added that's already a download, or a file, somewhere. */
 export interface DuplicateRow {
   key: string;
