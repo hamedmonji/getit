@@ -1,7 +1,3 @@
-# Tauri + React + Typescript
+# getit
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+Test server: `python3 test-server/server.py` serves http://127.0.0.1:8000/resumable.bin (1.2 GB, supports Range) and http://127.0.0.1:8000/non-resumable.bin (1.2 GB, ignores Range).
