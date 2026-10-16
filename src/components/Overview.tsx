@@ -43,9 +43,6 @@ export function Overview({
             Stop all
           </button>
         )}
-        <button className="icon-btn" title="Close overview" onClick={onClose}>
-          <CloseIcon />
-        </button>
       </div>
       <div className="overview-body">
         {nodes.length ? (
