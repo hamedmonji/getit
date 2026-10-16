@@ -55,8 +55,11 @@ export interface ToolbarProps {
   /** Whether folders without a queue inside them are shown. */
   showAllFolders: boolean;
   onToggleFolders: () => void;
-  /** The current folder's queue: whether it's stopped or running; null when it has none. */
-  queueState: "stopped" | "running" | null;
+  /**
+   * The current folder's queue: whether it's stopped or running, or "empty" with
+   * nothing left to download; null when it has none.
+   */
+  queueState: "stopped" | "running" | "empty" | null;
   onToggleQueue: () => void;
   onToggleAdd: () => void;
   theme: Theme;
@@ -107,10 +110,17 @@ export function Toolbar(p: ToolbarProps) {
       {p.queueState && (
         <button
           className="square-btn"
-          title={p.queueState === "stopped" ? "Resume queue" : "Pause queue"}
+          title={
+            p.queueState === "empty"
+              ? "Nothing to download in this queue"
+              : p.queueState === "stopped"
+                ? "Resume queue"
+                : "Pause queue"
+          }
+          disabled={p.queueState === "empty"}
           onClick={p.onToggleQueue}
         >
-          {p.queueState === "stopped" ? <PlayIcon size={12} /> : <PauseIcon size={12} />}
+          {p.queueState === "running" ? <PauseIcon size={12} /> : <PlayIcon size={12} />}
         </button>
       )}
       <button

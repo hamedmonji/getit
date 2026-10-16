@@ -836,6 +836,8 @@ export default function App() {
     return target.settings.paused || (st.active === 0 && st.queued === 0 && heldIn(target).length > 0);
   };
   const queuePaused = !!queue && isQueuePaused(queue);
+  // Pausing or resuming means nothing for a queue with nothing left to download.
+  const hasWork = (target: QueueInfo) => stats(state, target.dir, false).pending > 0;
   // Unpauses a queue and puts downloads paused one by one back in line.
   const resumeQueueOf = (target: QueueInfo) => {
     const { settings } = target;
@@ -895,6 +897,7 @@ export default function App() {
         {
           kind: "action",
           label: queuePaused ? "Resume queue" : "Pause queue",
+          disabled: !hasWork(queue),
           onSelect: queuePaused ? resumeQueue : pauseQueue,
         },
         {
@@ -1024,8 +1027,18 @@ export default function App() {
         ...(folderQueue
           ? [
               isQueuePaused(folderQueue)
-                ? ({ kind: "action", label: "Resume queue", onSelect: () => resumeQueueOf(folderQueue) } as const)
-                : ({ kind: "action", label: "Pause queue", onSelect: () => pauseQueueOf(folderQueue) } as const),
+                ? ({
+                    kind: "action",
+                    label: "Resume queue",
+                    disabled: !hasWork(folderQueue),
+                    onSelect: () => resumeQueueOf(folderQueue),
+                  } as const)
+                : ({
+                    kind: "action",
+                    label: "Pause queue",
+                    disabled: !hasWork(folderQueue),
+                    onSelect: () => pauseQueueOf(folderQueue),
+                  } as const),
             ]
           : []),
         ...(query ? [showInFolderItem(target)] : []),
@@ -1115,7 +1128,7 @@ export default function App() {
         onMode={setMode}
         showAllFolders={showAllFolders}
         onToggleFolders={toggleFolders}
-        queueState={queue ? (queueStopped ? "stopped" : "running") : null}
+        queueState={queue ? (!hasWork(queue) ? "empty" : queueStopped ? "stopped" : "running") : null}
         onToggleQueue={toggleQueue}
         onToggleAdd={() => {
           setPasting(null);

@@ -149,6 +149,8 @@ input::placeholder {
 .address-bar {
   flex: 1;
   min-width: 0;
+  /* Leaves toolbar on both sides to drag the window by. */
+  margin: 0 24px;
   height: 30px;
   display: flex;
   align-items: center;
@@ -252,6 +254,15 @@ input::placeholder {
   border-radius: 8px;
   background: var(--panel);
   cursor: pointer;
+}
+
+.square-btn:disabled {
+  color: var(--track);
+  cursor: default;
+}
+
+.square-btn:disabled:hover {
+  background: var(--panel);
 }
 
 .square-btn.toggled {
