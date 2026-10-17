@@ -1,35 +1,26 @@
 import type { MouseEvent } from "react";
+import { isMediaKind } from "../lib/fileKind";
 import type { FileVm, FolderVm } from "../lib/viewModels";
+import { FileIcon } from "./FileIcon";
 import { PauseIcon, PlayIcon, RetryIcon } from "./icons";
 
 type Size = "large" | "small";
 
-function thumbGradient(hue: number): string {
-  return `linear-gradient(160deg, oklch(0.78 0.08 ${hue}) 0%, oklch(0.56 0.11 ${(hue + 35) % 360}) 60%, oklch(0.36 0.07 ${(hue + 60) % 360}) 100%)`;
-}
-
-/** File icon: a thumbnail for media or an extension badge. Dimmed until the download finishes. */
+/** File-type icon. Images and videos fill in as they download; other kinds
+ * are dimmed until done. The label is dropped in the list, too small to read. */
 export function FileGlyph({ vm, size }: { vm: FileVm; size: Size }) {
-  const opacity = vm.missing ? 0.4 : vm.done ? 1 : 0.55;
+  const media = isMediaKind(vm.kind);
+  const opacity = vm.missing ? 0.4 : vm.done || media ? 1 : 0.6;
   return (
-    <div className={`file-glyph ${size}`}>
-      {vm.isMedia ? (
-        <div className="thumb" style={{ background: thumbGradient(vm.hue), opacity }} />
-      ) : (
-        <div
-          className="badge"
-          style={{
-            background: `color-mix(in oklch, oklch(0.62 0.12 ${vm.hue}) ${vm.done ? 24 : 13}%, var(--panel2))`,
-            opacity,
-          }}
-        >
-          {size === "large" && (
-            <span style={{ color: `color-mix(in oklch, oklch(0.6 0.14 ${vm.hue}) 70%, var(--ink))` }}>
-              {vm.ext}
-            </span>
-          )}
-        </div>
-      )}
+    <div className={`file-glyph ${size}`} style={{ opacity }}>
+      <FileIcon
+        kind={vm.kind}
+        ext={vm.ext}
+        reveal={vm.done ? 100 : vm.pct}
+        edge={vm.active}
+        hue={vm.hue}
+        hideLabel={size === "small"}
+      />
     </div>
   );
 }

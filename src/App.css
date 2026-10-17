@@ -582,6 +582,7 @@ input::placeholder {
 .file-glyph {
   position: relative;
   flex: none;
+  transition: opacity 0.3s;
 }
 
 .file-glyph.large {
@@ -593,37 +594,6 @@ input::placeholder {
   width: 24px;
   height: 24px;
   justify-self: center;
-}
-
-.thumb {
-  position: absolute;
-  inset: 0;
-  border-radius: 10px;
-}
-
-.small .thumb {
-  border-radius: 5px;
-}
-
-.badge {
-  position: absolute;
-  inset: 0 8px;
-  border-radius: 6px 14px 6px 6px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 9px;
-}
-
-.small .badge {
-  inset: 0 3px;
-  border-radius: 3px 7px 3px 3px;
-}
-
-.badge span {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 600;
 }
 
 /* Folder icon, laid out to Finder's proportions: a back with a tab on its

@@ -3,17 +3,18 @@
 
 import type { EngineState } from "../hooks/useEngine";
 import type { DownloadItem, QueueInfo } from "./engine";
+import { type FileKind, resolveKind } from "./fileKind";
 import { formatEta, formatSize, formatSpeed } from "./format";
 import { baseName, isWithin, joinPath, parentPath } from "./paths";
 
 export type ViewMode = "Icons" | "List";
 export type FileAction = "pause" | "resume" | "retry";
 
-const MEDIA = ["JPG", "JPEG", "PNG", "GIF", "TIF", "TIFF", "WEBP", "HEIC", "MP4", "MKV", "MOV", "WEBM"];
-
 export interface FileVm {
   id: string;
   name: string;
+  /** Which file-type icon to draw, and its label. */
+  kind: FileKind;
   ext: string;
   status: string;
   sizeLabel: string;
@@ -22,7 +23,8 @@ export interface FileVm {
   /** Progress colour: accent while running, danger when failed, muted otherwise. */
   color: string;
   nameColor: string;
-  isMedia: boolean;
+  /** Running right now, rather than waiting, paused or finished. */
+  active: boolean;
   done: boolean;
   missing: boolean;
   hue: number;
@@ -91,17 +93,16 @@ function percent(item: DownloadItem): number {
  */
 export function pendingVm(key: string, url: string, name: string | null, status: string): FileVm {
   const shown = name ?? nameFromUrl(url);
-  const ext = (shown.includes(".") ? shown.split(".").pop()! : "").toUpperCase().slice(0, 4);
   return {
     id: key,
     name: shown,
-    ext,
+    ...resolveKind(shown),
     status,
     sizeLabel: "—",
     pct: 0,
     color: "var(--muted)",
     nameColor: "var(--muted)",
-    isMedia: MEDIA.includes(ext),
+    active: false,
     done: false,
     missing: false,
     hue: hueOf(url),
@@ -122,8 +123,6 @@ export function fileVm(
   present: Set<string> | null,
 ): FileVm {
   const name = displayName(item);
-  const ext = (name.includes(".") ? name.split(".").pop()! : "").toUpperCase().slice(0, 4);
-  const isMedia = MEDIA.includes(ext);
   const exact = percent(item);
   const pct = Math.floor(exact);
   const done = item.status === "completed";
@@ -164,13 +163,13 @@ export function fileVm(
   return {
     id: item.id,
     name,
-    ext,
+    ...resolveKind(name),
     status,
     sizeLabel,
     pct: exact,
     color: failed ? "var(--danger)" : active ? "var(--accent)" : "var(--muted)",
     nameColor: failed ? "var(--danger)" : missing ? "var(--muted)" : "var(--ink)",
-    isMedia,
+    active,
     done,
     missing,
     hue: hueOf(item.id),
