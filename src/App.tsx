@@ -29,7 +29,6 @@ import {
   type Captured,
   type DownloadItem,
   type DownloadStatus,
-  type QueueId,
   type QueueInfo,
 } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
@@ -230,13 +229,22 @@ export default function App() {
     () => "closed",
   );
   /** Queue whose settings panel is showing; it takes the overview's place while open. */
-  const [queueSettingsFor, setQueueSettingsFor] = useState<QueueId | null>(null);
-  const overviewOpen = overviewPanel === "open" && !queueSettingsFor;
+  /**
+   * The queue settings panel, for the selected queue folder's queue or else this
+   * folder's. It takes the overview's place while open; closing it brings it back.
+   */
+  const [queuePanel, setQueuePanel] = useStoredState<"open" | "closed">(
+    "getit.queuePanel",
+    ["open", "closed"],
+    () => "closed",
+  );
+  const queuePanelOpen = queuePanel === "open";
+  const toggleQueuePanel = () => setQueuePanel(queuePanelOpen ? "closed" : "open");
+  const overviewOpen = overviewPanel === "open" && !queuePanelOpen;
   const toggleOverview = () => {
-    setQueueSettingsFor(null);
+    setQueuePanel("closed");
     setOverviewPanel(overviewOpen ? "closed" : "open");
   };
-  const toggleQueueSettings = (id: QueueId) => setQueueSettingsFor((open) => (open === id ? null : id));
   /** Whether the settings popup is showing. */
   const [settingsOpen, setSettingsOpen] = useState(false);
   const toggleSettings = () => setSettingsOpen((open) => !open);
@@ -885,7 +893,7 @@ export default function App() {
   // Command-N makes a new folder with its own queue; Command-[ and Command-]
   // go back and forward; Command-. shows or hides folders without downloads;
   // Command-1 and Command-2 switch to icons and list; Command-O shows or hides the overview,
-  // Command-, the settings, and Command-/ the selected queue's settings (or this folder's);
+  // Command-, the settings, and Command-/ the queue settings panel;
   // Command-Delete moves the selection to the Trash; Delete/Backspace alone
   // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
@@ -944,12 +952,8 @@ export default function App() {
         e.preventDefault();
         toggleSettings();
       } else if ((e.key === "/" || e.code === "Slash") && command && !e.shiftKey) {
-        // Command-/: the selected queue folder's settings, else this folder's queue's.
         e.preventDefault();
-        const selectedQueue = selection.length === 1 && isFolderKey(selection[0]) ? queueForDir(state, selection[0]) : null;
-        const target = selectedQueue ?? queue;
-        if (target) toggleQueueSettings(target.id);
-        else setQueueSettingsFor(null);
+        toggleQueuePanel();
       } else if ((e.key === "1" || e.key === "2") && command) {
         e.preventDefault();
         setMode(e.key === "1" ? "Icons" : "List");
@@ -1136,7 +1140,7 @@ export default function App() {
           kind: "action",
           label: "Queue Settings…",
           shortcut: `${MOD}/`,
-          onSelect: () => setQueueSettingsFor(queue.id),
+          onSelect: () => setQueuePanel("open"),
         },
       );
     }
@@ -1267,8 +1271,11 @@ export default function App() {
               {
                 kind: "action",
                 label: "Queue Settings…",
-                shortcut: `${MOD}/`,
-                onSelect: () => setQueueSettingsFor(folderQueue.id),
+                // The panel shows the selected queue folder's queue.
+                onSelect: () => {
+                  select([target]);
+                  setQueuePanel("open");
+                },
               } as const,
             ]
           : []),
@@ -1289,7 +1296,14 @@ export default function App() {
 
   const global = stats(state, "/", true);
   const overview = overviewOpen ? overviewTree(state, home) : [];
-  const settingsQueue = queueSettingsFor ? state.queues[queueSettingsFor] : undefined;
+  // A selected folder with a queue, else the folder you're in.
+  // From what's selected, not `selection`, which only holds items in the listing
+  // shown and so drops the folder you came up from until the parent's listing arrives.
+  const [selectedKey] = selected.size === 1 ? [...selected] : [];
+  const selectedQueue = selectedKey && isFolderKey(selectedKey) ? queueForDir(state, selectedKey) : undefined;
+  // The folder you're in, not the listing shown (`queue`), which lags behind
+  // until the new folder's listing arrives and would flash the previous queue.
+  const settingsQueue = queuePanelOpen ? (selectedQueue ?? queueForDir(state, cwd)) : undefined;
   // Unfinished downloads in queue order, which is the order they run in. Not a
   // hook: this is past the early return above, so a hook here would break the
   // order React expects.
@@ -1472,13 +1486,20 @@ export default function App() {
             onClose={() => setOverviewPanel("closed")}
           />
         )}
-        {settingsQueue && (
+        {queuePanelOpen && (
           <QueueSettings
-            name={baseName(settingsQueue.dir) || settingsQueue.dir}
-            path={displayPath(settingsQueue.dir, home)}
+            queue={
+              settingsQueue
+                ? {
+                    id: settingsQueue.id,
+                    name: baseName(settingsQueue.dir) || settingsQueue.dir,
+                    path: displayPath(settingsQueue.dir, home),
+                  }
+                : null
+            }
             files={settingsQueueFiles}
-            onReorder={(ids) => report(engine.reorderQueue(settingsQueue.id, ids))}
-            onClose={() => setQueueSettingsFor(null)}
+            onReorder={(ids) => settingsQueue && report(engine.reorderQueue(settingsQueue.id, ids))}
+            onClose={() => setQueuePanel("closed")}
           />
         )}
 

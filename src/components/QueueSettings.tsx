@@ -16,18 +16,18 @@ const DRAG_THRESHOLD = 4;
 const SCROLL_EDGE = 28;
 
 /**
- * The side panel for one queue, in the overview's place, with a tab for its
- * settings (empty for now) and one for the order its downloads run in.
+ * The side panel for the selected queue folder's queue, or else the
+ * current folder's, with a tab for its settings (empty for now) and one for the
+ * order its downloads run in. It follows the selection and the folder you're in.
  */
 export function QueueSettings({
-  name,
-  path,
+  queue,
   files,
   onReorder,
   onClose,
 }: {
-  name: string;
-  path: string;
+  /** The queue to show, or null if there's none to show. */
+  queue: { id: string; name: string; path: string } | null;
   /** The queue's unfinished downloads, in queue order. */
   files: FileVm[];
   /** Puts these downloads first, in this order; finished ones follow. */
@@ -44,29 +44,38 @@ export function QueueSettings({
           <CloseIcon />
         </button>
       </div>
-      <div className="queue-settings-folder" title={path}>
-        <FolderIcon />
-        <span className="ellipsis">{name}</span>
-      </div>
-      <div className="queue-settings-tabs">
-        <div className="segmented" role="tablist">
-          {TABS.map(({ tab: t, label }) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              className={tab === t ? "active" : ""}
-              onClick={() => setTab(t)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-      {tab === "settings" ? (
-        <div className="overview-body" role="tabpanel" aria-label="Settings" />
+      {queue ? (
+        <>
+          <div className="queue-settings-folder" title={queue.path}>
+            <FolderIcon />
+            <span className="ellipsis">{queue.name}</span>
+          </div>
+          <div className="queue-settings-tabs">
+            <div className="segmented" role="tablist">
+              {TABS.map(({ tab: t, label }) => (
+                <button
+                  key={t}
+                  role="tab"
+                  aria-selected={tab === t}
+                  className={tab === t ? "active" : ""}
+                  onClick={() => setTab(t)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {tab === "settings" ? (
+            <div className="overview-body" role="tabpanel" aria-label="Settings" />
+          ) : (
+            // Keyed so each queue has its own selection.
+            <QueueOrder key={queue.id} files={files} onReorder={onReorder} />
+          )}
+        </>
       ) : (
-        <QueueOrder files={files} onReorder={onReorder} />
+        <div className="overview-body">
+          <div className="overview-empty">This folder has no queue. Add a download here to start one.</div>
+        </div>
       )}
     </aside>
   );
