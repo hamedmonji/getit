@@ -316,7 +316,13 @@ impl Engine {
     }
 
     /// Moves the given downloads to the front of their queue, in the given order.
-    /// Unknown ids are ignored. Running downloads are not interrupted.
+    /// Unknown ids are ignored.
+    ///
+    /// In a running queue, the downloads now nearest the top run, as many as the
+    /// queue allows at once: a running download that ends up below them goes
+    /// back to waiting (keeping its partial file), and the ones above start in
+    /// its place. A running download the server can't resume isn't stopped, as
+    /// it would lose its progress; it keeps its slot.
     pub fn reorder_queue(&self, id: QueueId, ids: &[DownloadId]) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
@@ -325,6 +331,16 @@ impl Engine {
             .get_mut(&id)
             .ok_or(EngineError::QueueNotFound(id))?;
         queue.reorder(ids);
+        for bumped in queue.to_make_room(|id| st.active.contains_key(id)) {
+            let item = queue.items.get_mut(&bumped).expect("queue has its downloads");
+            item.status = DownloadStatus::Queued;
+            self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
+            // Its slot frees up once the worker stops, and `schedule` then
+            // starts the download that took its place.
+            if let Some(active) = st.active.get_mut(&bumped) {
+                active.stop(Stop::Pause);
+            }
+        }
         self.inner.save(queue);
         self.inner.emit(EngineEvent::QueueChanged(queue.info()));
         self.inner.schedule(st, id);

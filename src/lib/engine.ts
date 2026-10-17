@@ -119,6 +119,11 @@ export const engine = {
   copyDownloads: (ids: DownloadId[], dir: string) => invoke<DownloadId[]>("copy_downloads", { ids, dir }),
   /** Copies folders, with their queues, into `dest`; returns the copies' paths. */
   copyFolders: (paths: string[], dest: string) => invoke<string[]>("copy_folders", { paths, dest }),
+  /**
+   * Puts a queue's downloads in this order. In a running queue the top ones run,
+   * up to its limit; running ones that end up below go back to waiting.
+   */
+  reorderQueue: (queueId: QueueId, ids: DownloadId[]) => invoke<void>("reorder_queue", { queueId, ids }),
   setQueueSettings: (queueId: QueueId, settings: QueueSettings) =>
     invoke<void>("set_queue_settings", { queueId, settings }),
   clearCompleted: (queueId: QueueId) => invoke<number>("clear_completed", { queueId }),

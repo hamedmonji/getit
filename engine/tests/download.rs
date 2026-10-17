@@ -1176,6 +1176,82 @@ async fn restore_drops_trailing_slashes_from_saved_folders() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn moving_a_waiting_download_up_starts_it_in_place_of_a_running_one() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let first = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    let second = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.unpause(queue);
+    wait_for_progress(&ctx.engine, first).await;
+    assert_eq!(ctx.engine.get(second).unwrap().status, DownloadStatus::Queued);
+
+    ctx.engine.reorder_queue(queue, &[second, first]).unwrap();
+    assert_eq!(ctx.engine.queue(queue).unwrap().downloads, vec![second, first]);
+    assert_eq!(ctx.engine.get(first).unwrap().status, DownloadStatus::Queued);
+    wait_for_status(&ctx.engine, second, DownloadStatus::Downloading).await;
+    assert_eq!(ctx.engine.get(first).unwrap().status, DownloadStatus::Queued);
+
+    // The bumped one carries on from its partial file once the other finishes.
+    wait_for_status(&ctx.engine, first, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(first);
+    ctx.assert_file_matches(second);
+    let requests = ctx.server.requests();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    assert_eq!(requests[2].status, 206, "{requests:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reordering_keeps_downloads_running_within_the_limit() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 2);
+    let a = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    let b = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    let c = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.unpause(queue);
+    wait_for_progress(&ctx.engine, a).await;
+    wait_for_progress(&ctx.engine, b).await;
+
+    // Swapping the two running ones, or moving the waiting one below them, stops nothing.
+    ctx.engine.reorder_queue(queue, &[b, a, c]).unwrap();
+    ctx.engine.reorder_queue(queue, &[a, b, c]).unwrap();
+    for id in [a, b] {
+        assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Downloading);
+    }
+    assert_eq!(ctx.engine.get(c).unwrap().status, DownloadStatus::Queued);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reordering_never_stops_a_download_that_cant_resume() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let first = ctx.engine.add(queue, &ctx.url("/norange.bin")).unwrap();
+    let second = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.unpause(queue);
+    wait_for_progress(&ctx.engine, first).await;
+    assert_eq!(ctx.engine.get(first).unwrap().resumable, Some(false));
+
+    ctx.engine.reorder_queue(queue, &[second, first]).unwrap();
+    settle().await;
+    assert_eq!(ctx.engine.get(first).unwrap().status, DownloadStatus::Downloading);
+    assert_eq!(ctx.engine.get(second).unwrap().status, DownloadStatus::Queued);
+    wait_for_status(&ctx.engine, second, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(first);
+    assert_eq!(ctx.server.requests().len(), 2, "the first wasn't restarted");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn reordering_a_paused_queue_starts_nothing() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let first = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    let second = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.reorder_queue(queue, &[second, first]).unwrap();
+    settle().await;
+    assert_eq!(ctx.engine.queue(queue).unwrap().downloads, vec![second, first]);
+    assert!(ctx.server.requests().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn rename_renames_finished_and_paused_files() {
     let ctx = Ctx::new().await;
     let done = ctx

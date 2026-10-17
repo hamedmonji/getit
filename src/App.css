@@ -1056,6 +1056,114 @@ input::placeholder {
   color: var(--muted);
 }
 
+.queue-settings-folder {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 500;
+}
+
+.queue-settings-folder svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.queue-settings-tabs {
+  flex: none;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.queue-order-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  user-select: none;
+  touch-action: none;
+}
+
+.queue-order-list.dragging {
+  cursor: grabbing;
+}
+
+.queue-order-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  cursor: default;
+}
+
+.queue-order-row:hover {
+  background: var(--hover);
+}
+
+.queue-order-row.selected {
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
+}
+
+/* Where dragged rows would land: a line above this row, or below the last. */
+.queue-order-row.drop-before::before,
+.queue-order-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.queue-order-row.drop-before::before {
+  top: -1px;
+}
+
+.queue-order-row.drop-after::after {
+  bottom: -1px;
+}
+
+.queue-order-rank {
+  flex: none;
+  width: 18px;
+  text-align: right;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.queue-order-text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.queue-order-name {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.queue-order-status {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.queue-order-note {
+  margin: 10px 8px 2px;
+}
+
+.queue-settings-tabs .segmented button {
+  flex: 1;
+  width: auto;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .overview-empty {
   padding: 24px 8px;
   text-align: center;

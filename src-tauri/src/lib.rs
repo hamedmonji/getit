@@ -48,6 +48,7 @@ pub fn run() {
             commands::move_to_trash,
             commands::restore_from_trash,
             commands::set_queue_settings,
+            commands::reorder_queue,
             commands::clear_completed,
         ])
         .run(tauri::generate_context!())

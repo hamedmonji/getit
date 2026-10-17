@@ -497,6 +497,13 @@ pub fn remove_download(engine: State<'_, Engine>, id: DownloadId) -> CommandResu
     engine.remove(id).map_err(err)
 }
 
+/// Puts a queue's downloads in the given order. In a running queue, the top
+/// ones run, stopping running ones that end up below the limit.
+#[tauri::command]
+pub fn reorder_queue(engine: State<'_, Engine>, queue_id: QueueId, ids: Vec<DownloadId>) -> CommandResult<()> {
+    engine.reorder_queue(queue_id, &ids).map_err(err)
+}
+
 #[tauri::command]
 pub fn set_queue_settings(
     engine: State<'_, Engine>,

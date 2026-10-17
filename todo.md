@@ -7,3 +7,4 @@
 5. Refresh an expired link
 6. sort order, drag in a list to set the sort order -> first Kind, then name then ...
 7. advanced search, filter based on source, file type etc
+8. schedule

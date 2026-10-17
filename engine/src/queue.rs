@@ -153,6 +153,40 @@ impl Queue {
             .take(free)
             .collect()
     }
+
+    /// Running downloads to send back to waiting so that the queue's top
+    /// downloads, in queue order, run instead, up to its limit. Only for a
+    /// running queue. Downloads that can't be resumed keep running and their
+    /// slots; the rest are filled from the top by downloads that are running or
+    /// waiting.
+    pub fn to_make_room(&self, is_running: impl Fn(&DownloadId) -> bool) -> Vec<DownloadId> {
+        if self.settings.paused {
+            return Vec::new();
+        }
+        let running: Vec<&DownloadItem> = self
+            .order
+            .iter()
+            .filter(|id| is_running(id))
+            .filter_map(|id| self.items.get(id))
+            .filter(|item| item.status == DownloadStatus::Downloading)
+            .collect();
+        let kept = running.iter().filter(|item| item.resumable == Some(false)).count();
+        let slots = self.settings.max_concurrent.saturating_sub(kept);
+        let wanted: HashSet<DownloadId> = self
+            .order
+            .iter()
+            .filter_map(|id| self.items.get(id))
+            .filter(|item| item.resumable != Some(false) || !is_running(&item.id))
+            .filter(|item| matches!(item.status, DownloadStatus::Queued | DownloadStatus::Downloading))
+            .take(slots)
+            .map(|item| item.id)
+            .collect();
+        running
+            .into_iter()
+            .filter(|item| item.resumable != Some(false) && !wanted.contains(&item.id))
+            .map(|item| item.id)
+            .collect()
+    }
 }
 
 fn sanitize(settings: QueueSettings) -> QueueSettings {
