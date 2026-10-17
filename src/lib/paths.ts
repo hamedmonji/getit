@@ -9,6 +9,21 @@ export function parentPath(path: string): string {
   return i <= 0 ? "/" : path.slice(0, i);
 }
 
+/** Archive extensions made of two parts, kept together when renaming. */
+const COMPOUND_EXTENSIONS = [".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst"];
+
+/**
+ * Splits a file name into the part a rename edits and its extension:
+ * `report.pdf` → `["report", ".pdf"]`, `repo.tar.gz` → `["repo", ".tar.gz"]`.
+ * A name without a dot, or a dotfile like `.bashrc`, is all stem.
+ */
+export function splitName(name: string): [string, string] {
+  const lower = name.toLowerCase();
+  const compound = COMPOUND_EXTENSIONS.find((ext) => lower.endsWith(ext) && lower.length > ext.length);
+  const i = compound ? name.length - compound.length : name.lastIndexOf(".");
+  return i > 0 ? [name.slice(0, i), name.slice(i)] : [name, ""];
+}
+
 /** Whether `path` is `dir` itself or somewhere inside it. */
 export function isWithin(path: string, dir: string): boolean {
   return path === dir || path.startsWith(dir.endsWith("/") ? dir : dir + "/");

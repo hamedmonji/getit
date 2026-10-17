@@ -253,6 +253,13 @@ pub fn move_folders(engine: State<'_, Engine>, paths: Vec<String>, dest: String)
     Ok(())
 }
 
+/// Renames a download's file. A running download keeps going and its file is
+/// renamed when it stops. Returns the new name.
+#[tauri::command]
+pub fn rename_download(engine: State<'_, Engine>, id: DownloadId, name: String) -> CommandResult<String> {
+    engine.rename_download(id, &name).map_err(err)
+}
+
 /// Moves downloads, with their files, to the queue for `dir`.
 #[tauri::command]
 pub fn move_downloads(engine: State<'_, Engine>, ids: Vec<DownloadId>, dir: String) -> CommandResult<()> {

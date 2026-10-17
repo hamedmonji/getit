@@ -80,6 +80,10 @@ pub struct DownloadItem {
     /// connection, whose `.part` file holds everything downloaded so far.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub segments: Vec<Segment>,
+    /// Name the user gave a running download. Its file keeps `file_name` until
+    /// the download stops, and is renamed then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rename_to: Option<String>,
 }
 
 /// One byte range of a segmented download.
@@ -113,6 +117,53 @@ impl DownloadItem {
     /// Path of the in-progress `.part` file inside `dir`, once the name is known.
     pub fn part_path(&self, dir: &Path) -> Option<PathBuf> {
         self.file_name.as_ref().map(|name| part_path(dir, name))
+    }
+
+    /// The name to show: a pending rename, else the file's name.
+    pub fn display_name(&self) -> Option<&str> {
+        self.rename_to.as_deref().or(self.file_name.as_deref())
+    }
+
+    /// Path of the download's file in `dir` as it is on disk now: the finished
+    /// file, or the `.part` file.
+    pub(crate) fn current_path(&self, dir: &Path) -> Option<PathBuf> {
+        if self.status == DownloadStatus::Completed {
+            self.file_path(dir)
+        } else {
+            self.part_path(dir)
+        }
+    }
+
+    /// Renames the download's file in `dir` to its pending name, if it has one,
+    /// picking a free name if something outside the queue took it meanwhile.
+    /// Must not be called while a worker writes the file.
+    pub(crate) fn apply_rename(&mut self, dir: &Path) -> std::io::Result<()> {
+        let Some(wanted) = self.rename_to.clone() else {
+            return Ok(());
+        };
+        let Some(from) = self.current_path(dir) else {
+            self.file_name = Some(wanted);
+            self.rename_to = None;
+            return Ok(());
+        };
+        let name = if from.exists() {
+            // A case-only rename finds the file itself on case-insensitive disks.
+            let same = self.file_name.as_deref().is_some_and(|old| old.eq_ignore_ascii_case(&wanted));
+            let name = if same {
+                wanted
+            } else {
+                crate::engine::free_file_name(dir, &wanted)?
+            };
+            let mut renamed = self.clone();
+            renamed.file_name = Some(name.clone());
+            std::fs::rename(&from, renamed.current_path(dir).expect("name is set"))?;
+            name
+        } else {
+            wanted
+        };
+        self.file_name = Some(name);
+        self.rename_to = None;
+        Ok(())
     }
 
     /// Sets an unfinished download's progress from its partial file in `dir`:
@@ -224,6 +275,12 @@ pub enum EngineError {
     CopyFailed { name: String, error: String },
     #[error("couldn't get the file name for {url}: {error}")]
     NameLookupFailed { url: String, error: String },
+    #[error("\"{0}\" isn't a valid file name")]
+    InvalidName(String),
+    #[error("\"{0}\" is already taken")]
+    NameTaken(String),
+    #[error("couldn't rename {name}: {error}")]
+    RenameFailed { name: String, error: String },
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;

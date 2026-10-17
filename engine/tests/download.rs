@@ -14,7 +14,7 @@ use axum::response::Response;
 use axum::routing::get;
 use futures_util::Stream;
 use getit_engine::{
-    DownloadId, DownloadItem, DownloadStatus, Engine, EngineEvent, JsonDirStore, MemoryStore,
+    DownloadId, DownloadItem, DownloadStatus, Engine, EngineError, EngineEvent, JsonDirStore, MemoryStore,
     QueueId, QueueSettings,
 };
 use sha2::{Digest, Sha256};
@@ -1173,6 +1173,201 @@ async fn restore_drops_trailing_slashes_from_saved_folders() {
         engine.queue_for_dir("/tmp/getit-test/Renamed"),
         Some(queues[0].id)
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rename_renames_finished_and_paused_files() {
+    let ctx = Ctx::new().await;
+    let done = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_status(&ctx.engine, done, DownloadStatus::Completed).await;
+    assert_eq!(ctx.engine.rename_download(done, "renamed.bin").unwrap(), "renamed.bin");
+    assert_eq!(ctx.engine.get(done).unwrap().file_name.as_deref(), Some("renamed.bin"));
+    assert!(!ctx.folder("a/file.bin").exists());
+    ctx.assert_file_matches(done);
+
+    let queue = ctx.engine.get(done).unwrap().queue_id;
+    let paused = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    wait_for_progress(&ctx.engine, paused).await;
+    ctx.engine.pause(paused).unwrap();
+    settle().await;
+    let name = ctx.engine.get(paused).unwrap().file_name.unwrap();
+    ctx.engine.rename_download(paused, "later.bin").unwrap();
+    let item = ctx.engine.get(paused).unwrap();
+    assert_eq!(item.file_name.as_deref(), Some("later.bin"));
+    assert_eq!(item.rename_to, None);
+    assert!(!ctx.folder(&format!("a/{name}.part")).exists());
+    assert!(ctx.folder("a/later.bin.part").exists());
+
+    ctx.engine.resume(paused).unwrap();
+    wait_for_status(&ctx.engine, paused, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(paused);
+    let requests = ctx.server.requests();
+    assert_eq!(requests.last().unwrap().status, 206, "{requests:?}");
+}
+
+/// Renames a running download and checks it finishes under the new name over
+/// the same connections, without restarting.
+async fn rename_while_running(path: &str, connections: usize, data: impl Fn(&Server) -> Arc<Vec<u8>>) {
+    let ctx = Ctx::new().await;
+    let id = ctx.engine.enqueue(ctx.folder("a"), &ctx.url(path)).unwrap();
+    let item = wait_for_progress(&ctx.engine, id).await;
+    let old = item.file_name.clone().unwrap();
+    ctx.engine.rename_download(id, "renamed.bin").unwrap();
+
+    let item = ctx.engine.get(id).unwrap();
+    assert_eq!(item.status, DownloadStatus::Downloading);
+    assert_eq!(item.file_name.as_deref(), Some(old.as_str()));
+    assert_eq!(item.rename_to.as_deref(), Some("renamed.bin"));
+    assert_eq!(item.display_name(), Some("renamed.bin"));
+    assert!(ctx.folder(&format!("a/{old}.part")).exists());
+
+    let item = wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert_eq!(item.file_name.as_deref(), Some("renamed.bin"));
+    assert_eq!(item.rename_to, None);
+    assert_file_is(&ctx.engine, id, &data(&ctx.server));
+    assert!(!ctx.folder(&format!("a/{old}")).exists());
+    let requests = ctx.server.requests();
+    assert_eq!(requests.len(), connections, "nothing restarted: {requests:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rename_keeps_a_running_download_going() {
+    rename_while_running("/file.bin", 1, |server| server.data.clone()).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rename_keeps_a_non_resumable_download_going() {
+    rename_while_running("/norange.bin", 1, |server| server.data.clone()).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rename_keeps_a_segmented_download_going() {
+    rename_while_running("/big.bin", 4, |server| server.big.clone()).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rename_of_a_running_download_applies_when_paused() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    ctx.engine.rename_download(id, "renamed.bin").unwrap();
+    ctx.engine.pause(id).unwrap();
+    settle().await;
+
+    let item = ctx.engine.get(id).unwrap();
+    assert_eq!(item.file_name.as_deref(), Some("renamed.bin"));
+    assert_eq!(item.rename_to, None);
+    assert!(!ctx.folder("a/file.bin.part").exists());
+    assert!(ctx.folder("a/renamed.bin.part").exists());
+
+    ctx.engine.resume(id).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+    let requests = ctx.server.requests();
+    assert_eq!(requests.len(), 2, "{requests:?}");
+    assert_eq!(requests[1].status, 206);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rename_takes_a_free_name_if_one_appeared_meanwhile() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    ctx.engine.rename_download(id, "x.bin").unwrap();
+    std::fs::write(ctx.folder("a/x.bin"), b"taken").unwrap();
+
+    let item = wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert_eq!(item.file_name.as_deref(), Some("x (1).bin"));
+    ctx.assert_file_matches(id);
+    assert_eq!(std::fs::read(ctx.folder("a/x.bin")).unwrap(), b"taken");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pending_renames_survive_a_restart() {
+    let (base, server) = start_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(MemoryStore::new());
+    let folder = dir.path().join("a");
+
+    let engine = Engine::new(store.clone()).unwrap();
+    let id = engine.enqueue(&folder, &format!("{base}/file.bin")).unwrap();
+    wait_for_progress(&engine, id).await;
+    engine.rename_download(id, "renamed.bin").unwrap();
+    // Simulates quitting mid-download.
+    drop(engine);
+    settle().await;
+
+    let engine = Engine::new(store).unwrap();
+    let item = engine.get(id).unwrap();
+    assert_eq!(item.file_name.as_deref(), Some("renamed.bin"));
+    assert_eq!(item.rename_to, None);
+    assert!(!folder.join("file.bin.part").exists());
+    assert!(item.downloaded > 0, "progress comes from the renamed partial file");
+
+    engine.resume(id).unwrap();
+    wait_for_status(&engine, id, DownloadStatus::Completed).await;
+    assert_file_matches(&engine, id, &server);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rename_refuses_taken_and_invalid_names() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 2);
+    let first = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    let second = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.rename_download(first, "one.bin").unwrap();
+    std::fs::create_dir_all(ctx.folder("a")).unwrap();
+    std::fs::write(ctx.folder("a/outside.bin"), b"x").unwrap();
+    std::fs::write(ctx.folder("a/partial.bin.part"), b"x").unwrap();
+
+    for name in ["one.bin", "outside.bin", "partial.bin"] {
+        assert!(
+            matches!(ctx.engine.rename_download(second, name), Err(EngineError::NameTaken(_))),
+            "{name}"
+        );
+    }
+    for name in ["", " ", ".", "..", "a/b.bin", "a\\b.bin"] {
+        assert!(
+            matches!(ctx.engine.rename_download(second, name), Err(EngineError::InvalidName(_))),
+            "{name:?}"
+        );
+    }
+    // Changing only the case is fine, and so is keeping the name.
+    ctx.engine.rename_download(first, "ONE.bin").unwrap();
+    ctx.engine.rename_download(first, "ONE.bin").unwrap();
+
+    // A name given before the download starts is used instead of the server's.
+    ctx.unpause(queue);
+    wait_for_status(&ctx.engine, first, DownloadStatus::Completed).await;
+    assert_eq!(ctx.engine.get(first).unwrap().file_name.as_deref(), Some("ONE.bin"));
+    ctx.assert_file_matches(first);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pending_names_are_reserved() {
+    let ctx = Ctx::new().await;
+    let running = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/file.bin"))
+        .unwrap();
+    wait_for_progress(&ctx.engine, running).await;
+    ctx.engine.rename_download(running, "x.bin").unwrap();
+    let queue = ctx.engine.get(running).unwrap().queue_id;
+    let other = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.pause(other).unwrap();
+    assert!(matches!(
+        ctx.engine.rename_download(other, "x.bin"),
+        Err(EngineError::NameTaken(_))
+    ));
 }
 
 #[tokio::test(flavor = "multi_thread")]

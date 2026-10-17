@@ -863,7 +863,7 @@ export default function App() {
   // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
   // item and Command-Up goes to the enclosing folder (Control-A and Alt-arrows elsewhere);
-  // Return renames the selected folder, as in Finder; / opens the search, like
+  // Return renames the selected folder or file, as in Finder; / opens the search, like
   // Command-F and Command-L.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -925,8 +925,7 @@ export default function App() {
         !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) &&
         // A focused button, such as a prompt's, takes Return itself.
         !(e.target instanceof HTMLButtonElement) &&
-        selection.length === 1 &&
-        isFolderKey(selection[0])
+        selection.length === 1
       ) {
         e.preventDefault();
         setEditing(selection[0]);
@@ -977,8 +976,16 @@ export default function App() {
     .filter(Boolean)
     .join(" · ");
 
-  const rename = async (path: string, name: string) => {
-    const renamed = await engine.renameFolder(path, name);
+  const rename = async (key: string, name: string) => {
+    if (!isFolderKey(key)) {
+      const item = state.downloads[key];
+      const old = item && displayName(item);
+      await engine.renameDownload(key, name);
+      setEditing(null);
+      if (old) pushUndo({ label: "Rename", run: () => engine.renameDownload(key, old) });
+      return;
+    }
+    const renamed = await engine.renameFolder(key, name);
     setEditing(null);
     select([renamed]);
     setListNonce((n) => n + 1);
@@ -1112,6 +1119,7 @@ export default function App() {
     }
     if (query) items.push(showInFolderItem(vm.id));
     items.push(revealItem([vm.id]));
+    items.push({ kind: "action", label: "Rename", shortcut: IS_MAC ? "↩" : "Enter", onSelect: () => setEditing(vm.id) });
     items.push({ kind: "separator" }, ...clipMenu([vm.id]), { kind: "separator" });
     if (vm.done) {
       // The file stays on disk.

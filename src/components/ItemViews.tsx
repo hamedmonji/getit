@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { splitName } from "../lib/paths";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { ActionButton, FileGlyph, FolderGlyph, ProgressBar } from "./Glyphs";
 
@@ -17,10 +18,10 @@ export interface ItemViewProps {
   onAction: (vm: FileVm) => void;
   /** Right-click on a folder (by path) or download (by id). */
   onItemMenu: (key: string, x: number, y: number) => void;
-  /** Folder whose name is being edited, if any. */
+  /** Folder (by path) or download (by id) whose name is being edited, if any. */
   editing: string | null;
-  /** Commits a new name; rejects with a message if it can't be used. */
-  onRename: (path: string, name: string) => Promise<void>;
+  /** Commits a new name for a folder or download; rejects with a message if it can't be used. */
+  onRename: (key: string, name: string) => Promise<void>;
   onCancelRename: () => void;
   /** Items being dragged, and the folder they'd be dropped on. */
   dragging: Set<string>;
@@ -110,6 +111,25 @@ function FolderName({ props, path, name, className }: { props: ItemViewProps; pa
   return <span className={className}>{name}</span>;
 }
 
+/** A download's name, editable without its extension, which the file keeps. */
+function FileName({ props, vm, className }: { props: ItemViewProps; vm: FileVm; className: string }) {
+  if (props.editing === vm.id) {
+    const [stem, ext] = splitName(vm.name);
+    return (
+      <NameEditor
+        initial={stem}
+        onCommit={(value) => props.onRename(vm.id, value + ext)}
+        onCancel={props.onCancelRename}
+      />
+    );
+  }
+  return (
+    <span className={className} style={{ color: vm.nameColor }}>
+      {vm.name}
+    </span>
+  );
+}
+
 function handlers(props: ItemViewProps, key: string, open: () => void) {
   return {
     "data-key": key,
@@ -162,9 +182,7 @@ export function IconView(props: ItemViewProps) {
         >
           <ActionButton className="tile-action" vm={f} onAction={props.onAction} />
           <FileGlyph vm={f} size="large" />
-          <div className="tile-name clamp" style={{ color: f.nameColor }}>
-            {f.name}
-          </div>
+          <FileName props={props} vm={f} className="tile-name clamp" />
           {f.showBar && <ProgressBar className="tile-bar" pct={f.pct} color={f.color} />}
           <div className="tile-sub ellipsis" title={f.status}>
             {f.status}
@@ -217,9 +235,7 @@ export function ListView(props: ItemViewProps) {
             {...handlers(props, f.id, () => props.onOpenFile(f))}
           >
             <FileGlyph vm={f} size="small" />
-            <span className="row-name" style={{ color: f.nameColor }}>
-              {f.name}
-            </span>
+            <FileName props={props} vm={f} className="row-name" />
             <span className="row-status" title={f.status}>
               {f.status}
             </span>

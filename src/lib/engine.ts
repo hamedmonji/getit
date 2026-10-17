@@ -27,6 +27,8 @@ export interface DownloadItem {
   added_at: number;
   /** Byte ranges downloaded in parallel; absent for a single-connection download. */
   segments?: Segment[];
+  /** Name given while it was running; its file is renamed when it stops. */
+  rename_to?: string | null;
 }
 
 export interface Segment {
@@ -107,6 +109,8 @@ export const engine = {
   createQueue: (parent: string) => invoke<string>("create_queue", { parent }),
   /** Renames a folder (and moves queues inside it); returns the new path. */
   renameFolder: (path: string, name: string) => invoke<string>("rename_folder", { path, name }),
+  /** Renames a download's file (once it stops, if it's running); returns the new name. */
+  renameDownload: (id: DownloadId, name: string) => invoke<string>("rename_download", { id, name }),
   /** Moves folders, with the queues inside them, into `dest`. */
   moveFolders: (paths: string[], dest: string) => invoke<void>("move_folders", { paths, dest }),
   /** Moves downloads, with their files, to the queue for `dir`. */

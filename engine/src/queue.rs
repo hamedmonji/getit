@@ -46,6 +46,9 @@ impl Queue {
             if item.status == DownloadStatus::Downloading {
                 item.status = DownloadStatus::Paused;
             }
+            // Nothing runs yet, so a rename left pending at quit can be applied.
+            // If it can't be, it stays pending for the next time the download stops.
+            let _ = item.apply_rename(&queue.dir);
             if item.status != DownloadStatus::Completed {
                 item.sync_progress(&queue.dir);
             }
@@ -91,13 +94,15 @@ impl Queue {
         Some(item)
     }
 
-    /// File names the queue's other downloads use or will use, so a new download
-    /// doesn't take one even when that file is no longer on disk.
+    /// File names the queue's other downloads use or will use, including names
+    /// waiting to be applied, so a new download doesn't take one even when that
+    /// file is no longer on disk.
     pub fn names_except(&self, id: DownloadId) -> HashSet<String> {
         self.items
             .values()
             .filter(|item| item.id != id)
-            .filter_map(|item| item.file_name.clone())
+            .flat_map(|item| [item.file_name.clone(), item.rename_to.clone()])
+            .flatten()
             .collect()
     }
 

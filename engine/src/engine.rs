@@ -394,6 +394,55 @@ impl Engine {
         result
     }
 
+    /// Renames a download's file to `name`, in its folder. A running download
+    /// keeps going: it shows the new name right away and its file is renamed
+    /// when it stops. Fails if `name` isn't a plain file name, or another file or
+    /// download in the folder has it. Returns the new name.
+    pub fn rename_download(&self, id: DownloadId, name: &str) -> Result<String> {
+        let name = name.trim();
+        if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\']) {
+            return Err(EngineError::InvalidName(name.to_string()));
+        }
+        let mut guard = self.inner.lock();
+        let st = &mut *guard;
+        let running = st.active.contains_key(&id);
+        let queue = owner_queue(&mut st.queues, &st.owner, id)?;
+        let item = &queue.items[&id];
+        if item.display_name() == Some(name) {
+            return Ok(name.to_string());
+        }
+        // Its own file doesn't count: a case-only rename finds it on case-insensitive disks.
+        let own = item
+            .file_name
+            .as_deref()
+            .is_some_and(|old| old.eq_ignore_ascii_case(name));
+        let on_disk = queue.dir.join(name).exists() || part_path(&queue.dir, name).exists();
+        if queue.names_except(id).contains(name) || (on_disk && !own) {
+            return Err(EngineError::NameTaken(name.to_string()));
+        }
+
+        let item = queue.items.get_mut(&id).expect("owned download exists");
+        if running {
+            // The worker has the file open under its old name; rename it once it stops.
+            item.rename_to = (item.file_name.as_deref() != Some(name)).then(|| name.to_string());
+        } else {
+            if let Some(from) = item.current_path(&queue.dir).filter(|path| path.exists()) {
+                let mut renamed = item.clone();
+                renamed.file_name = Some(name.to_string());
+                let to = renamed.current_path(&queue.dir).expect("name is set");
+                std::fs::rename(&from, &to).map_err(|e| EngineError::RenameFailed {
+                    name: item.display_name().unwrap_or(&item.url).to_string(),
+                    error: e.to_string(),
+                })?;
+            }
+            item.file_name = Some(name.to_string());
+            item.rename_to = None;
+        }
+        self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
+        self.inner.save(queue);
+        Ok(name.to_string())
+    }
+
     /// Copies downloads to the end of the queue for `dir` (creating it if needed),
     /// with their files: a finished file is copied whole, and an unfinished one's
     /// partial file is copied so the copy carries on from there. Copies get free
@@ -783,6 +832,7 @@ impl Inner {
             error: None,
             added_at: now_millis(),
             segments: Vec::new(),
+            rename_to: None,
         };
         let id = item.id;
         queue.push(item.clone());
@@ -929,6 +979,12 @@ impl Inner {
                         }
                         (Outcome::Stopped, None) => item.status = DownloadStatus::Paused,
                     }
+                    // The worker no longer has the file open, so a rename made
+                    // while it ran can happen now, before the file moves.
+                    let written_in = moved_from.as_deref().unwrap_or(&queue.dir);
+                    if let Err(e) = item.apply_rename(written_in) {
+                        item.error = Some(format!("couldn't rename the file: {e}"));
+                    }
                     if let Some(from) = moved_from {
                         match move_file(item, &from, &queue.dir) {
                             Ok(name) => item.file_name = name,
@@ -1040,6 +1096,8 @@ fn copy_of(item: &DownloadItem) -> DownloadItem {
         status,
         error: None,
         added_at: now_millis(),
+        // The copy is named after the name shown, by `copy_file`.
+        rename_to: None,
         ..item.clone()
     }
 }
@@ -1062,7 +1120,7 @@ fn copy_file(item: &DownloadItem, from: &Path, to: &Path) -> io::Result<(Option<
         return Ok((None, 0));
     }
     std::fs::create_dir_all(to)?;
-    let name = free_file_name(to, name)?;
+    let name = free_file_name(to, item.display_name().unwrap_or(name))?;
     let dest = if done { to.join(&name) } else { part_path(to, &name) };
     let copied = std::fs::copy(&src, &dest)?;
     let segmented = !item.segments.is_empty();
@@ -1071,7 +1129,7 @@ fn copy_file(item: &DownloadItem, from: &Path, to: &Path) -> io::Result<(Option<
 
 /// `candidate`, or `candidate (1)`, `(2)`, ... if a file or partial download
 /// already has that name in `dir`.
-fn free_file_name(dir: &Path, candidate: &str) -> io::Result<String> {
+pub(crate) fn free_file_name(dir: &Path, candidate: &str) -> io::Result<String> {
     let (stem, ext) = split_extension(candidate);
     for n in 0..10_000 {
         let name = if n == 0 {
