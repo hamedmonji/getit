@@ -1036,13 +1036,7 @@ export default function App() {
 
   const backgroundMenu = (): MenuItem[] => {
     const items: MenuItem[] = [];
-    if (queue) items.push({ kind: "header", label: summary ? `Queue · ${summary}` : "Queue" });
-    if (lastUndo) {
-      items.push(
-        { kind: "action", label: `Undo ${lastUndo.label}`, shortcut: `${MOD}Z`, onSelect: undo },
-        { kind: "separator" },
-      );
-    }
+    if (queue) items.push({ kind: "header", label: summary ? `${summary}` : "Queue" });
     items.push(
       { kind: "action", label: "Add download…", onSelect: () => setAdding(true) },
       ...(clip
