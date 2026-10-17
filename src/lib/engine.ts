@@ -25,6 +25,14 @@ export interface DownloadItem {
   last_modified: string | null;
   error: string | null;
   added_at: number;
+  /** Byte ranges downloaded in parallel; absent for a single-connection download. */
+  segments?: Segment[];
+}
+
+export interface Segment {
+  start: number;
+  end: number;
+  downloaded: number;
 }
 
 export interface QueueSettings {

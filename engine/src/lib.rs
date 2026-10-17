@@ -4,7 +4,8 @@
 //! own settings (how many downloads run at once, paused or not) and its own
 //! ordered downloads, and saves itself through a [`QueueStore`] whenever it
 //! changes. The [`Engine`] routes commands to queues and runs their downloads:
-//! one HTTP connection per file, with pause and resume through range requests.
+//! one HTTP connection per file, or several for large files on servers that
+//! accept range requests, with pause and resume through range requests.
 //!
 //! Other layers (UI, logging) observe the engine through [`Engine::subscribe`].
 
@@ -18,5 +19,5 @@ pub use engine::Engine;
 pub use store::{JsonDirStore, MemoryStore, QueueSnapshot, QueueStore};
 pub use types::{
     DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, QueueId, QueueInfo,
-    QueueSettings, Result,
+    QueueSettings, Result, Segment,
 };

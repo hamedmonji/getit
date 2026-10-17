@@ -75,6 +75,33 @@ pub struct DownloadItem {
     pub error: Option<String>,
     /// When the download was added, in milliseconds since the Unix epoch.
     pub added_at: u64,
+    /// Byte ranges fetched over their own connections into the `.part` file,
+    /// which is then as long as the whole file. Empty for a download over one
+    /// connection, whose `.part` file holds everything downloaded so far.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segments: Vec<Segment>,
+}
+
+/// One byte range of a segmented download.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Segment {
+    /// Offset of the range's first byte.
+    pub start: u64,
+    /// Offset just past the range's last byte.
+    pub end: u64,
+    /// How much of the range, from `start` on, is written.
+    pub downloaded: u64,
+}
+
+impl Segment {
+    /// Offset of the next byte to download.
+    pub fn pos(&self) -> u64 {
+        self.start + self.downloaded
+    }
+
+    pub fn is_done(&self) -> bool {
+        self.pos() >= self.end
+    }
 }
 
 impl DownloadItem {
@@ -86,6 +113,25 @@ impl DownloadItem {
     /// Path of the in-progress `.part` file inside `dir`, once the name is known.
     pub fn part_path(&self, dir: &Path) -> Option<PathBuf> {
         self.file_name.as_ref().map(|name| part_path(dir, name))
+    }
+
+    /// Sets an unfinished download's progress from its partial file in `dir`:
+    /// the file's length, or for a segmented download, what its segments got to.
+    pub(crate) fn sync_progress(&mut self, dir: &Path) {
+        let len = self
+            .part_path(dir)
+            .and_then(|part| std::fs::metadata(part).ok())
+            .map(|meta| meta.len());
+        match len {
+            Some(_) if !self.segments.is_empty() => {
+                self.downloaded = self.segments.iter().map(|segment| segment.downloaded).sum();
+            }
+            Some(len) => self.downloaded = len,
+            None => {
+                self.downloaded = 0;
+                self.segments.clear();
+            }
+        }
     }
 }
 

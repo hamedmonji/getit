@@ -1,7 +1,7 @@
 import { formatSpeed } from "../lib/format";
 import type { FileVm, OverviewNode } from "../lib/viewModels";
 import { ActionButton, ProgressBar } from "./Glyphs";
-import { CloseIcon, FolderIcon, PauseIcon } from "./icons";
+import { FolderIcon, PauseIcon } from "./icons";
 
 interface Handlers {
   onOpenQueue: (dir: string) => void;

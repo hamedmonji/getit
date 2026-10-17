@@ -1,25 +1,33 @@
-//! Downloads a single file over one HTTP connection.
+//! Downloads a single file, over one HTTP connection or several.
 //!
-//! Data is written to `<name>.part` and renamed to `<name>` when complete. The
-//! `.part` file's length is the resume offset, so a stopped download can carry on
-//! with a `Range` request whenever the server supports it.
+//! Data is written to `<name>.part` and renamed to `<name>` when complete. Over
+//! one connection, the `.part` file's length is the resume offset, so a stopped
+//! download can carry on with a `Range` request whenever the server supports it.
+//!
+//! A large file from a server that accepts ranges is split into [`Segment`]s
+//! fetched in parallel, each written at its own offset in a `.part` file
+//! preallocated to the full size. The segments' progress, not the file's
+//! length, says what is left; it only counts bytes already handed to the OS.
 
 use std::collections::{HashSet, VecDeque};
 use std::error::Error as StdError;
 use std::io;
+use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
+use futures_util::stream::FuturesUnordered;
 use percent_encoding::percent_decode_str;
 use reqwest::header::{self, HeaderMap};
-use reqwest::{Client, StatusCode, Url};
-use tokio::fs::{self, OpenOptions};
-use tokio::io::{AsyncWriteExt, BufWriter};
+use reqwest::{Client, Response, StatusCode, Url};
+use tokio::fs::{self, File, OpenOptions};
+use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
-use crate::types::{DownloadId, DownloadItem, part_path};
+use crate::types::{DownloadId, DownloadItem, Segment, part_path};
 
 const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
@@ -30,6 +38,11 @@ const MAX_FILE_NAME_BYTES: usize = 200;
 const FALLBACK_FILE_NAME: &str = "download";
 /// How long a file name lookup waits for the server's response headers.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How many connections a segmented download uses.
+const SEGMENTS: u64 = 4;
+/// Files too small to give every segment this much use fewer segments, down to
+/// a single connection.
+const MIN_SEGMENT_SIZE: u64 = 4 * 1024 * 1024;
 
 pub(crate) enum WorkerMsg {
     Meta {
@@ -39,12 +52,14 @@ pub(crate) enum WorkerMsg {
         resumable: bool,
         etag: Option<String>,
         last_modified: Option<String>,
+        segments: Vec<Segment>,
     },
     Progress {
         id: DownloadId,
         downloaded: u64,
         total: Option<u64>,
         speed_bps: u64,
+        segments: Vec<Segment>,
     },
     Done {
         id: DownloadId,
@@ -74,6 +89,7 @@ pub(crate) struct Job {
     resumable: Option<bool>,
     etag: Option<String>,
     last_modified: Option<String>,
+    segments: Vec<Segment>,
 }
 
 impl Job {
@@ -88,6 +104,7 @@ impl Job {
             resumable: item.resumable,
             etag: item.etag.clone(),
             last_modified: item.last_modified.clone(),
+            segments: item.segments.clone(),
         }
     }
 
@@ -112,6 +129,18 @@ enum AttemptError {
     Retryable(String),
     /// Retrying won't help (4xx, disk errors, ...).
     Fatal(String),
+}
+
+enum SegmentError {
+    Attempt(AttemptError),
+    /// The server no longer has the file the segments were downloading.
+    Changed,
+}
+
+impl From<AttemptError> for SegmentError {
+    fn from(err: AttemptError) -> Self {
+        Self::Attempt(err)
+    }
 }
 
 /// Runs the download to completion, failure or cancellation, then sends
@@ -162,6 +191,15 @@ async fn attempt(
         AttemptError::Fatal(format!("cannot create {}: {e}", job.dest_dir.display()))
     })?;
 
+    if !job.segments.is_empty() {
+        if segmented_part_intact(job).await? {
+            return download_segments(client, job, cancel, tx, None, progressed).await;
+        }
+        // The partial file went missing or doesn't fit the segments; start over.
+        job.segments.clear();
+        discard_partial(job).await?;
+    }
+
     let offset = match job.part_path() {
         Some(path) => match fs::metadata(&path).await {
             Ok(meta) => meta.len(),
@@ -197,15 +235,7 @@ async fn attempt(
         ));
     }
     if !status.is_success() {
-        let msg = format!("HTTP {status}");
-        let retryable = status.is_server_error()
-            || status == StatusCode::TOO_MANY_REQUESTS
-            || status == StatusCode::REQUEST_TIMEOUT;
-        return Err(if retryable {
-            AttemptError::Retryable(msg)
-        } else {
-            AttemptError::Fatal(msg)
-        });
+        return Err(status_error(status));
     }
 
     let headers = response.headers();
@@ -237,6 +267,10 @@ async fn attempt(
     job.resumable = Some(partial || accepts_ranges(headers));
     job.etag = header_string(headers, header::ETAG);
     job.last_modified = header_string(headers, header::LAST_MODIFIED);
+    job.segments = match total {
+        Some(total) if start == 0 && job.resumable == Some(true) => split(total),
+        _ => Vec::new(),
+    };
     let _ = tx.send(WorkerMsg::Meta {
         id: job.id,
         file_name: job.file_name.clone().unwrap_or_default(),
@@ -244,9 +278,19 @@ async fn attempt(
         resumable: job.resumable.unwrap_or(false),
         etag: job.etag.clone(),
         last_modified: job.last_modified.clone(),
+        segments: job.segments.clone(),
     });
 
     let part = job.part_path().expect("file name was just set");
+    if let Some(total) = job.total_bytes
+        && !job.segments.is_empty()
+    {
+        let file = File::create(&part).await.map_err(|e| io_fatal(&part, e))?;
+        file.set_len(total).await.map_err(|e| io_fatal(&part, e))?;
+        drop(file);
+        // This response becomes the first segment's.
+        return download_segments(client, job, cancel, tx, Some(response), progressed).await;
+    }
     let file = if start == 0 {
         OpenOptions::new()
             .write(true)
@@ -347,7 +391,309 @@ fn send_progress(tx: &UnboundedSender<WorkerMsg>, job: &Job, downloaded: u64, sp
         downloaded,
         total: job.total_bytes,
         speed_bps,
+        segments: job.segments.clone(),
     });
+}
+
+/// Splits a file of `total` bytes into segments, or none if it's too small for
+/// two.
+fn split(total: u64) -> Vec<Segment> {
+    let count = (total / MIN_SEGMENT_SIZE).min(SEGMENTS);
+    if count < 2 {
+        return Vec::new();
+    }
+    let size = total / count;
+    (0..count)
+        .map(|i| Segment {
+            start: i * size,
+            end: if i == count - 1 { total } else { (i + 1) * size },
+            downloaded: 0,
+        })
+        .collect()
+}
+
+/// Whether the `.part` file is still the preallocated file the segments write into.
+async fn segmented_part_intact(job: &Job) -> Result<bool, AttemptError> {
+    let (Some(part), Some(total)) = (job.part_path(), job.total_bytes) else {
+        return Ok(false);
+    };
+    match fs::metadata(&part).await {
+        Ok(meta) => Ok(meta.len() == total),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(io_fatal(&part, e)),
+    }
+}
+
+/// What every segment of a download shares.
+struct SegmentCtx<'a> {
+    client: &'a Client,
+    url: &'a str,
+    part: &'a Path,
+    total: u64,
+    validator: Option<&'a str>,
+    /// Fires when the download stops, or when one segment's failure ends the rest.
+    stop: &'a CancellationToken,
+}
+
+/// Fetches the job's unfinished segments in parallel into its preallocated
+/// `.part` file. `first` is a response already streaming the file from its
+/// start, for the first segment to use.
+///
+/// A segment that keeps failing leaves the others running; the download then
+/// ends with its error, for [`run`] to retry from where the segments got to.
+async fn download_segments(
+    client: &Client,
+    job: &mut Job,
+    cancel: &CancellationToken,
+    tx: &UnboundedSender<WorkerMsg>,
+    mut first: Option<Response>,
+    progressed: &mut bool,
+) -> Result<Outcome, AttemptError> {
+    let part = job.part_path().expect("segmented downloads have a name");
+    let url = job.url.clone();
+    let validator = job.if_range_validator().map(str::to_owned);
+    let stop = cancel.child_token();
+    let ctx = SegmentCtx {
+        client,
+        url: &url,
+        part: &part,
+        total: job.total_bytes.expect("segmented downloads have a size"),
+        validator: validator.as_deref(),
+        stop: &stop,
+    };
+    let written: Vec<AtomicU64> = job
+        .segments
+        .iter()
+        .map(|segment| AtomicU64::new(segment.downloaded))
+        .collect();
+    let mut tasks: FuturesUnordered<_> = job
+        .segments
+        .iter()
+        .enumerate()
+        .filter(|(_, segment)| !segment.is_done())
+        .map(|(i, segment)| {
+            let response = if segment.start == 0 { first.take() } else { None };
+            fetch_segment(&ctx, *segment, &written[i], response)
+        })
+        .collect();
+    drop(first);
+
+    let initial = job.downloaded();
+    let mut meter = SpeedMeter::new(initial);
+    let mut ticker = tokio::time::interval(PROGRESS_INTERVAL);
+    let mut error = None;
+    let mut changed = false;
+    loop {
+        tokio::select! {
+            result = tasks.next() => match result {
+                None => break,
+                Some(Ok(())) => {}
+                Some(Err(SegmentError::Changed)) => {
+                    changed = true;
+                    stop.cancel();
+                }
+                Some(Err(SegmentError::Attempt(e @ AttemptError::Fatal(_)))) => {
+                    error = Some(e);
+                    stop.cancel();
+                }
+                Some(Err(SegmentError::Attempt(e))) => {
+                    error.get_or_insert(e);
+                }
+            },
+            _ = ticker.tick() => {
+                job.record(&written);
+                let downloaded = job.downloaded();
+                send_progress(tx, job, downloaded, meter.sample(downloaded));
+            }
+        }
+    }
+    drop(tasks);
+
+    job.record(&written);
+    let downloaded = job.downloaded();
+    if downloaded > initial {
+        *progressed = true;
+    }
+    if changed {
+        job.segments.clear();
+        discard_partial(job).await?;
+        send_progress(tx, job, 0, 0);
+        return Err(AttemptError::Retryable(
+            "the file changed on the server".into(),
+        ));
+    }
+    send_progress(tx, job, downloaded, 0);
+    if cancel.is_cancelled() {
+        return Ok(Outcome::Stopped);
+    }
+    if let Some(error) = error {
+        return Err(error);
+    }
+    if !job.segments.iter().all(Segment::is_done) {
+        return Err(AttemptError::Retryable(
+            "a segment stopped before it finished".into(),
+        ));
+    }
+    let file = OpenOptions::new()
+        .write(true)
+        .open(&part)
+        .await
+        .map_err(|e| io_fatal(&part, e))?;
+    file.sync_all().await.map_err(|e| io_fatal(&part, e))?;
+    drop(file);
+    finish(job, downloaded, tx).await
+}
+
+impl Job {
+    fn downloaded(&self) -> u64 {
+        self.segments.iter().map(|segment| segment.downloaded).sum()
+    }
+
+    /// Copies the segments' progress from their counters.
+    fn record(&mut self, written: &[AtomicU64]) {
+        for (segment, written) in self.segments.iter_mut().zip(written) {
+            segment.downloaded = written.load(Ordering::Relaxed);
+        }
+    }
+}
+
+/// Fetches one segment, retrying network trouble. `written` counts the bytes of
+/// it that are written.
+async fn fetch_segment(
+    ctx: &SegmentCtx<'_>,
+    segment: Segment,
+    written: &AtomicU64,
+    mut response: Option<Response>,
+) -> Result<(), SegmentError> {
+    let mut failures = 0;
+    loop {
+        let before = written.load(Ordering::Relaxed);
+        match fetch_segment_once(ctx, segment, written, response.take()).await {
+            Err(SegmentError::Attempt(AttemptError::Retryable(msg))) => {
+                if written.load(Ordering::Relaxed) > before {
+                    failures = 0;
+                }
+                if failures >= MAX_RETRIES {
+                    return Err(AttemptError::Retryable(msg).into());
+                }
+                let delay = RETRY_BASE_DELAY * 2u32.pow(failures);
+                failures += 1;
+                tokio::select! {
+                    _ = ctx.stop.cancelled() => return Ok(()),
+                    _ = tokio::time::sleep(delay) => {}
+                }
+            }
+            result => return result,
+        }
+    }
+}
+
+async fn fetch_segment_once(
+    ctx: &SegmentCtx<'_>,
+    segment: Segment,
+    written: &AtomicU64,
+    response: Option<Response>,
+) -> Result<(), SegmentError> {
+    let mut pos = segment.start + written.load(Ordering::Relaxed);
+    if pos >= segment.end {
+        return Ok(());
+    }
+    let response = match response {
+        Some(response) => response,
+        None => {
+            let mut request = ctx
+                .client
+                .get(ctx.url)
+                .header(header::RANGE, format!("bytes={pos}-{}", segment.end - 1));
+            if let Some(validator) = ctx.validator {
+                request = request.header(header::IF_RANGE, validator);
+            }
+            let response = tokio::select! {
+                _ = ctx.stop.cancelled() => return Ok(()),
+                response = request.send() => response.map_err(|e| AttemptError::Retryable(describe(&e)))?,
+            };
+            let status = response.status();
+            // A full body (If-Range failed) or an unsatisfiable range means the
+            // file is not the one the other segments are downloading.
+            if status == StatusCode::OK || status == StatusCode::RANGE_NOT_SATISFIABLE {
+                return Err(SegmentError::Changed);
+            }
+            if status != StatusCode::PARTIAL_CONTENT {
+                return Err(status_error(status).into());
+            }
+            match parse_content_range(response.headers()) {
+                Some((start, total)) if start == pos && total.is_none_or(|t| t == ctx.total) => {}
+                _ => return Err(SegmentError::Changed),
+            }
+            response
+        }
+    };
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .open(ctx.part)
+        .await
+        .map_err(|e| io_fatal(ctx.part, e))?;
+    file.seek(SeekFrom::Start(pos))
+        .await
+        .map_err(|e| io_fatal(ctx.part, e))?;
+    let mut writer = BufWriter::with_capacity(WRITE_BUFFER, file);
+    let mut stream = response.bytes_stream();
+    let mut last_flush = Instant::now();
+    loop {
+        let chunk = tokio::select! {
+            biased;
+            _ = ctx.stop.cancelled() => {
+                flush_segment(&mut writer, ctx.part, written, pos - segment.start).await?;
+                return Ok(());
+            }
+            chunk = stream.next() => chunk,
+        };
+        match chunk {
+            Some(Ok(bytes)) => {
+                // The first segment's response runs on to the end of the file.
+                let len = (bytes.len() as u64).min(segment.end - pos);
+                writer
+                    .write_all(&bytes[..len as usize])
+                    .await
+                    .map_err(|e| io_fatal(ctx.part, e))?;
+                pos += len;
+                if pos >= segment.end {
+                    break;
+                }
+                if last_flush.elapsed() >= PROGRESS_INTERVAL {
+                    flush_segment(&mut writer, ctx.part, written, pos - segment.start).await?;
+                    last_flush = Instant::now();
+                }
+            }
+            Some(Err(e)) => {
+                // Keep what we have so the retry can resume from it.
+                let _ = flush_segment(&mut writer, ctx.part, written, pos - segment.start).await;
+                return Err(AttemptError::Retryable(describe(&e)).into());
+            }
+            None => break,
+        }
+    }
+    flush_segment(&mut writer, ctx.part, written, pos - segment.start).await?;
+    if pos < segment.end {
+        return Err(AttemptError::Retryable(
+            "connection closed before the segment finished".into(),
+        )
+        .into());
+    }
+    Ok(())
+}
+
+/// Hands buffered bytes to the OS, then counts them as written.
+async fn flush_segment(
+    writer: &mut BufWriter<File>,
+    part: &Path,
+    written: &AtomicU64,
+    downloaded: u64,
+) -> Result<(), AttemptError> {
+    writer.flush().await.map_err(|e| io_fatal(part, e))?;
+    written.store(downloaded, Ordering::Relaxed);
+    Ok(())
 }
 
 /// Average speed over a sliding window.
@@ -380,6 +726,18 @@ impl SpeedMeter {
         } else {
             0
         }
+    }
+}
+
+fn status_error(status: StatusCode) -> AttemptError {
+    let msg = format!("HTTP {status}");
+    let retryable = status.is_server_error()
+        || status == StatusCode::TOO_MANY_REQUESTS
+        || status == StatusCode::REQUEST_TIMEOUT;
+    if retryable {
+        AttemptError::Retryable(msg)
+    } else {
+        AttemptError::Fatal(msg)
     }
 }
 
@@ -632,6 +990,28 @@ mod tests {
             HeaderValue::from_static("bytes */500"),
         );
         assert_eq!(parse_content_range_total(&headers), Some(500));
+    }
+
+    #[test]
+    fn splits_into_segments() {
+        const MIB: u64 = 1024 * 1024;
+        assert!(split(7 * MIB).is_empty());
+        let ranges = |total| {
+            split(total)
+                .iter()
+                .map(|s| (s.start, s.end))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ranges(8 * MIB), [(0, 4 * MIB), (4 * MIB, 8 * MIB)]);
+        assert_eq!(
+            ranges(100 * MIB + 3),
+            [
+                (0, 25 * MIB),
+                (25 * MIB, 50 * MIB),
+                (50 * MIB, 75 * MIB),
+                (75 * MIB, 100 * MIB + 3)
+            ]
+        );
     }
 
     #[tokio::test]

@@ -29,7 +29,7 @@ impl Queue {
 
     /// Rebuilds a queue from a snapshot. Downloads that were running, whether the
     /// queue or the user started them, come back `Paused`. Progress is taken from
-    /// the `.part` files on disk.
+    /// the `.part` files on disk (see [`DownloadItem::sync_progress`]).
     pub fn restore(snapshot: QueueSnapshot) -> Self {
         let mut queue = Self {
             id: snapshot.id,
@@ -47,10 +47,7 @@ impl Queue {
                 item.status = DownloadStatus::Paused;
             }
             if item.status != DownloadStatus::Completed {
-                item.downloaded = item
-                    .part_path(&queue.dir)
-                    .and_then(|part| std::fs::metadata(part).ok())
-                    .map_or(0, |meta| meta.len());
+                item.sync_progress(&queue.dir);
             }
             queue.order.push(item.id);
             queue.items.insert(item.id, item);

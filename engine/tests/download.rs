@@ -21,6 +21,8 @@ use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 
 const FILE_SIZE: usize = 4 * 1024 * 1024;
+/// Large enough to be downloaded in four segments.
+const BIG_FILE_SIZE: usize = 16 * 1024 * 1024;
 const CHUNK: usize = 32 * 1024;
 /// ~6.5 MB/s, so one file takes about 0.6 s.
 const CHUNK_DELAY: Duration = Duration::from_millis(5);
@@ -29,6 +31,7 @@ const TIMEOUT: Duration = Duration::from_secs(20);
 #[derive(Clone)]
 struct Server {
     data: Arc<Vec<u8>>,
+    big: Arc<Vec<u8>>,
     log: Arc<Mutex<Vec<Logged>>>,
 }
 
@@ -47,10 +50,12 @@ impl Server {
 async fn start_server() -> (String, Server) {
     let server = Server {
         data: Arc::new(test_data(FILE_SIZE)),
+        big: Arc::new(test_data(BIG_FILE_SIZE)),
         log: Arc::default(),
     };
     let app = Router::new()
         .route("/file.bin", get(ranged))
+        .route("/big.bin", get(big))
         .route("/norange.bin", get(no_range))
         .route("/attachment", get(attachment))
         .with_state(server.clone());
@@ -61,16 +66,21 @@ async fn start_server() -> (String, Server) {
 }
 
 async fn ranged(State(server): State<Server>, headers: HeaderMap) -> Response {
-    serve(&server, &headers, true, None)
+    serve(&server, &server.data, &headers, true, None)
+}
+
+async fn big(State(server): State<Server>, headers: HeaderMap) -> Response {
+    serve(&server, &server.big, &headers, true, None)
 }
 
 async fn no_range(State(server): State<Server>, headers: HeaderMap) -> Response {
-    serve(&server, &headers, false, None)
+    serve(&server, &server.data, &headers, false, None)
 }
 
 async fn attachment(State(server): State<Server>, headers: HeaderMap) -> Response {
     serve(
         &server,
+        &server.data,
         &headers,
         true,
         Some(r#"attachment; filename="report final.pdf""#),
@@ -79,6 +89,7 @@ async fn attachment(State(server): State<Server>, headers: HeaderMap) -> Respons
 
 fn serve(
     server: &Server,
+    data: &Arc<Vec<u8>>,
     headers: &HeaderMap,
     ranges: bool,
     disposition: Option<&str>,
@@ -87,13 +98,21 @@ fn serve(
         .get(header::RANGE)
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    let len = server.data.len();
-    let requested_start = range
+    let len = data.len();
+    // `bytes=<start>-` or `bytes=<start>-<last>`.
+    let requested = range
         .as_deref()
         .filter(|_| ranges)
         .and_then(|r| r.strip_prefix("bytes="))
-        .and_then(|r| r.strip_suffix('-'))
-        .and_then(|n| n.parse::<usize>().ok());
+        .and_then(|r| r.split_once('-'))
+        .and_then(|(start, last)| {
+            let start = start.parse::<usize>().ok()?;
+            let end = match last {
+                "" => len,
+                last => (last.parse::<usize>().ok()? + 1).min(len),
+            };
+            Some((start, end))
+        });
 
     let mut builder = Response::builder().header(header::ETAG, "\"v1\"");
     if ranges {
@@ -102,13 +121,13 @@ fn serve(
     if let Some(disposition) = disposition {
         builder = builder.header(header::CONTENT_DISPOSITION, disposition);
     }
-    let (status, from) = match requested_start {
-        Some(start) if start < len => {
+    let (status, from, to) = match requested {
+        Some((start, end)) if start < end => {
             builder = builder.header(
                 header::CONTENT_RANGE,
-                format!("bytes {start}-{}/{len}", len - 1),
+                format!("bytes {start}-{}/{len}", end - 1),
             );
-            (StatusCode::PARTIAL_CONTENT, start)
+            (StatusCode::PARTIAL_CONTENT, start, end)
         }
         Some(_) => {
             server
@@ -122,7 +141,7 @@ fn serve(
                 .body(Body::empty())
                 .unwrap();
         }
-        None => (StatusCode::OK, 0),
+        None => (StatusCode::OK, 0, len),
     };
     server.log.lock().unwrap().push(Logged {
         range,
@@ -130,20 +149,24 @@ fn serve(
     });
     builder
         .status(status)
-        .header(header::CONTENT_LENGTH, len - from)
-        .body(Body::from_stream(throttled(server.data.clone(), from)))
+        .header(header::CONTENT_LENGTH, to - from)
+        .body(Body::from_stream(throttled(data.clone(), from, to)))
         .unwrap()
 }
 
-fn throttled(data: Arc<Vec<u8>>, from: usize) -> impl Stream<Item = Result<Bytes, std::io::Error>> {
+fn throttled(
+    data: Arc<Vec<u8>>,
+    from: usize,
+    to: usize,
+) -> impl Stream<Item = Result<Bytes, std::io::Error>> {
     futures_util::stream::unfold(from, move |pos| {
         let data = data.clone();
         async move {
-            if pos >= data.len() {
+            if pos >= to {
                 return None;
             }
             tokio::time::sleep(CHUNK_DELAY).await;
-            let end = (pos + CHUNK).min(data.len());
+            let end = (pos + CHUNK).min(to);
             Some((Ok(Bytes::copy_from_slice(&data[pos..end])), end))
         }
     })
@@ -220,12 +243,16 @@ impl Ctx {
 }
 
 fn assert_file_matches(engine: &Engine, id: DownloadId, server: &Server) {
+    assert_file_is(engine, id, &server.data);
+}
+
+fn assert_file_is(engine: &Engine, id: DownloadId, data: &[u8]) {
     let item = engine.get(id).expect("download exists");
     let dir = engine.queue(item.queue_id).unwrap().dir;
     let path = item.file_path(&dir).expect("file name known");
     let bytes = std::fs::read(&path).unwrap();
-    assert_eq!(bytes.len(), FILE_SIZE, "{}", path.display());
-    assert_eq!(sha256(&bytes), sha256(&server.data), "{}", path.display());
+    assert_eq!(bytes.len(), data.len(), "{}", path.display());
+    assert_eq!(sha256(&bytes), sha256(data), "{}", path.display());
     assert!(
         !item.part_path(&dir).unwrap().exists(),
         ".part file left behind"
@@ -455,6 +482,92 @@ async fn pause_and_resume_continues_with_a_range_request() {
         requests[1].range.as_deref(),
         Some(format!("bytes={partial}-").as_str())
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn large_files_download_in_four_segments() {
+    let ctx = Ctx::new().await;
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/big.bin"))
+        .unwrap();
+    let item = wait_until(&ctx.engine, id, "every segment under way", |item| {
+        item.segments.len() == 4 && item.segments.iter().all(|s| s.downloaded > 0)
+    })
+    .await;
+    let part = item.part_path(&ctx.folder("a")).unwrap();
+    assert_eq!(
+        std::fs::metadata(&part).unwrap().len(),
+        BIG_FILE_SIZE as u64,
+        "the partial file is preallocated"
+    );
+    assert_eq!(
+        item.downloaded,
+        item.segments.iter().map(|s| s.downloaded).sum::<u64>()
+    );
+
+    let item = wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert_file_is(&ctx.engine, id, &ctx.server.big);
+    assert_eq!(item.downloaded, BIG_FILE_SIZE as u64);
+    assert!(item.segments.is_empty(), "{:?}", item.segments);
+
+    // The first request learns the size and becomes the first segment.
+    let quarter = BIG_FILE_SIZE / 4;
+    let mut ranges: Vec<Option<String>> =
+        ctx.server.requests().into_iter().map(|r| r.range).collect();
+    assert_eq!(ranges.remove(0), None);
+    ranges.sort();
+    let mut expected: Vec<Option<String>> = (1..4)
+        .map(|i| Some(format!("bytes={}-{}", i * quarter, (i + 1) * quarter - 1)))
+        .collect();
+    expected.sort();
+    assert_eq!(ranges, expected);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn segmented_downloads_resume_each_segment_after_a_restart() {
+    let (base, server) = start_server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(MemoryStore::new());
+    let folder = dir.path().join("a");
+
+    let engine = Engine::new(store.clone()).unwrap();
+    let id = engine.enqueue(&folder, &format!("{base}/big.bin")).unwrap();
+    wait_until(&engine, id, "every segment under way", |item| {
+        item.segments.len() == 4 && item.segments.iter().all(|s| s.downloaded > 0)
+    })
+    .await;
+    engine.pause(id).unwrap();
+    settle().await;
+    let paused = engine.get(id).unwrap();
+    assert!(paused.segments.iter().all(|s| !s.is_done()), "{:?}", paused.segments);
+    drop(engine);
+
+    let engine = Engine::new(store).unwrap();
+    let item = engine.get(id).unwrap();
+    assert_eq!(item.status, DownloadStatus::Paused);
+    assert_eq!(item.segments, paused.segments);
+    assert_eq!(
+        item.downloaded,
+        paused.segments.iter().map(|s| s.downloaded).sum::<u64>()
+    );
+
+    engine.resume(id).unwrap();
+    wait_for_status(&engine, id, DownloadStatus::Completed).await;
+    assert_file_is(&engine, id, &server.big);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 8, "{requests:?}");
+    let mut resumed: Vec<Option<String>> = requests[4..].iter().map(|r| r.range.clone()).collect();
+    resumed.sort();
+    let mut expected: Vec<Option<String>> = paused
+        .segments
+        .iter()
+        .map(|s| Some(format!("bytes={}-{}", s.start + s.downloaded, s.end - 1)))
+        .collect();
+    expected.sort();
+    assert_eq!(resumed, expected);
+    assert!(requests[4..].iter().all(|r| r.status == 206), "{requests:?}");
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use reqwest::{Client, Url};
 use tokio::runtime::Handle;
@@ -22,6 +22,9 @@ const EVENT_CAPACITY: usize = 1024;
 const USER_AGENT: &str = concat!("getit/", env!("CARGO_PKG_VERSION"));
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
+/// How often a running segmented download's progress is saved. Unlike a
+/// single-connection download, its progress can't be read back from its file.
+const SEGMENTS_SAVE_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Runs downloads for any number of queues.
 ///
@@ -64,6 +67,8 @@ struct Active {
     /// Folder the worker writes into, when the download moved to another queue
     /// while it was running. Its file follows once the worker has stopped.
     moved_from: Option<PathBuf>,
+    /// When the download's progress was last saved, for segmented downloads.
+    saved_at: Instant,
 }
 
 impl Active {
@@ -417,6 +422,9 @@ impl Engine {
             match copy_file(item, from, &dir) {
                 Ok((file_name, downloaded)) => {
                     let mut copy = copy_of(item);
+                    if file_name.is_none() {
+                        copy.segments.clear();
+                    }
                     copy.file_name = file_name;
                     copy.downloaded = downloaded;
                     copies.push(copy);
@@ -476,7 +484,7 @@ impl Engine {
                 let mut copy = copy_of(&item);
                 copy.queue_id = queue.id;
                 if copy.status != DownloadStatus::Completed {
-                    copy.downloaded = partial_len(&copy, dir);
+                    copy.sync_progress(dir);
                 }
                 queue.push(copy);
             }
@@ -662,7 +670,7 @@ impl Engine {
                 item.status = DownloadStatus::Queued;
             }
             if item.status != DownloadStatus::Completed {
-                item.downloaded = partial_len(&item, &dir);
+                item.sync_progress(&dir);
             }
             st.owner.insert(item.id, target);
             queue.push(item.clone());
@@ -774,6 +782,7 @@ impl Inner {
             last_modified: None,
             error: None,
             added_at: now_millis(),
+            segments: Vec::new(),
         };
         let id = item.id;
         queue.push(item.clone());
@@ -812,6 +821,7 @@ impl Inner {
                 stop: None,
                 restart: false,
                 moved_from: None,
+                saved_at: Instant::now(),
             },
         );
         self.runtime.spawn(worker::run(
@@ -833,6 +843,7 @@ impl Inner {
                 resumable,
                 etag,
                 last_modified,
+                segments,
             } => {
                 let Ok(queue) = owner_queue(&mut st.queues, &st.owner, id) else {
                     return;
@@ -843,6 +854,7 @@ impl Inner {
                     item.resumable = Some(resumable);
                     item.etag = etag;
                     item.last_modified = last_modified;
+                    item.segments = segments;
                     self.emit(EngineEvent::DownloadChanged(item.clone()));
                     // The file name must survive a restart for the download to resume.
                     self.save(queue);
@@ -853,23 +865,34 @@ impl Inner {
                 downloaded,
                 total,
                 speed_bps,
+                segments,
             } => {
                 let Ok(queue) = owner_queue(&mut st.queues, &st.owner, id) else {
                     return;
                 };
-                if let Some(item) = queue.items.get_mut(&id) {
-                    item.downloaded = downloaded;
-                    if total.is_some() {
-                        item.total_bytes = total;
-                    }
-                    if item.status == DownloadStatus::Downloading {
-                        self.emit(EngineEvent::Progress {
-                            id,
-                            downloaded,
-                            total: item.total_bytes,
-                            speed_bps,
-                        });
-                    }
+                let Some(item) = queue.items.get_mut(&id) else {
+                    return;
+                };
+                item.downloaded = downloaded;
+                if total.is_some() {
+                    item.total_bytes = total;
+                }
+                let segmented = !segments.is_empty();
+                item.segments = segments;
+                if item.status == DownloadStatus::Downloading {
+                    self.emit(EngineEvent::Progress {
+                        id,
+                        downloaded,
+                        total: item.total_bytes,
+                        speed_bps,
+                    });
+                }
+                if segmented
+                    && let Some(active) = st.active.get_mut(&id)
+                    && active.saved_at.elapsed() >= SEGMENTS_SAVE_INTERVAL
+                {
+                    active.saved_at = Instant::now();
+                    self.save(queue);
                 }
             }
             WorkerMsg::Done {
@@ -896,6 +919,7 @@ impl Inner {
                             item.status = DownloadStatus::Completed;
                             item.error = None;
                             item.total_bytes.get_or_insert(item.downloaded);
+                            item.segments.clear();
                         }
                         // Status was already set by pause or by pausing the queue.
                         (_, Some(Stop::Pause | Stop::Remove)) => {}
@@ -1020,17 +1044,11 @@ fn copy_of(item: &DownloadItem) -> DownloadItem {
     }
 }
 
-/// How much of an unfinished download is in its partial file in `dir`.
-fn partial_len(item: &DownloadItem, dir: &Path) -> u64 {
-    item.part_path(dir)
-        .and_then(|part| std::fs::metadata(part).ok())
-        .map_or(0, |meta| meta.len())
-}
-
 /// Copies a download's file (finished or partial) from `from` to `to`, picking a
 /// free name there. Returns the copy's file name and, for an unfinished
 /// download, how much of it was copied. A partial file still being written is
-/// copied as far as it goes.
+/// copied as far as it goes; a segmented one is copied whole, and at least as
+/// far as `item`'s segments say.
 fn copy_file(item: &DownloadItem, from: &Path, to: &Path) -> io::Result<(Option<String>, u64)> {
     let Some(name) = &item.file_name else {
         return Ok((None, 0));
@@ -1047,7 +1065,8 @@ fn copy_file(item: &DownloadItem, from: &Path, to: &Path) -> io::Result<(Option<
     let name = free_file_name(to, name)?;
     let dest = if done { to.join(&name) } else { part_path(to, &name) };
     let copied = std::fs::copy(&src, &dest)?;
-    Ok((Some(name), if done { item.downloaded } else { copied }))
+    let segmented = !item.segments.is_empty();
+    Ok((Some(name), if done || segmented { item.downloaded } else { copied }))
 }
 
 /// `candidate`, or `candidate (1)`, `(2)`, ... if a file or partial download
