@@ -38,7 +38,11 @@ export function QueueSettings({
   return (
     <aside className="overview" aria-label="Queue settings">
       <div className="overview-head">
-        <span className="overview-title">Queue Settings</span>
+        {queue && <div className="queue-settings-folder" title={queue.path}>
+          <FolderIcon />
+          <span className="ellipsis">{queue.name}</span>
+        </div>
+        }
         <span className="overview-total" />
         <button className="icon-btn" title="Close" onClick={onClose}>
           <CloseIcon />
@@ -46,10 +50,6 @@ export function QueueSettings({
       </div>
       {queue ? (
         <>
-          <div className="queue-settings-folder" title={queue.path}>
-            <FolderIcon />
-            <span className="ellipsis">{queue.name}</span>
-          </div>
           <div className="queue-settings-tabs">
             <div className="segmented" role="tablist">
               {TABS.map(({ tab: t, label }) => (
