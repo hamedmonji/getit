@@ -18,6 +18,10 @@ export interface FileVm {
   ext: string;
   status: string;
   sizeLabel: string;
+  /** Bytes, for sorting: the total when known, else what's downloaded; null if neither. */
+  size: number | null;
+  /** When the download was added, in milliseconds since the Unix epoch. */
+  addedAt: number;
   /** 0–100. */
   pct: number;
   /** Progress colour: accent while running, danger when failed, muted otherwise. */
@@ -100,6 +104,8 @@ export function pendingVm(key: string, url: string, name: string | null, status:
     ...resolveKind(shown),
     status,
     sizeLabel: "—",
+    size: null,
+    addedAt: Date.now(),
     pct: 0,
     color: "var(--muted)",
     nameColor: "var(--muted)",
@@ -167,6 +173,8 @@ export function fileVm(
     ...resolveKind(name),
     status,
     sizeLabel,
+    size: total ?? (item.downloaded || null),
+    addedAt: item.added_at,
     pct: exact,
     color: failed ? "var(--danger)" : active ? "var(--accent)" : "var(--muted)",
     nameColor: failed ? "var(--danger)" : missing ? "var(--muted)" : "var(--ink)",

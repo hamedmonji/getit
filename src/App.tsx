@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { Details } from "./components/Details";
 import { NoAccess } from "./components/NoAccess";
 import { Overview } from "./components/Overview";
+import { Settings } from "./components/Settings";
 import {
   CapturedBar,
   DuplicatePanel,
@@ -19,11 +20,13 @@ import { useDirListing } from "./hooks/useDirListing";
 import { useEngine } from "./hooks/useEngine";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
+import { useSortOrder } from "./hooks/useSortOrder";
 import { useStoredState } from "./hooks/useStoredState";
 import { engine, onBrowserLinks, type Captured, type DownloadItem, type DownloadStatus, type QueueInfo } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
 import { bestQueueFor } from "./lib/match";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
+import { sortFiles } from "./lib/sort";
 import {
   displayName,
   fileVm,
@@ -218,6 +221,13 @@ export default function App() {
     () => "closed",
   );
   const overviewOpen = overviewPanel === "open";
+  const toggleOverview = () => setOverviewPanel(overviewOpen ? "closed" : "open");
+  /** Whether the settings popup is showing. */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const toggleSettings = () => setSettingsOpen((open) => !open);
+  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  /** Global sort order for files: by the first key, then the next for ties. */
+  const [sortOrder, setSortOrder] = useSortOrder();
   const [detailsPanel, setDetailsPanel] = useStoredState<"open" | "closed">(
     "getit.details",
     ["open", "closed"],
@@ -344,7 +354,8 @@ export default function App() {
   /** Whether the search results include this kind; browsing shows everything. */
   const showsKind = (kind: SearchKind) => !results || !searchKinds.length || searchKinds.includes(kind);
   const folders = showsKind("folders") ? shownFolders(results?.folders ?? allFolders) : [];
-  const files = showsKind("files") ? (results?.files ?? folderFiles) : [];
+  const unsortedFiles = showsKind("files") ? (results?.files ?? folderFiles) : null;
+  const files = useMemo(() => (unsortedFiles ? sortFiles(unsortedFiles, sortOrder) : []), [unsortedFiles, sortOrder]);
 
   /** Every item in view, in display order. */
   const order = [...folders.map((g) => g.path), ...files.map((f) => f.id)];
@@ -858,7 +869,8 @@ export default function App() {
   // Command-X and Command-C cut and copy the selection, for pasting elsewhere;
   // Command-N makes a new folder with its own queue; Command-[ and Command-]
   // go back and forward; Command-. shows or hides folders without downloads;
-  // Command-1 and Command-2 switch to icons and list; Command-O shows or hides the overview;
+  // Command-1 and Command-2 switch to icons and list; Command-O shows or hides the overview,
+  // and Command-, the settings;
   // Command-Delete moves the selection to the Trash; Delete/Backspace alone
   // removes the selected downloads from the list (finished files stay);
   // Command-A selects everything in the folder; Command-Down opens the selected
@@ -869,6 +881,14 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || menu) return;
       const command = IS_MAC ? e.metaKey : e.ctrlKey;
+      // The settings dialog covers the window; only its own keys work.
+      if (settingsOpen) {
+        if (e.key === "Escape" || (e.key === "," && command)) {
+          e.preventDefault();
+          setSettingsOpen(false);
+        }
+        return;
+      }
       const arrow = e.key.startsWith("Arrow");
       if (arrow && (IS_MAC ? e.metaKey : e.altKey)) {
         e.preventDefault();
@@ -904,7 +924,10 @@ export default function App() {
         toggleDetails();
       } else if (e.key.toLowerCase() === "o" && command) {
         e.preventDefault();
-        setOverviewPanel(overviewOpen ? "closed" : "open");
+        toggleOverview();
+      } else if (e.key === "," && command) {
+        e.preventDefault();
+        toggleSettings();
       } else if ((e.key === "1" || e.key === "2") && command) {
         e.preventDefault();
         setMode(e.key === "1" ? "Icons" : "List");
@@ -1316,7 +1339,9 @@ export default function App() {
         onToggleTheme={() => setTheme(theme === "Dark" ? "Light" : "Dark")}
         overviewOpen={overviewOpen}
         activeCount={global.active}
-        onToggleOverview={() => setOverviewPanel(overviewOpen ? "closed" : "open")}
+        onToggleOverview={toggleOverview}
+        settingsOpen={settingsOpen}
+        onToggleSettings={toggleSettings}
       />
 
       {adding && (
@@ -1403,6 +1428,7 @@ export default function App() {
             onClose={() => setOverviewPanel("closed")}
           />
         )}
+
       </div>
 
       {duplicates && (
@@ -1489,6 +1515,7 @@ export default function App() {
         onToggleDetails={toggleDetails}
       />
 
+      {settingsOpen && <Settings sortOrder={sortOrder} onSortOrder={setSortOrder} onClose={closeSettings} />}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.target)} onClose={closeMenu} />}
       {drag && (
         <div className="drag-ghost" style={{ left: drag.x + 14, top: drag.y + 10 }}>

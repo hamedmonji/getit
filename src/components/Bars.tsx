@@ -8,6 +8,7 @@ import {
   FilterIcon,
   FolderIcon,
   ForwardIcon,
+  GearIcon,
   GridIcon,
   ListIcon,
   OverviewIcon,
@@ -80,6 +81,8 @@ export interface ToolbarProps {
   /** Downloads running anywhere, shown on the overview button. */
   activeCount: number;
   onToggleOverview: () => void;
+  settingsOpen: boolean;
+  onToggleSettings: () => void;
 }
 
 export function Toolbar(p: ToolbarProps) {
@@ -153,6 +156,14 @@ export function Toolbar(p: ToolbarProps) {
       >
         <OverviewIcon />
         {p.activeCount > 0 && <span className="overview-badge">{p.activeCount}</span>}
+      </button>
+      <button
+        className={"square-btn" + (p.settingsOpen ? " toggled" : "")}
+        title={`${p.settingsOpen ? "Hide settings" : "Settings"} (${MOD},)`}
+        aria-pressed={p.settingsOpen}
+        onClick={p.onToggleSettings}
+      >
+        <GearIcon />
       </button>
     </div>
   );

@@ -151,3 +151,27 @@ export function OverviewIcon({ size = 14 }: IconProps) {
     </svg>
   );
 }
+
+/** A gear, for settings. */
+export function GearIcon({ size = 14 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="2.2" {...stroke} strokeWidth={1.5} />
+      <path
+        d="M8 1.8v1.6M8 12.6v1.6M14.2 8h-1.6M3.4 8H1.8M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7L3.6 3.6"
+        {...stroke}
+        strokeWidth={1.5}
+      />
+      <circle cx="8" cy="8" r="4.6" {...stroke} strokeWidth={1.5} />
+    </svg>
+  );
+}
+
+/** Three lines, for a row that can be dragged. */
+export function GripIcon({ size = 12 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16">
+      <path d="M3 5h10M3 8h10M3 11h10" {...stroke} strokeWidth={1.5} />
+    </svg>
+  );
+}
