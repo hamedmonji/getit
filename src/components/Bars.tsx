@@ -122,22 +122,20 @@ export function Toolbar(p: ToolbarProps) {
           </button>
         ))}
       </div>
-      {p.queueState && (
-        <button
-          className="square-btn"
-          title={
-            p.queueState === "empty"
-              ? "Nothing to download in this queue"
-              : p.queueState === "stopped"
-                ? "Resume queue"
-                : "Pause queue"
-          }
-          disabled={p.queueState === "empty"}
-          onClick={p.onToggleQueue}
-        >
-          {p.queueState === "running" ? <PauseIcon size={12} /> : <PlayIcon size={12} />}
-        </button>
-      )}
+      {<button
+        className="square-btn"
+        title={
+          p.queueState === "empty"
+            ? "Nothing to download in this queue"
+            : p.queueState === "stopped"
+              ? "Resume queue"
+              : "Pause queue"
+        }
+        disabled={!p.queueState || p.queueState === "empty"}
+        onClick={p.onToggleQueue}
+      >
+        {p.queueState === "running" ? <PauseIcon size={12} /> : <PlayIcon size={12} />}
+      </button>}
       <button
         className="square-btn"
         title={p.theme === "Dark" ? "Light mode" : "Dark mode"}
