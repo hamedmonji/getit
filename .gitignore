@@ -40,3 +40,11 @@ Thumbs.db
 
 # Downloads made while testing in development builds
 /test-downloads/
+
+# Signing keys and certificates; never commit these
+postchi-license-keys/
+*.p12
+*.p8
+*.pem
+*.cer
+*.certSigningRequest

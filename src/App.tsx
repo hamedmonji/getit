@@ -12,6 +12,7 @@ import {
   PauseBar,
   StatusBar,
   Toolbar,
+  UpdateBar,
   type SearchKind,
   type Theme,
 } from "./components/Bars";
@@ -27,6 +28,7 @@ import { useShortcuts } from "./hooks/useShortcuts";
 import { useSortOrder } from "./hooks/useSortOrder";
 import { useStoredState } from "./hooks/useStoredState";
 import { useUndo } from "./hooks/useUndo";
+import { useUpdate } from "./hooks/useUpdate";
 import { engine, onBrowserLinks, type Captured, type DownloadStatus, type QueueInfo } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
 import { isFolderKey } from "./lib/keys";
@@ -162,6 +164,7 @@ export default function App() {
   const [confirmPause, setConfirmPause] = useState<string[] | null>(null);
   /** Pastes, trashes and renames that can be undone. */
   const { push: pushUndo, undo } = useUndo(setNotice, refresh);
+  const updater = useUpdate();
   /** Whether the address bar is being typed in. */
   const [addressOpen, setAddressOpen] = useState(false);
   /** The search shown in place of the folder's contents; empty when browsing. */
@@ -788,6 +791,16 @@ export default function App() {
             await addLinks(pasting);
           }}
           onClose={() => setPasting(null)}
+        />
+      )}
+
+      {updater.update && (
+        <UpdateBar
+          version={updater.update.version}
+          phase={updater.phase}
+          onInstall={() => void updater.install()}
+          onRestart={() => report(updater.restart())}
+          onClose={updater.dismiss}
         />
       )}
 

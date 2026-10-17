@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { isPathLike } from "../lib/paths";
 import type { ViewMode } from "../lib/viewModels";
+import type { UpdatePhase } from "../hooks/useUpdate";
 import {
   BackIcon,
   CloseIcon,
@@ -775,6 +776,63 @@ export function StatusBar({
       >
         <ExpandIcon open={detailsOpen} />
       </button>
+    </div>
+  );
+}
+
+/** Offers a newer version of getit, then shows its download and asks to restart into it. */
+export function UpdateBar({
+  version,
+  phase,
+  onInstall,
+  onRestart,
+  onClose,
+}: {
+  version: string;
+  phase: UpdatePhase;
+  onInstall: () => void;
+  onRestart: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="paste-prompt" role="alertdialog" aria-label="Update getit">
+      <div className="add-bar">
+        <span className="add-label">
+          {phase.kind === "ready" ? (
+            <>getit {version} is installed.</>
+          ) : (
+            <>
+              getit <span className="ink">{version}</span> is available.
+            </>
+          )}
+        </span>
+        <span className="paste-urls muted ellipsis">
+          {phase.kind === "downloading"
+            ? phase.pct === null
+              ? "Downloading…"
+              : `Downloading… ${phase.pct}%`
+            : phase.kind === "ready"
+              ? "Restart getit to start using it."
+              : phase.kind === "failed"
+                ? `Couldn't update: ${phase.error}`
+                : ""}
+        </span>
+        {phase.kind !== "downloading" && (
+          <button className="plain-btn" onClick={onClose}>
+            Later
+          </button>
+        )}
+        {(phase.kind === "available" || phase.kind === "failed") && (
+          <button className="plain-btn" autoFocus onClick={onInstall}>
+            {phase.kind === "failed" ? "Try again" : "Update"}
+          </button>
+        )}
+        {phase.kind === "ready" && (
+          <button className="plain-btn" autoFocus onClick={onRestart}>
+            Restart now
+          </button>
+        )}
+      </div>
     </div>
   );
 }
