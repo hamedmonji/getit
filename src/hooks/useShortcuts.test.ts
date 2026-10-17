@@ -1,0 +1,133 @@
+import { describe, expect, it } from "vitest";
+import { shortcutFor, type KeyPress, type ShortcutContext } from "./useShortcuts";
+
+const mac: ShortcutContext = { isMac: true, settingsOpen: false, selectionCount: 0, onButton: false };
+const other: ShortcutContext = { ...mac, isMac: false };
+
+const press = (key: string, mods: Partial<KeyPress> = {}): KeyPress => ({
+  key,
+  code: "",
+  metaKey: false,
+  ctrlKey: false,
+  altKey: false,
+  shiftKey: false,
+  ...mods,
+});
+const cmd = (key: string, mods: Partial<KeyPress> = {}) => press(key, { metaKey: true, ...mods });
+const ctrl = (key: string, mods: Partial<KeyPress> = {}) => press(key, { ctrlKey: true, ...mods });
+
+/** The action a key press runs, or null when it does nothing. */
+const action = (e: KeyPress, ctx = mac) => shortcutFor(e, ctx)?.action ?? null;
+
+describe("shortcutFor", () => {
+  it("maps Command shortcuts on macOS", () => {
+    expect(action(cmd("v"))).toBe("paste");
+    expect(action(cmd("["))).toBe("back");
+    expect(action(cmd("]"))).toBe("forward");
+    expect(action(cmd("i"))).toBe("details");
+    expect(action(cmd("o"))).toBe("overview");
+    expect(action(cmd(","))).toBe("settings");
+    expect(action(cmd("/"))).toBe("queuePanel");
+    expect(action(cmd("1"))).toBe("icons");
+    expect(action(cmd("2"))).toBe("list");
+    expect(action(cmd("."))).toBe("toggleFolders");
+    expect(action(cmd("n"))).toBe("newQueue");
+    expect(action(cmd("z"))).toBe("undo");
+    expect(action(cmd("a"))).toBe("selectAll");
+    expect(action(cmd("Backspace"))).toBe("trash");
+  });
+
+  it("uses Control in place of Command elsewhere", () => {
+    expect(action(ctrl("v"), other)).toBe("paste");
+    expect(action(cmd("v"), other)).toBeNull();
+    expect(action(ctrl("v"), mac)).toBeNull();
+  });
+
+  it("ignores letter case, as with Caps Lock", () => {
+    expect(action(cmd("V"))).toBe("paste");
+  });
+
+  it("finds Command-/ by its key code on layouts where / needs Shift", () => {
+    expect(action(cmd("7", { code: "Slash" }))).toBe("queuePanel");
+    expect(action(cmd("/", { shiftKey: true }))).toBeNull();
+  });
+
+  it("cuts and copies only with something selected", () => {
+    expect(action(cmd("c"))).toBeNull();
+    expect(action(cmd("c"), { ...mac, selectionCount: 2 })).toBe("copy");
+    expect(action(cmd("x"), { ...mac, selectionCount: 2 })).toBe("cut");
+  });
+
+  it("opens the search with Command-F, Command-L or a plain /", () => {
+    expect(action(cmd("f"))).toBe("search");
+    expect(action(cmd("l"))).toBe("search");
+    expect(action(press("/"))).toBe("search");
+  });
+
+  it("removes with Delete or Backspace alone", () => {
+    expect(action(press("Delete"))).toBe("remove");
+    expect(action(press("Backspace"))).toBe("remove");
+  });
+
+  describe("arrows", () => {
+    it("move the selection, with or without Shift", () => {
+      expect(action(press("ArrowDown"))).toBe("moveSelection");
+      expect(action(press("ArrowLeft", { shiftKey: true }))).toBe("moveSelection");
+    });
+
+    it("go up with Command-Up, or Alt-Up elsewhere", () => {
+      expect(action(cmd("ArrowUp"))).toBe("goUp");
+      expect(action(press("ArrowUp", { altKey: true }), other)).toBe("goUp");
+    });
+
+    it("open the selected item with Command-Down, only with one selected", () => {
+      expect(action(cmd("ArrowDown"), { ...mac, selectionCount: 1 })).toBe("openSelected");
+      expect(action(cmd("ArrowDown"), { ...mac, selectionCount: 2 })).toBeNull();
+    });
+
+    it("swallow other Command-arrows, so the page doesn't scroll", () => {
+      expect(shortcutFor(cmd("ArrowLeft"), mac)).toEqual({ action: null, preventDefault: true });
+    });
+
+    it("leave arrows with other modifiers alone", () => {
+      expect(shortcutFor(press("ArrowDown", { ctrlKey: true }), mac)).toBeNull();
+    });
+  });
+
+  describe("Return", () => {
+    const one = { ...mac, selectionCount: 1 };
+
+    it("renames the one selected item", () => {
+      expect(action(press("Enter"), one)).toBe("rename");
+    });
+
+    it("does nothing with no selection, several, a modifier, or a focused button", () => {
+      expect(action(press("Enter"))).toBeNull();
+      expect(action(press("Enter"), { ...mac, selectionCount: 2 })).toBeNull();
+      expect(action(press("Enter", { shiftKey: true }), one)).toBeNull();
+      expect(action(press("Enter"), { ...one, onButton: true })).toBeNull();
+    });
+  });
+
+  it("passes Escape on without stopping the browser's handling", () => {
+    expect(shortcutFor(press("Escape"), mac)).toEqual({ action: "escape", preventDefault: false });
+  });
+
+  it("stops the browser's handling for Command shortcuts", () => {
+    expect(shortcutFor(cmd("z"), mac)?.preventDefault).toBe(true);
+    expect(shortcutFor(cmd("Backspace"), mac)?.preventDefault).toBe(false);
+  });
+
+  it("only closes the settings while they're open", () => {
+    const open = { ...mac, settingsOpen: true, selectionCount: 1 };
+    expect(action(press("Escape"), open)).toBe("closeSettings");
+    expect(action(cmd(","), open)).toBe("closeSettings");
+    expect(shortcutFor(cmd("v"), open)).toBeNull();
+    expect(shortcutFor(press("Backspace"), open)).toBeNull();
+  });
+
+  it("ignores other keys", () => {
+    expect(shortcutFor(press("q"), mac)).toBeNull();
+    expect(shortcutFor(cmd("q"), mac)).toBeNull();
+  });
+});

@@ -15,25 +15,28 @@ import {
   type SearchKind,
   type Theme,
 } from "./components/Bars";
-import { ContextMenu, type MenuItem } from "./components/ContextMenu";
+import { ContextMenu } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
+import { canStart, useAddLinks } from "./hooks/useAddLinks";
+import { useClipboardItems } from "./hooks/useClipboardItems";
 import { useDirListing } from "./hooks/useDirListing";
 import { useEngine } from "./hooks/useEngine";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
+import { useShortcuts } from "./hooks/useShortcuts";
 import { useSortOrder } from "./hooks/useSortOrder";
 import { useStoredState } from "./hooks/useStoredState";
-import {
-  engine,
-  onBrowserLinks,
-  type Captured,
-  type DownloadItem,
-  type DownloadStatus,
-  type QueueInfo,
-} from "./lib/engine";
+import { useUndo } from "./hooks/useUndo";
+import { engine, onBrowserLinks, type Captured, type DownloadStatus, type QueueInfo } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
+import { isFolderKey } from "./lib/keys";
+import { linksIn } from "./lib/links";
 import { bestQueueFor } from "./lib/match";
+import { menuItems, type MenuContext } from "./lib/menus";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
+import { FILE_MANAGER, IS_MAC } from "./lib/platform";
+import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
+import { report } from "./lib/report";
 import { sortFiles } from "./lib/sort";
 import {
   displayName,
@@ -50,35 +53,6 @@ import {
   type ViewMode,
 } from "./lib/viewModels";
 
-/** Links being added that are already downloads, waiting for the user to decide. */
-interface Duplicates {
-  /** Folder the links were being added to. */
-  dir: string;
-  items: Duplicate[];
-}
-
-/**
- * What a link being added clashes with: a download of the same link anywhere, or
- * in the target folder a download or a file with the name it would get.
- */
-type Duplicate = (
-  | { url: string; kind: "link" | "name"; existing: DownloadItem }
-  | { url: string; kind: "file"; name: string }
-) & {
-  /** The temporary item shown for the link while it was checked, if any. */
-  pendingKey?: string;
-};
-
-/** A link being added that isn't a download yet: shown while the server is asked
- * for its file name, and while the user decides about it if it's a duplicate. */
-interface PendingAdd {
-  key: string;
-  url: string;
-  dir: string;
-  /** The server's name for it, once known. */
-  name: string | null;
-}
-
 /** What listing a folder fails with when the system won't let getit read it. */
 const NO_ACCESS = "no access";
 
@@ -90,38 +64,14 @@ const STATUS_WORDS: Record<DownloadStatus, string> = {
   failed: "Failed",
 };
 
-/** `name` without the ` (1)`, ` (2)`, ... added to keep copies apart, so copies compare equal. */
-function withoutCopyNumber(name: string): string {
-  return name.replace(/ \(\d+\)(\.[^.]*)?$/, "$1");
-}
-
-/** A URL as the engine stores it, so the same link compares equal however it was written. */
-function sameUrl(url: string): string {
-  try {
-    return new URL(url).href;
-  } catch {
-    return url;
-  }
-}
-
 interface History {
   cwd: string;
   back: string[];
   forward: string[];
 }
 
-/** On macOS, Control-click opens the context menu and Command adds to the selection. */
-const IS_MAC = navigator.userAgent.includes("Mac");
-
-/** Prefix for keyboard shortcuts shown in menus. */
-const MOD = IS_MAC ? "⌘" : "Ctrl+";
-const FILE_MANAGER = IS_MAC ? "Finder" : navigator.userAgent.includes("Windows") ? "Explorer" : "File Manager";
-
 /** How long a failed move's message stays in the status bar. */
 const NOTICE_MS = 6000;
-
-/** Most downloads a queue can run at once, as offered in the menu. */
-const MAX_CONCURRENCY = 6;
 
 interface Menu {
   x: number;
@@ -130,63 +80,8 @@ interface Menu {
   target: string | null;
 }
 
-/** `raw` as an http(s) URL, if it is one. */
-function asLink(raw: string): string | null {
-  try {
-    const url = new URL(raw);
-    return /^https?:$/.test(url.protocol) && url.hostname ? raw : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * One link per line of `text`, each once, in order, for pasting a batch. A line
- * gives its first http(s) link, or is taken whole when it looks like a link
- * without a scheme (`example.com/file.zip`). Other lines are skipped.
- */
-function linksIn(text: string): string[] {
-  const links: string[] = [];
-  for (const line of text.split(/\r?\n/)) {
-    const tokens = line.trim().split(/\s+/).filter(Boolean);
-    let link = tokens.map((t) => (/^https?:\/\//i.test(t) ? asLink(t) : null)).find(Boolean) ?? null;
-    if (!link && tokens.length === 1 && /^[^/\s]+\.[a-z]{2,}(\/|$)/i.test(tokens[0])) {
-      link = asLink("https://" + tokens[0]);
-    }
-    if (link) links.push(link);
-  }
-  return [...new Set(links)];
-}
-
-/** A change Command-Z can take back. */
-interface Undo {
-  /** What it undoes, such as "Move to Trash". */
-  label: string;
-  run: () => Promise<unknown>;
-}
-
-/** How many changes Command-Z can go back through. */
-const MAX_UNDOS = 50;
-
-/** Items cut or copied, waiting to be pasted: download ids and folder paths. */
-interface Clip {
-  keys: string[];
-  /** Pasting moves them rather than copying them. */
-  cut: boolean;
-}
-
-/** Downloads are keyed by id, folders by their absolute path. */
-const isFolderKey = (key: string) => key.startsWith("/");
-
-function report(promise: Promise<unknown>) {
-  promise.catch((e) => console.error(e));
-}
-
 export default function App() {
   const state = useEngine();
-  // For code that runs after waiting on the server, which needs the state as it is then.
-  const stateRef = useRef(state);
-  stateRef.current = state;
   const [home, setHome] = useState<string | null>(null);
   const [history, setHistory] = useState<History | null>(null);
   /** Selected folder paths and download ids. */
@@ -207,6 +102,7 @@ export default function App() {
   const [editing, setEditing] = useState<string | null>(null);
   /** Bumped to re-list the folder after changes the engine doesn't report. */
   const [listNonce, setListNonce] = useState(0);
+  const refresh = useCallback(() => setListNonce((n) => n + 1), []);
   /** Folders the user tried granting access to, which still can't be opened. */
   const [accessAsked, setAccessAsked] = useState<Set<string>>(new Set());
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -222,13 +118,11 @@ export default function App() {
   );
   const showAllFolders = folderFilter === "all";
   const toggleFolders = () => setFolderFilter(showAllFolders ? "queues" : "all");
-  /** Whether pasting links asks first or adds them right away. */
   const [overviewPanel, setOverviewPanel] = useStoredState<"open" | "closed">(
     "getit.overview",
     ["open", "closed"],
     () => "closed",
   );
-  /** Queue whose settings panel is showing; it takes the overview's place while open. */
   /**
    * The queue settings panel, for the selected queue folder's queue or else this
    * folder's. It takes the overview's place while open; closing it brings it back.
@@ -258,6 +152,7 @@ export default function App() {
   );
   const detailsOpen = detailsPanel === "open";
   const toggleDetails = () => setDetailsPanel(detailsOpen ? "closed" : "open");
+  /** Whether pasting links asks first or adds them right away. */
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
   /** Links the browser extension captured, waiting to be added to a folder. */
   const [captured, setCaptured] = useState<string[] | null>(null);
@@ -265,14 +160,8 @@ export default function App() {
   const [pasting, setPasting] = useState<string[] | null>(null);
   /** Downloads waiting for the user to confirm pausing, since they can't resume. */
   const [confirmPause, setConfirmPause] = useState<string[] | null>(null);
-  const [duplicates, setDuplicates] = useState<Duplicates | null>(null);
-  const [pendingAdds, setPendingAdds] = useState<PendingAdd[]>([]);
-  const [clip, setClip] = useState<Clip | null>(null);
-  /** Pastes and trashes that can be undone, newest last. */
-  const [undos, setUndos] = useState<Undo[]>([]);
-  const lastUndo = undos[undos.length - 1];
-  /** What cutting or copying last put on the system clipboard; null if that failed. */
-  const clipText = useRef<string | null>(null);
+  /** Pastes, trashes and renames that can be undone. */
+  const { push: pushUndo, undo } = useUndo(setNotice, refresh);
   /** Whether the address bar is being typed in. */
   const [addressOpen, setAddressOpen] = useState(false);
   /** The search shown in place of the folder's contents; empty when browsing. */
@@ -321,6 +210,13 @@ export default function App() {
     },
     [select],
   );
+  const { duplicates, pendingAdds, addLinks, settleDuplicates, currentOf, showDuplicate } = useAddLinks({
+    state,
+    cwd: history?.cwd ?? null,
+    select,
+    go,
+    setNotice,
+  });
 
   const goBack = () => {
     if (!history?.back.length) return;
@@ -531,18 +427,6 @@ export default function App() {
       ?.scrollIntoView({ block: "nearest" });
   };
 
-  const pushUndo = (undo: Undo) => setUndos((list) => [...list.slice(1 - MAX_UNDOS), undo]);
-  /** Takes back the last paste or trash. */
-  const undo = () => {
-    if (!lastUndo) return;
-    setUndos((list) => list.slice(0, -1));
-    lastUndo
-      .run()
-      .then(() => setNotice(null))
-      .catch((e) => setNotice(`Couldn't undo: ${e}`))
-      .finally(() => setListNonce((n) => n + 1));
-  };
-
   /** Moves downloads (by id) and folders (by path) to the Trash, files and all. */
   const trashItems = (keys: string[]) => {
     if (!keys.length) return;
@@ -561,167 +445,9 @@ export default function App() {
     select([]);
   };
 
-  /** Of several matching downloads, the one in `dir`'s queue, else an unfinished one. */
-  const bestMatch = (matches: DownloadItem[], dir: string) => {
-    const here = queueForDir(stateRef.current, dir)?.id;
-    return matches.find((d) => d.queue_id === here) ?? matches.find((d) => d.status !== "completed") ?? matches[0];
-  };
-
-  /** A download of the same link, finished or not, in any queue. Answered from memory. */
-  const findByLink = (url: string, dir: string): Duplicate | undefined => {
-    const key = sameUrl(url);
-    const existing = bestMatch(
-      Object.values(stateRef.current.downloads).filter((d) => sameUrl(d.url) === key),
-      dir,
-    );
-    return existing && { url, kind: "link", existing };
-  };
-
-  /**
-   * A download with the same file name in any queue (signed links differ each
-   * time for the same file), ignoring copy numbers; else a file or partial
-   * download with that name in `dir`.
-   */
-  const findByName = async (url: string, name: string, dir: string): Promise<Duplicate | undefined> => {
-    const base = withoutCopyNumber(name);
-    const existing = bestMatch(
-      Object.values(stateRef.current.downloads).filter((d) => withoutCopyNumber(displayName(d)) === base),
-      dir,
-    );
-    if (existing) return { url, kind: "name", existing };
-    if (await engine.fileExists(dir, name).catch(() => false)) return { url, kind: "file", name };
-    return undefined;
-  };
-
-  /** Adds the links' downloads to `dir`, selecting them; rejects with how many failed, if any did. */
-  const addNow = async (urls: string[], dir: string) => {
-    const ids: string[] = [];
-    const failed: unknown[] = [];
-    for (const url of urls) {
-      try {
-        ids.push(await engine.addDownload(dir, url));
-      } catch (e) {
-        failed.push(e);
-      }
-    }
-    if (ids.length) select(ids);
-    if (failed.length === 1 && urls.length === 1) throw failed[0];
-    if (failed.length) throw `${plural(failed.length, "link")} of ${urls.length} couldn't be added: ${failed[0]}`;
-  };
-
-  /** Asks about these duplicates too, alongside any already being asked about for `dir`. */
-  const askAbout = (dir: string, items: Duplicate[]) =>
-    setDuplicates((prev) => (prev && prev.dir === dir ? { dir, items: [...prev.items, ...items] } : { dir, items }));
-
-  /** Drops the temporary items of duplicates that have been dealt with. */
-  const dropPending = (items: Duplicate[]) => {
-    const keys = new Set(items.map((d) => d.pendingKey));
-    setPendingAdds((list) => list.filter((p) => !keys.has(p.key)));
-  };
-
-  /**
-   * Adds links to `dir`, unless they already exist; then the user is asked.
-   * Links already in the list are found at once. The rest show as temporary
-   * items while the server is asked for their file names, which are checked
-   * against other downloads and the files in `dir`; each becomes a download, or
-   * stays until the user decides. `again` adds them all without checking.
-   * Rejects with how many failed to add, if any did.
-   */
-  const addLinks = async (urls: string[], dir = cwd, again = false) => {
-    if (!dir) return;
-    if (again) return addNow(urls, dir);
-
-    const byLink = urls.flatMap((url) => findByLink(url, dir) ?? []);
-    if (byLink.length) askAbout(dir, byLink);
-    const rest = urls.filter((url) => !byLink.some((d) => d.url === url));
-    if (!rest.length) return;
-
-    const pending: PendingAdd[] = rest.map((url) => ({ key: `pending:${crypto.randomUUID()}`, url, dir, name: null }));
-    setPendingAdds((list) => [...list, ...pending]);
-    const checked = await Promise.all(
-      pending.map(async (p) => {
-        // The name in the link stands in when the server can't be asked.
-        const name = await engine.fileNameFor(p.url).catch(() => nameFromUrl(p.url));
-        const duplicate = await findByName(p.url, name, dir);
-        return { p, name, duplicate: duplicate && { ...duplicate, pendingKey: p.key } };
-      }),
-    );
-
-    const byName = checked.flatMap((c) => c.duplicate ?? []);
-    if (byName.length) {
-      const names = new Map(checked.map((c) => [c.p.key, c.name]));
-      setPendingAdds((list) => list.map((p) => (names.has(p.key) ? { ...p, name: names.get(p.key)! } : p)));
-      askAbout(dir, byName);
-    }
-    const fresh = checked.filter((c) => !c.duplicate).map((c) => c.p);
-    if (!fresh.length) return;
-    try {
-      await addNow(
-        fresh.map((p) => p.url),
-        dir,
-      );
-    } finally {
-      // The downloads have replaced them by now.
-      const keys = new Set(fresh.map((p) => p.key));
-      setPendingAdds((list) => list.filter((p) => !keys.has(p.key)));
-    }
-  };
-
-  /** A duplicate's existing download as it is now; null for a file. */
-  const currentOf = (d: Duplicate): DownloadItem | null =>
-    d.kind === "file" ? null : (state.downloads[d.existing.id] ?? d.existing);
-  /** Unfinished and not running, so starting it means something. */
-  const canStart = (item: DownloadItem | null) =>
-    !!item && (item.status === "queued" || item.status === "paused" || item.status === "failed");
-
-  // Goes to a duplicate's existing download with it selected, or shows its file in Finder.
-  const showDuplicate = (dir: string, d: Duplicate) => {
-    const item = currentOf(d);
-    if (d.kind === "file" || !item) {
-      if (d.kind === "file") report(engine.reveal([joinPath(dir, d.name)]));
-      return;
-    }
-    const where = state.queues[item.queue_id]?.dir;
-    if (where) go(where, item.id);
-  };
-
-  // Starts the existing downloads that aren't finished, then shows the first
-  // download; with only files, shows them all in Finder.
-  const startExisting = (dir: string, items: Duplicate[]) => {
-    for (const d of items) {
-      const item = currentOf(d);
-      if (item && canStart(item)) report(engine.resume(item.id));
-    }
-    const first = items.find((d) => d.kind !== "file");
-    if (first) showDuplicate(dir, first);
-    else report(engine.reveal(items.flatMap((d) => (d.kind === "file" ? [joinPath(dir, d.name)] : []))));
-  };
-
   /** A duplicate's folder as shown in the panel: "This Queue" for the folder on screen. */
   const whereLabel = (dir: string) =>
     dir === cwd ? { where: "This Queue", here: true } : { where: displayPath(dir, home ?? "") };
-
-  /**
-   * Deals with some of the duplicates being asked about: starts (or shows) their
-   * existing downloads, adds them again, or skips them. The panel stays for the rest.
-   */
-  const settleDuplicates = (handled: Duplicate[], how: "start" | "add" | "skip") => {
-    if (!duplicates) return;
-    const { dir } = duplicates;
-    const urls = new Set(handled.map((d) => d.url));
-    setDuplicates((prev) => {
-      const rest = prev?.items.filter((d) => !urls.has(d.url)) ?? [];
-      return prev && rest.length ? { ...prev, items: rest } : null;
-    });
-    if (how === "start") startExisting(dir, handled);
-    if (how === "add") {
-      addLinks([...urls], dir, true)
-        .catch((e) => setNotice(`Couldn't add: ${e}`))
-        .finally(() => dropPending(handled));
-    } else {
-      dropPending(handled);
-    }
-  };
 
   /** The folder a download's file goes in. */
   const dirOf = (id: string) => state.queues[state.downloads[id]?.queue_id]?.dir;
@@ -730,91 +456,12 @@ export default function App() {
     const dir = key in state.downloads ? dirOf(key) : parentPath(key);
     if (dir) go(dir, key);
   };
-  const showInFolderItem = (key: string): MenuItem => ({
-    kind: "action",
-    label: "Show in Enclosing Folder",
-    onSelect: () => showInFolder(key),
-  });
   // Unfinished downloads have no file yet, so their folder stands in for them.
   const diskPath = (key: string) => {
     if (isFolderKey(key)) return key;
     const vm = files.find((f) => f.id === key);
     return vm?.done && !vm.missing && vm.path ? vm.path : dirOf(key);
   };
-  const revealItem = (keys: string[]): MenuItem => ({
-    kind: "action",
-    label: `Show in ${FILE_MANAGER}`,
-    onSelect: () => {
-      const paths = [...new Set(keys.map(diskPath).filter((p): p is string => !!p))];
-      if (paths.length) report(engine.reveal(paths));
-    },
-  });
-
-  // Cut and copy also put the items' paths on the system clipboard, so they can
-  // be pasted in other apps, and so copying something else takes over Command-V.
-  const clipItems = (keys: string[], cut: boolean) => {
-    if (!keys.length) return;
-    const text = keys
-      .map((key) => (isFolderKey(key) ? key : (files.find((f) => f.id === key)?.path ?? state.downloads[key]?.url)))
-      .filter(Boolean)
-      .join("\n");
-    setClip({ keys, cut });
-    clipText.current = text;
-    engine.writeClipboard(text).catch(() => (clipText.current = null));
-  };
-
-  /** Moves (after a cut) or copies the clipped items into `dest`, selecting them if they land here. */
-  const pasteItems = (dest: string) => {
-    if (!clip) return;
-    const { keys, cut } = clip;
-    const ids = keys.filter((key) => !isFolderKey(key) && key in state.downloads);
-    const paths = keys.filter(isFolderKey);
-    // Where cut downloads came from, for undo; those already here stay put.
-    const from = new Map<string, string>();
-    for (const id of ids) {
-      const dir = state.queues[state.downloads[id].queue_id]?.dir;
-      if (dir && dir !== dest) from.set(id, dir);
-    }
-    const movedPaths = paths.filter((path) => parentPath(path) !== dest);
-    const pasted = cut
-      ? Promise.all([
-          ids.length ? engine.moveDownloads(ids, dest) : null,
-          paths.length ? engine.moveFolders(paths, dest) : null,
-        ]).then(() => [...paths.map((path) => joinPath(dest, baseName(path))), ...ids])
-      : Promise.all([
-          paths.length ? engine.copyFolders(paths, dest) : [],
-          ids.length ? engine.copyDownloads(ids, dest) : [],
-        ]).then(([folders, downloads]) => [...folders, ...downloads]);
-    // Cut items move once; copied ones can be pasted again.
-    if (cut) setClip(null);
-    pasted
-      .then((keys) => {
-        setNotice(null);
-        if (dest === cwd) select(keys);
-        if (cut) {
-          if (!from.size && !movedPaths.length) return;
-          const back = new Map<string, string[]>();
-          for (const [id, dir] of from) back.set(dir, [...(back.get(dir) ?? []), id]);
-          pushUndo({
-            label: "Move",
-            run: () =>
-              Promise.all([
-                ...[...back].map(([dir, ids]) => engine.moveDownloads(ids, dir)),
-                ...movedPaths.map((path) => engine.moveFolders([joinPath(dest, baseName(path))], parentPath(path))),
-              ]),
-          });
-        } else if (keys.length) {
-          // Copies go to the Trash, as in Finder.
-          pushUndo({
-            label: "Copy",
-            run: () => engine.moveToTrash(keys.filter((key) => !isFolderKey(key)), keys.filter(isFolderKey)),
-          });
-        }
-      })
-      .catch((e) => setNotice(`Couldn't paste: ${e}`))
-      .finally(() => setListNonce((n) => n + 1));
-  };
-
   // Like Finder's New Folder: create it with a default name, then edit the name in place.
   const newQueue = () => {
     if (!cwd) return;
@@ -854,6 +501,17 @@ export default function App() {
     }
   };
 
+  const { clip, setClip, clipItems, pasteItems, paste } = useClipboardItems({
+    state,
+    files,
+    cwd,
+    select,
+    setNotice,
+    refresh,
+    pushUndo,
+    pasteLinks,
+  });
+
   // Links sent from the browser extension wait at the bottom, with any captured
   // before them, until the user adds them to a folder or dismisses them. getit
   // goes to the queue whose name best matches the first link's file name and
@@ -874,134 +532,55 @@ export default function App() {
     };
   }, []);
 
-  // Command-V pastes cut or copied items into this folder while the clipboard
-  // still holds them, and otherwise adds the links on it.
-  const paste = () => {
-    if (!cwd) return;
-    engine
-      .readClipboard()
-      .then((text) => {
-        if (clip && (clipText.current === null || text === clipText.current)) pasteItems(cwd);
-        else if (text !== clipText.current) pasteLinks(text);
-      })
-      .catch(() => {
-        if (clip && clipText.current === null) pasteItems(cwd);
-      });
-  };
-
-  // Command-X and Command-C cut and copy the selection, for pasting elsewhere;
-  // Command-N makes a new folder with its own queue; Command-[ and Command-]
-  // go back and forward; Command-. shows or hides folders without downloads;
-  // Command-1 and Command-2 switch to icons and list; Command-O shows or hides the overview,
-  // Command-, the settings, and Command-/ the queue settings panel;
-  // Command-Delete moves the selection to the Trash; Delete/Backspace alone
-  // removes the selected downloads from the list (finished files stay);
-  // Command-A selects everything in the folder; Command-Down opens the selected
-  // item and Command-Up goes to the enclosing folder (Control-A and Alt-arrows elsewhere);
-  // Return renames the selected folder or file, as in Finder; / opens the search, like
-  // Command-F and Command-L.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || menu) return;
-      const command = IS_MAC ? e.metaKey : e.ctrlKey;
-      // The settings dialog covers the window; only its own keys work.
-      if (settingsOpen) {
-        if (e.key === "Escape" || (e.key === "," && command)) {
-          e.preventDefault();
-          setSettingsOpen(false);
-        }
-        return;
-      }
-      const arrow = e.key.startsWith("Arrow");
-      if (arrow && (IS_MAC ? e.metaKey : e.altKey)) {
-        e.preventDefault();
-        if (e.key === "ArrowUp") goUp();
-        if (e.key === "ArrowDown" && selection.length === 1) {
-          const [key] = selection;
-          const file = files.find((f) => f.id === key);
-          if (file) onOpenFile(file);
-          else go(key);
-        }
-      } else if (arrow && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        moveSelection(e.key, e.shiftKey);
-      } else if ((e.key === "Delete" || e.key === "Backspace") && command) {
-        trashItems(selection);
-      } else if (e.key === "Delete" || e.key === "Backspace") {
+  useShortcuts(
+    { menuOpen: !!menu, settingsOpen, selectionCount: selection.length },
+    {
+      closeSettings: () => setSettingsOpen(false),
+      goUp,
+      openSelected: () => {
+        const [key] = selection;
+        const file = files.find((f) => f.id === key);
+        if (file) onOpenFile(file);
+        else go(key);
+      },
+      moveSelection: (e) => moveSelection(e.key, e.shiftKey),
+      trash: () => trashItems(selection),
+      remove: () => {
         const ids = selectedFiles.map((f) => f.id);
         if (!ids.length) return;
         ids.forEach((id) => report(engine.remove(id)));
         select([]);
-      } else if (e.key.toLowerCase() === "v" && command) {
-        e.preventDefault();
-        paste();
-      } else if ((e.key.toLowerCase() === "c" || e.key.toLowerCase() === "x") && command && selection.length) {
-        e.preventDefault();
-        clipItems(selection, e.key.toLowerCase() === "x");
-      } else if ((e.key === "[" || e.key === "]") && command) {
-        e.preventDefault();
-        if (e.key === "[") goBack();
-        else goForward();
-      } else if (e.key.toLowerCase() === "i" && command) {
-        e.preventDefault();
-        toggleDetails();
-      } else if (e.key.toLowerCase() === "o" && command) {
-        e.preventDefault();
-        toggleOverview();
-      } else if (e.key === "," && command) {
-        e.preventDefault();
-        toggleSettings();
-      } else if ((e.key === "/" || e.code === "Slash") && command && !e.shiftKey) {
-        e.preventDefault();
-        toggleQueuePanel();
-      } else if ((e.key === "1" || e.key === "2") && command) {
-        e.preventDefault();
-        setMode(e.key === "1" ? "Icons" : "List");
-      } else if (e.key === "." && command) {
-        e.preventDefault();
-        toggleFolders();
-      } else if (e.key.toLowerCase() === "n" && command) {
-        e.preventDefault();
-        newQueue();
-      } else if (
-        ((e.key.toLowerCase() === "f" || e.key.toLowerCase() === "l") && command) ||
-        (e.key === "/" && !(e.metaKey || e.ctrlKey || e.altKey))
-      ) {
-        e.preventDefault();
-        setAddressOpen(true);
-      } else if (
-        e.key === "Enter" &&
-        !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) &&
-        // A focused button, such as a prompt's, takes Return itself.
-        !(e.target instanceof HTMLButtonElement) &&
-        selection.length === 1
-      ) {
-        e.preventDefault();
-        setEditing(selection[0]);
-      } else if (e.key === "Escape" && confirmPause) {
-        setConfirmPause(null);
-      } else if (e.key === "Escape" && duplicates) {
-        settleDuplicates(duplicates.items, "skip");
-      } else if (e.key === "Escape" && captured) {
-        setCaptured(null);
-      } else if (e.key === "Escape" && pasting) {
-        setPasting(null);
-      } else if (e.key === "Escape" && query) {
-        setQuery("");
-      } else if (e.key === "Escape" && clip?.cut) {
-        setClip(null);
-      } else if (e.key.toLowerCase() === "z" && command && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if (e.key.toLowerCase() === "a" && command) {
-        e.preventDefault();
+      },
+      paste,
+      cut: () => clipItems(selection, true),
+      copy: () => clipItems(selection, false),
+      back: goBack,
+      forward: goForward,
+      details: toggleDetails,
+      overview: toggleOverview,
+      settings: toggleSettings,
+      queuePanel: toggleQueuePanel,
+      icons: () => setMode("Icons"),
+      list: () => setMode("List"),
+      toggleFolders,
+      newQueue,
+      search: () => setAddressOpen(true),
+      rename: () => setEditing(selection[0]),
+      escape: () => {
+        if (confirmPause) setConfirmPause(null);
+        else if (duplicates) settleDuplicates(duplicates.items, "skip");
+        else if (captured) setCaptured(null);
+        else if (pasting) setPasting(null);
+        else if (query) setQuery("");
+        else if (clip?.cut) setClip(null);
+      },
+      undo,
+      selectAll: () => {
         setSelected(new Set(order));
         setAnchor(null);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+      },
+    },
+  );
 
   // Only getit's own menus; text fields keep the system one for copy and paste.
   useEffect(() => {
@@ -1040,258 +619,41 @@ export default function App() {
     setListNonce((n) => n + 1);
   };
 
-  const clipMenu = (keys: string[]): MenuItem[] => [
-    { kind: "action", label: "Cut", shortcut: `${MOD}X`, onSelect: () => clipItems(keys, true) },
-    { kind: "action", label: "Copy", shortcut: `${MOD}C`, onSelect: () => clipItems(keys, false) },
-  ];
-  const pasteLabel = clip ? `Paste ${plural(clip.keys.length, "item")}` : "Paste";
-
-  /** A queue's downloads paused one by one. */
-  const heldIn = (target: QueueInfo) => target.downloads.filter((id) => state.downloads[id]?.status === "paused");
   // The toolbar shows the queue running while any of its downloads runs,
   // whether the queue or the user started it, and pausing there stops them all.
   const queueStopped = !!queue && own.active === 0;
-  // Menus show a queue's own state: paused, or stopped by pausing its
-  // downloads one by one; downloads started on their own don't count.
-  const isQueuePaused = (target: QueueInfo) => {
-    const st = stats(state, target.dir, false);
-    return target.settings.paused || (st.active === 0 && st.queued === 0 && heldIn(target).length > 0);
-  };
-  const queuePaused = !!queue && isQueuePaused(queue);
-  // Pausing or resuming means nothing for a queue with nothing left to download.
-  const hasWork = (target: QueueInfo) => stats(state, target.dir, false).pending > 0;
-  // Unpauses a queue and puts downloads paused one by one back in line.
-  const resumeQueueOf = (target: QueueInfo) => {
-    const { settings } = target;
-    const held = heldIn(target);
-    report(
-      (async () => {
-        if (settings.paused) await engine.setQueueSettings(target.id, { ...settings, paused: false });
-        if (held.length) await engine.requeue(held);
-      })(),
-    );
-  };
-  const resumeQueue = () => queue && resumeQueueOf(queue);
-  // Stops everything in a queue. Pausing a running queue stops all its
-  // downloads; in one that's paused already, only downloads started on their
-  // own run, so they're paused one by one.
-  const pauseQueueOf = (target: QueueInfo) => {
-    const { settings } = target;
-    if (!settings.paused) return report(engine.setQueueSettings(target.id, { ...settings, paused: true }));
-    const running = target.downloads.filter((id) => state.downloads[id]?.status === "downloading");
-    report(Promise.all(running.map((id) => engine.pause(id))));
-  };
-  const pauseQueue = () => queue && pauseQueueOf(queue);
-  /** Stops every queue that has something running. */
-  const pauseAll = () => {
-    for (const q of Object.values(state.queues)) {
-      if (q.downloads.some((id) => state.downloads[id]?.status === "downloading")) pauseQueueOf(q);
-    }
-  };
-  const toggleQueue = () => (queueStopped ? resumeQueue() : pauseQueue());
+  const pauseQueueOf = (target: QueueInfo) => report(pauseQueue(state, target));
+  const toggleQueue = () => queue && report(queueStopped ? resumeQueue(state, queue) : pauseQueue(state, queue));
 
-  const backgroundMenu = (): MenuItem[] => {
-    const items: MenuItem[] = [];
-    if (queue) items.push({ kind: "header", label: summary ? `${summary}` : "Queue" });
-    items.push(
-      { kind: "action", label: "Add download…", onSelect: () => setAdding(true) },
-      ...(clip
-        ? [{ kind: "action", label: pasteLabel, shortcut: `${MOD}V`, onSelect: () => pasteItems(cwd) } as const]
-        : []),
-      {
-        kind: "action",
-        label: "Paste link",
-        onSelect: () => engine.readClipboard().then(pasteLinks).catch(() => {}),
-      },
-      { kind: "action", label: "New queue", shortcut: `${MOD}N`, onSelect: newQueue },
-      { kind: "action", label: `Open in ${FILE_MANAGER}`, onSelect: () => report(engine.openPath(cwd)) },
-      {
-        kind: "action",
-        label: "Ask before adding pasted links",
-        checked: pasteMode === "ask",
-        onSelect: () => setPasteMode(pasteMode === "ask" ? "always" : "ask"),
-      },
-    );
-    if (queue) {
-      const { settings } = queue;
-      items.push(
-        { kind: "separator" },
-        {
-          kind: "action",
-          label: queuePaused ? "Resume queue" : "Pause queue",
-          disabled: !hasWork(queue),
-          onSelect: queuePaused ? resumeQueue : pauseQueue,
-        },
-        {
-          kind: "stepper",
-          label: "Downloads at a time",
-          value: settings.max_concurrent,
-          min: 1,
-          max: MAX_CONCURRENCY,
-          onChange: (n) => report(engine.setQueueSettings(queue.id, { ...settings, max_concurrent: n })),
-        },
-        {
-          kind: "action",
-          label: "Clear done",
-          disabled: own.done === 0,
-          onSelect: () => report(engine.clearCompleted(queue.id)),
-        },
-        {
-          kind: "action",
-          label: "Queue Settings…",
-          shortcut: `${MOD}/`,
-          onSelect: () => setQueuePanel("open"),
-        },
-      );
-    }
-    return items;
-  };
-
-  const downloadMenu = (vm: FileVm): MenuItem[] => {
-    const status = state.downloads[vm.id]?.status;
-    const items: MenuItem[] = [];
-    if (vm.done) {
-      items.push({
-        kind: "action",
-        label: "Open",
-        disabled: vm.missing || !vm.path,
-        onSelect: () => onOpenFile(vm),
-      });
-    } else {
-      if (status === "downloading" || status === "queued") {
-        if (vm.action === "resume") {
-          // Waiting in a paused queue: start it on its own.
-          items.push({ kind: "action", label: "Resume", onSelect: () => report(engine.resume(vm.id)) });
-        }
-        items.push({ kind: "action", label: "Pause", onSelect: () => pauseDownloads([vm.id]) });
-      } else {
-        items.push({
-          kind: "action",
-          label: status === "failed" ? "Retry" : "Resume",
-          onSelect: () => report(engine.resume(vm.id)),
-        });
-      }
-    }
-    if (query) items.push(showInFolderItem(vm.id));
-    items.push(revealItem([vm.id]));
-    items.push({ kind: "action", label: "Rename", shortcut: IS_MAC ? "↩" : "Enter", onSelect: () => setEditing(vm.id) });
-    items.push({ kind: "separator" }, ...clipMenu([vm.id]), { kind: "separator" });
-    if (vm.done) {
-      // The file stays on disk.
-      items.push({
-        kind: "action",
-        label: "Remove from list",
-        onSelect: () => {
-          report(engine.remove(vm.id));
-          select([]);
-        },
-      });
-    }
-    items.push({ kind: "action", label: "Move to Trash", danger: true, onSelect: () => trashItems([vm.id]) });
-    return items;
-  };
-
-  const selectionMenu = (): MenuItem[] => {
-    const items: MenuItem[] = [{ kind: "header", label: `${plural(selection.length, "item")} selected` }];
-    const trash: MenuItem = {
-      kind: "action",
-      label: `Move ${plural(selection.length, "item")} to Trash`,
-      danger: true,
-      onSelect: () => trashItems(selection),
-    };
-    items.push(revealItem(selection), { kind: "separator" }, ...clipMenu(selection), { kind: "separator" });
-    if (!selectedFiles.length) return [...items, trash];
-    const status = (f: FileVm) => state.downloads[f.id]?.status;
-    const queuePaused = (f: FileVm) => state.queues[state.downloads[f.id]?.queue_id]?.settings.paused ?? false;
-    const pausable = selectedFiles.filter((f) => status(f) === "downloading" || status(f) === "queued");
-    // Downloads waiting in a paused queue can be started on their own too.
-    const resumable = selectedFiles.filter(
-      (f) => status(f) === "paused" || status(f) === "failed" || (status(f) === "queued" && queuePaused(f)),
-    );
-    const done = selectedFiles.filter((f) => f.done);
-    items.push(
-      {
-        kind: "action",
-        label: "Pause",
-        disabled: !pausable.length,
-        onSelect: () => pauseDownloads(pausable.map((f) => f.id)),
-      },
-      {
-        kind: "action",
-        label: "Resume",
-        disabled: !resumable.length,
-        // Back in line, so the queue's limit holds; a paused queue gets them started on their own.
-        onSelect: () => {
-          resumable.filter(queuePaused).forEach((f) => report(engine.resume(f.id)));
-          const requeued = resumable.filter((f) => !queuePaused(f)).map((f) => f.id);
-          if (requeued.length) report(engine.requeue(requeued));
-        },
-      },
-      { kind: "separator" },
-    );
-    if (done.length) {
-      // The files stay on disk.
-      items.push({
-        kind: "action",
-        label: `Remove ${plural(done.length, "finished download")} from list`,
-        onSelect: () => {
-          done.forEach((f) => report(engine.remove(f.id)));
-          select([]);
-        },
-      });
-    }
-    items.push(trash);
-    return items;
-  };
-
-  const menuItems = (target: string | null): MenuItem[] => {
-    if (target === null) return backgroundMenu();
-    if (selection.length > 1 && selected.has(target)) return selectionMenu();
-    const file = files.find((f) => f.id === target);
-    if (file) return downloadMenu(file);
-    if (folders.some((g) => g.path === target)) {
-      const folderQueue = queueForDir(state, target);
-      return [
-        { kind: "action", label: "Open", onSelect: () => go(target) },
-        ...(folderQueue
-          ? [
-              isQueuePaused(folderQueue)
-                ? ({
-                    kind: "action",
-                    label: "Resume queue",
-                    disabled: !hasWork(folderQueue),
-                    onSelect: () => resumeQueueOf(folderQueue),
-                  } as const)
-                : ({
-                    kind: "action",
-                    label: "Pause queue",
-                    disabled: !hasWork(folderQueue),
-                    onSelect: () => pauseQueueOf(folderQueue),
-                  } as const),
-              {
-                kind: "action",
-                label: "Queue Settings…",
-                // The panel shows the selected queue folder's queue.
-                onSelect: () => {
-                  select([target]);
-                  setQueuePanel("open");
-                },
-              } as const,
-            ]
-          : []),
-        ...(query ? [showInFolderItem(target)] : []),
-        revealItem([target]),
-        { kind: "action", label: "Rename", shortcut: IS_MAC ? "↩" : "Enter", onSelect: () => setEditing(target) },
-        { kind: "separator" },
-        ...clipMenu([target]),
-        ...(clip && !clip.keys.includes(target)
-          ? [{ kind: "action", label: `${pasteLabel} Into Folder`, onSelect: () => pasteItems(target) } as const]
-          : []),
-        { kind: "separator" },
-        { kind: "action", label: "Move to Trash", danger: true, onSelect: () => trashItems([target]) },
-      ];
-    }
-    return [];
+  const menuContext: MenuContext = {
+    state,
+    cwd,
+    queue,
+    summary,
+    doneHere: own.done,
+    clip,
+    pasteMode,
+    query,
+    selection,
+    selected,
+    folders,
+    files,
+    selectedFiles,
+    select,
+    go: (path) => go(path),
+    startAdding: () => setAdding(true),
+    pasteItems,
+    pasteLinks,
+    newQueue,
+    setPasteMode,
+    openQueuePanel: () => setQueuePanel("open"),
+    onOpenFile,
+    pauseDownloads,
+    showInFolder,
+    diskPath,
+    clipItems,
+    trashItems,
+    setEditing,
   };
 
   const global = stats(state, "/", true);
@@ -1387,7 +749,7 @@ export default function App() {
         onMode={setMode}
         showAllFolders={showAllFolders}
         onToggleFolders={toggleFolders}
-        queueState={queue ? (!hasWork(queue) ? "empty" : queueStopped ? "stopped" : "running") : null}
+        queueState={queue ? (!hasWork(state, queue) ? "empty" : queueStopped ? "stopped" : "running") : null}
         onToggleQueue={toggleQueue}
         onToggleAdd={() => {
           setPasting(null);
@@ -1482,7 +844,7 @@ export default function App() {
             onOpenFile={(dir, id) => go(dir, id)}
             onAction={onAction}
             onPauseQueue={(id) => state.queues[id] && pauseQueueOf(state.queues[id])}
-            onPauseAll={pauseAll}
+            onPauseAll={() => report(pauseAll(state))}
             onClose={() => setOverviewPanel("closed")}
           />
         )}
@@ -1590,7 +952,7 @@ export default function App() {
       />
 
       {settingsOpen && <Settings sortOrder={sortOrder} onSortOrder={setSortOrder} onClose={closeSettings} />}
-      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.target)} onClose={closeMenu} />}
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menuContext, menu.target)} onClose={closeMenu} />}
       {drag && (
         <div className="drag-ghost" style={{ left: drag.x + 14, top: drag.y + 10 }}>
           {drag.keys.length === 1 ? nameOf(drag.keys[0]) : plural(drag.keys.length, "item")}
