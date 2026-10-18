@@ -772,7 +772,8 @@ body {
   color: var(--tint);
 }
 
-.queue-settings-tabs {
+/* Tabs under a side panel's head. */
+.panel-tabs {
   flex: none;
   padding: 8px 14px;
   border-bottom: 1px solid var(--line);
@@ -858,115 +859,16 @@ body {
   margin: 10px 8px 2px;
 }
 
+/* A download's progress in the overview, between its name and status. */
+.overview-bar {
+  margin: 5px 0 4px;
+}
+
 .overview-empty {
   padding: 24px 8px;
   text-align: center;
   color: var(--ink-muted);
   font-size: 12px;
-}
-
-/* A queue's card; cards of queues in its folders nest inside it. */
-.ov-queue {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
-}
-
-.overview-body > .ov-queue + .ov-queue {
-  margin-top: 8px;
-}
-
-.ov-queue .ov-queue {
-  margin-top: 4px;
-  background: var(--panel2);
-}
-
-.ov-queue-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.ov-queue-open {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 4px 6px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-}
-
-.ov-queue-open:hover {
-  background: var(--hover);
-}
-
-.ov-queue-open svg {
-  flex: none;
-  margin-top: 2px;
-  color: var(--tint);
-}
-
-.ov-queue-text {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.ov-queue-name {
-  font-weight: 600;
-}
-
-.ov-queue-meta {
-  font-size: 11px;
-  color: var(--ink-muted);
-}
-
-.ov-files {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ov-file {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.ov-file:hover {
-  background: var(--hover);
-}
-
-.ov-file-line {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.ov-file-name {
-  flex: 1;
-  font-size: 12px;
-}
-
-.ov-file-status {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 10.5px;
-  color: var(--ink-muted);
 }
 
 /* Status bar */

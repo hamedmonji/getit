@@ -25,6 +25,8 @@ export interface DownloadItem {
   last_modified: string | null;
   error: string | null;
   added_at: number;
+  /** When it last started running, by its queue or by being resumed; absent until it first runs. */
+  started_at?: number | null;
   /** Byte ranges downloaded in parallel; absent for a single-connection download. */
   segments?: Segment[];
   /** Name given while it was running; its file is renamed when it stops. */

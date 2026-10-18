@@ -75,6 +75,10 @@ pub struct DownloadItem {
     pub error: Option<String>,
     /// When the download was added, in milliseconds since the Unix epoch.
     pub added_at: u64,
+    /// When the download last started running, by its queue or by being resumed,
+    /// in milliseconds since the Unix epoch. `None` until it first runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<u64>,
     /// Byte ranges fetched over their own connections into the `.part` file,
     /// which is then as long as the whole file. Empty for a download over one
     /// connection, whose `.part` file holds everything downloaded so far.

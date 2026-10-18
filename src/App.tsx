@@ -39,7 +39,7 @@ import { useSortOrder } from "./hooks/useSortOrder";
 import { useStoredState } from "./hooks/useStoredState";
 import { useUndo } from "./hooks/useUndo";
 import { useUpdate } from "./hooks/useUpdate";
-import { engine, onBrowserLinks, type Captured, type DownloadStatus, type QueueInfo } from "./lib/engine";
+import { engine, onBrowserLinks, type Captured, type DownloadStatus } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
 import { isFolderKey } from "./lib/keys";
 import { linksIn } from "./lib/links";
@@ -55,13 +55,14 @@ import {
   fileVm,
   folderVm,
   nameFromUrl,
-  overviewTree,
+  overviewList,
   pendingVm,
   queueForDir,
   searchResults,
   stats,
   type FileVm,
   type FolderVm,
+  type OverviewShow,
   type ViewMode,
 } from "./lib/viewModels";
 
@@ -150,6 +151,12 @@ export default function App() {
   const queuePanelOpen = queuePanel === "open";
   const toggleQueuePanel = () => setQueuePanel(queuePanelOpen ? "closed" : "open");
   const overviewOpen = overviewPanel === "open" && !queuePanelOpen;
+  /** Whether the overview lists only running downloads or all of them. */
+  const [overviewShow, setOverviewShow] = useStoredState<OverviewShow>(
+    "getit.overviewShow",
+    ["active", "all"],
+    () => "active",
+  );
   const toggleOverview = () => {
     setQueuePanel("closed");
     setOverviewPanel(overviewOpen ? "closed" : "open");
@@ -638,7 +645,6 @@ export default function App() {
   // The toolbar shows the queue running while any of its downloads runs,
   // whether the queue or the user started it, and pausing there stops them all.
   const queueStopped = !!queue && own.active === 0;
-  const pauseQueueOf = (target: QueueInfo) => report(pauseQueue(state, target));
   const toggleQueue = () => queue && report(queueStopped ? resumeQueue(state, queue) : pauseQueue(state, queue));
 
   const menuContext: MenuContext = {
@@ -673,7 +679,7 @@ export default function App() {
   };
 
   const global = stats(state, "/", true);
-  const overview = overviewOpen ? overviewTree(state, home) : [];
+  const overview = overviewOpen ? overviewList(state, home, overviewShow) : [];
   // A selected folder with a queue, else the folder you're in.
   // From what's selected, not `selection`, which only holds items in the listing
   // shown and so drops the folder you came up from until the parent's listing arrives.
@@ -876,13 +882,14 @@ export default function App() {
         </ContextMenu>
         {overviewOpen && (
           <Overview
-            nodes={overview}
-            onOpenQueue={(dir) => go(dir)}
+            rows={overview}
+            show={overviewShow}
+            onShow={setOverviewShow}
+            running={global.active}
+            speed={global.speed}
             onOpenFile={(dir, id) => go(dir, id)}
             onAction={onAction}
-            onPauseQueue={(id) => state.queues[id] && pauseQueueOf(state.queues[id])}
             onPauseAll={() => report(pauseAll(state))}
-            onClose={() => setOverviewPanel("closed")}
           />
         )}
         {queuePanelOpen && (

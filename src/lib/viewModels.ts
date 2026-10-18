@@ -296,62 +296,40 @@ export function searchResults(
   return { folders, files };
 }
 
-/** A queue in the overview, with its running downloads and the queues nested in its folder. */
-export interface OverviewNode {
-  id: string;
+/** Which downloads the overview lists: only the running ones, or every one. */
+export type OverviewShow = "active" | "all";
+
+/** A download in the overview, and its queue's folder to go to it in. */
+export interface OverviewRow {
+  file: FileVm;
   dir: string;
-  /** The queue's folder name. */
-  label: string;
-  paused: boolean;
-  /** Its running downloads, in queue order. */
-  files: FileVm[];
-  /** How many of its downloads wait their turn. */
-  waiting: number;
-  speed: number;
-  children: OverviewNode[];
+  /** Its status and its queue's folder name, such as "Paused · 32% · Downloads". */
+  detail: string;
 }
 
 /**
- * Every queue with a running download, as a tree: a queue goes under the
- * nearest queue in a folder above it that's also listed.
+ * The overview's downloads in one list across every queue, most recently
+ * started first; those that never started come last, newest first. `show` is
+ * "active" for running downloads only, or "all" for every download, finished
+ * ones included.
  */
-export function overviewTree(state: EngineState, home: string): OverviewNode[] {
-  const nodes: OverviewNode[] = Object.values(state.queues)
-    .map((queue) => {
-      const items = queue.downloads.map((id) => state.downloads[id]).filter(Boolean);
-      const running = items.filter((item) => item.status === "downloading");
-      return {
-        id: queue.id,
-        dir: queue.dir,
-        label: queue.dir === home ? "Home" : baseName(queue.dir),
-        paused: queue.settings.paused,
-        files: running.map((item) => fileVm(item, queue, state, "List", null)),
-        waiting: items.filter((item) => item.status === "queued").length,
-        speed: running.reduce((sum, item) => sum + (state.speeds[item.id] ?? 0), 0),
-        children: [],
-      };
-    })
-    .filter((node) => node.files.length > 0)
-    .sort((a, b) => (pathKey(a.dir) < pathKey(b.dir) ? -1 : 1));
-
-  const roots: OverviewNode[] = [];
-  // Sorted folder by folder, so a queue's ancestors in the list come right before
-  // the queues inside them.
-  const open: OverviewNode[] = [];
-  for (const node of nodes) {
-    while (open.length && !isWithin(node.dir, open[open.length - 1].dir)) open.pop();
-    const parent = open[open.length - 1];
-    if (parent) {
-      parent.children.push(node);
-    } else {
-      roots.push(node);
-    }
-    open.push(node);
-  }
-  return roots;
+export function overviewList(state: EngineState, home: string, show: OverviewShow): OverviewRow[] {
+  return Object.values(state.queues)
+    .flatMap((queue) =>
+      queue.downloads
+        .map((id) => state.downloads[id])
+        .filter((item) => item && (show === "all" || item.status === "downloading"))
+        .map((item) => ({ item, queue })),
+    )
+    .sort((a, b) => byRecentStart(a.item, b.item))
+    .map(({ item, queue }) => {
+      const file = fileVm(item, queue, state, "List", null);
+      const folder = queue.dir === home ? "Home" : baseName(queue.dir);
+      return { file, dir: queue.dir, detail: `${file.status} · ${folder}` };
+    });
 }
 
-/** Sorts a path's folders before siblings that merely share a prefix (`a/b/c` before `a/b-x`). */
-function pathKey(path: string): string {
-  return path.split("/").join("\u0000");
+/** Orders downloads most recently started first, then those never started, most recently added first. */
+function byRecentStart(a: DownloadItem, b: DownloadItem): number {
+  return (b.started_at ?? -1) - (a.started_at ?? -1) || b.added_at - a.added_at;
 }

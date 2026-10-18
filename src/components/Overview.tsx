@@ -1,40 +1,47 @@
 import { Button } from "@/components/ui/button";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatSpeed } from "../lib/format";
-import type { FileVm, OverviewNode } from "../lib/viewModels";
+import type { FileVm, OverviewRow, OverviewShow } from "../lib/viewModels";
 import { ActionButton, ProgressBar } from "./Glyphs";
-import { FolderIcon, PauseIcon } from "./icons";
+import { PauseIcon } from "./icons";
 
-interface Handlers {
-  onOpenQueue: (dir: string) => void;
-  onOpenFile: (dir: string, id: string) => void;
-  onAction: (vm: FileVm) => void;
-  /** Stops everything in a queue, by queue id. */
-  onPauseQueue: (id: string) => void;
-}
+const SHOWS: { show: OverviewShow; label: string }[] = [
+  { show: "active", label: "Active" },
+  { show: "all", label: "All" },
+];
 
 /**
- * The side panel listing every running download, in a card for its queue, with
- * the cards of queues in folders below nested inside. Clicking a queue's name
- * goes to its folder; clicking a download goes there with it selected.
+ * The side panel listing downloads from every queue, only the running ones or
+ * all of them, most recently started first. Clicking one goes to its folder
+ * with it selected.
  */
 export function Overview({
-  nodes,
+  rows,
+  show,
+  onShow,
+  running,
+  speed,
+  onOpenFile,
+  onAction,
   onPauseAll,
-  onClose,
-  ...handlers
-}: Handlers & {
-  nodes: OverviewNode[];
+}: {
+  rows: OverviewRow[];
+  /** Which downloads `rows` holds. */
+  show: OverviewShow;
+  onShow: (show: OverviewShow) => void;
+  /** Downloads running anywhere, and their speed together. */
+  running: number;
+  speed: number;
+  onOpenFile: (dir: string, id: string) => void;
+  onAction: (vm: FileVm) => void;
   /** Stops everything in every queue. */
   onPauseAll: () => void;
-  onClose: () => void;
 }) {
-  const all = flatten(nodes);
-  const running = all.reduce((n, node) => n + node.files.length, 0);
-  const speed = all.reduce((sum, node) => sum + node.speed, 0);
   return (
     <aside className="overview" aria-label="Overview">
       <div className="overview-head">
-        <span className="overview-title">Downloading</span>
+        <span className="overview-title">Downloads</span>
         <span className="overview-total" title={`${running} running`}>
           {running > 0 && formatSpeed(speed)}
         </span>
@@ -45,57 +52,48 @@ export function Overview({
           </Button>
         )}
       </div>
-      <div className="overview-body">
-        {nodes.length ? (
-          nodes.map((node) => <QueueCard key={node.dir} node={node} {...handlers} />)
-        ) : (
-          <div className="overview-empty">Nothing is downloading.</div>
-        )}
-      </div>
+      <Tabs value={show} onValueChange={(s) => onShow(s as OverviewShow)} className="min-h-0 flex-1 gap-0">
+        <div className="panel-tabs">
+          <TabsList className="w-full">
+            {SHOWS.map(({ show, label }) => (
+              <TabsTrigger key={show} value={show}>
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+        {/* The same list either way, so one panel, for whichever tab is chosen. */}
+        <TabsContent value={show} className="flex min-h-0 flex-col">
+          <div className="overview-body">
+            {rows.length ? (
+              <ItemGroup>
+                {rows.map(({ file: f, dir, detail }) => (
+                  <Item
+                    key={f.id}
+                    size="xs"
+                    className="cursor-pointer hover:bg-muted"
+                    title={f.info}
+                    onClick={() => onOpenFile(dir, f.id)}
+                  >
+                    <ItemContent className="min-w-0">
+                      <ItemTitle className="max-w-full" style={{ color: f.nameColor }}>
+                        <span className="truncate">{f.name}</span>
+                      </ItemTitle>
+                      <ProgressBar className="row-bar overview-bar" pct={f.pct} color={f.color} />
+                      <ItemDescription>{detail}</ItemDescription>
+                    </ItemContent>
+                    <ItemActions>
+                      <ActionButton variant="secondary" size="icon-sm" vm={f} onAction={onAction} />
+                    </ItemActions>
+                  </Item>
+                ))}
+              </ItemGroup>
+            ) : (
+              <div className="overview-empty">{show === "active" ? "Nothing is downloading." : "No downloads yet."}</div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </aside>
   );
-}
-
-function QueueCard({ node, ...handlers }: Handlers & { node: OverviewNode }) {
-  const { onOpenQueue, onOpenFile, onAction, onPauseQueue } = handlers;
-  const meta = [
-    formatSpeed(node.speed),
-    node.waiting > 0 && `${node.waiting} waiting`,
-    node.paused && "queue paused",
-  ].filter(Boolean);
-  return (
-    <section className="ov-queue">
-      <div className="ov-queue-head">
-        <button className="ov-queue-open" title={`Go to ${node.dir}`} onClick={() => onOpenQueue(node.dir)}>
-          <FolderIcon size={13} />
-          <span className="ov-queue-text">
-            <span className="ov-queue-name ellipsis">{node.label}</span>
-            <span className="ov-queue-meta ellipsis">{meta.join(" · ")}</span>
-          </span>
-        </button>
-        <Button variant="outline" size="icon-xs" title="Pause everything in this queue" onClick={() => onPauseQueue(node.id)}>
-          <PauseIcon />
-        </Button>
-      </div>
-      <ul className="ov-files">
-        {node.files.map((f) => (
-          <li key={f.id} className="ov-file" title={f.info} onClick={() => onOpenFile(node.dir, f.id)}>
-            <div className="ov-file-line">
-              <span className="ov-file-name ellipsis">{f.name}</span>
-              <ActionButton variant="secondary" vm={f} onAction={onAction} />
-            </div>
-            <ProgressBar className="row-bar" pct={f.pct} color={f.color} />
-            <div className="ov-file-status ellipsis">{f.status}</div>
-          </li>
-        ))}
-      </ul>
-      {node.children.map((child) => (
-        <QueueCard key={child.dir} node={child} {...handlers} />
-      ))}
-    </section>
-  );
-}
-
-function flatten(nodes: OverviewNode[]): OverviewNode[] {
-  return nodes.flatMap((node) => [node, ...flatten(node.children)]);
 }

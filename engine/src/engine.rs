@@ -602,7 +602,7 @@ impl Engine {
         let queue = st.queues.get_mut(&queue_id).expect("queue exists");
         if queue.settings.paused {
             let item = queue.items.get_mut(&id).expect("just added");
-            item.status = DownloadStatus::Downloading;
+            start_running(item);
             self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
             self.inner.spawn(&mut st.active, queue, id);
             self.inner.save(queue);
@@ -651,7 +651,7 @@ impl Engine {
         ) {
             return Err(invalid("resume", item));
         }
-        item.status = DownloadStatus::Downloading;
+        start_running(item);
         item.error = None;
         self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
         match st.active.get_mut(&id) {
@@ -847,6 +847,7 @@ impl Inner {
             last_modified: None,
             error: None,
             added_at: now_millis(),
+            started_at: None,
             segments: Vec::new(),
             rename_to: None,
         };
@@ -871,7 +872,7 @@ impl Inner {
             let Some(item) = queue.items.get_mut(&id) else {
                 continue;
             };
-            item.status = DownloadStatus::Downloading;
+            start_running(item);
             self.emit(EngineEvent::DownloadChanged(item.clone()));
             self.spawn(&mut st.active, queue, id);
         }
@@ -1112,6 +1113,8 @@ fn copy_of(item: &DownloadItem) -> DownloadItem {
         status,
         error: None,
         added_at: now_millis(),
+        // The copy hasn't run yet, whatever the original did.
+        started_at: None,
         // The copy is named after the name shown, by `copy_file`.
         rename_to: None,
         ..item.clone()
@@ -1187,6 +1190,12 @@ fn normalize(dir: &Path) -> Result<PathBuf> {
         }
     }
     Ok(out)
+}
+
+/// Sets `item` running, noting when it started.
+fn start_running(item: &mut DownloadItem) {
+    item.status = DownloadStatus::Downloading;
+    item.started_at = Some(now_millis());
 }
 
 fn now_millis() -> u64 {

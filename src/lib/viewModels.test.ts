@@ -5,7 +5,7 @@ import {
   fileVm,
   folderVm,
   nameFromUrl,
-  overviewTree,
+  overviewList,
   pendingVm,
   queueForDir,
   searchResults,
@@ -272,51 +272,35 @@ describe("searchResults", () => {
   });
 });
 
-describe("overviewTree", () => {
+describe("overviewList", () => {
   const home = "/h";
-  const running = (id: string, queue_id: string) => item({ id, queue_id, status: "downloading" });
+  const state = stateOf(
+    [queue({ id: "a", dir: "/h/a" }), queue({ id: "home", dir: "/h" })],
+    [
+      item({ id: "old", queue_id: "a", status: "downloading", started_at: 100, added_at: 1 }),
+      item({ id: "new", queue_id: "home", status: "downloading", started_at: 300, added_at: 2 }),
+      item({ id: "done", queue_id: "a", status: "completed", downloaded: 100, started_at: 200, added_at: 3 }),
+      item({ id: "waiting", queue_id: "a", status: "queued", added_at: 4 }),
+      item({ id: "older-waiting", queue_id: "home", status: "queued", added_at: 0 }),
+    ],
+  );
+  const ids = (show: "active" | "all") => overviewList(state, home, show).map((row) => row.file.id);
 
-  it("lists only queues with something running", () => {
-    const state = stateOf(
-      [queue({ id: "a", dir: "/h/a" }), queue({ id: "b", dir: "/h/b" })],
-      [running("x", "a"), item({ id: "y", queue_id: "b", status: "queued" })],
-    );
-    expect(overviewTree(state, home).map((n) => n.id)).toEqual(["a"]);
+  it("lists only running downloads when showing active ones, from every queue", () => {
+    expect(ids("active")).toEqual(["new", "old"]);
   });
 
-  it("nests a queue under the nearest listed queue above it", () => {
-    const state = stateOf(
-      [queue({ id: "top", dir: "/h/a" }), queue({ id: "deep", dir: "/h/a/b/c" }), queue({ id: "other", dir: "/h/z" })],
-      [running("x", "top"), running("y", "deep"), running("z", "other")],
-    );
-    const tree = overviewTree(state, home);
-    expect(tree.map((n) => n.id)).toEqual(["top", "other"]);
-    expect(tree[0].children.map((n) => n.id)).toEqual(["deep"]);
+  it("lists every download when showing all, finished ones included", () => {
+    expect(ids("all")).toHaveLength(5);
   });
 
-  it("doesn't nest siblings that share a prefix", () => {
-    const state = stateOf(
-      [queue({ id: "ab", dir: "/h/a-b" }), queue({ id: "a", dir: "/h/a" }), queue({ id: "inner", dir: "/h/a/c" })],
-      [running("x", "ab"), running("y", "a"), running("z", "inner")],
-    );
-    const tree = overviewTree(state, home);
-    expect(tree.map((n) => n.id)).toEqual(["a", "ab"]);
-    expect(tree[0].children.map((n) => n.id)).toEqual(["inner"]);
+  it("puts the most recently started first, and those never started last, newest first", () => {
+    expect(ids("all")).toEqual(["new", "done", "old", "waiting", "older-waiting"]);
   });
 
-  it("labels the home queue Home and totals waiting downloads and speed", () => {
-    const state = stateOf(
-      [queue({ id: "home", dir: "/h", settings: { max_concurrent: 1, paused: true } })],
-      [running("x", "home"), running("y", "home"), item({ id: "w", queue_id: "home", status: "queued" })],
-    );
-    state.speeds.x = 10;
-    state.speeds.y = 5;
-    expect(overviewTree(state, home)[0]).toMatchObject({
-      label: "Home",
-      paused: true,
-      waiting: 1,
-      speed: 15,
-    });
-    expect(overviewTree(state, home)[0].files.map((f) => f.id)).toEqual(["x", "y"]);
+  it("gives each download its queue's folder to go to, and names it after its status", () => {
+    const [newest, done] = overviewList(state, home, "all");
+    expect(newest).toMatchObject({ dir: "/h", detail: `${newest.file.status} · Home` });
+    expect(done).toMatchObject({ dir: "/h/a", detail: "Done · a" });
   });
 });

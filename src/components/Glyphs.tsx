@@ -47,11 +47,13 @@ export function ActionButton({
   vm,
   onAction,
   variant = "ghost",
+  size = "icon-xs",
   className,
 }: {
   vm: FileVm;
   onAction: (vm: FileVm) => void;
   variant?: "ghost" | "secondary";
+  size?: "icon-xs" | "icon-sm";
   className?: string;
 }) {
   if (!vm.action) return null;
@@ -62,7 +64,7 @@ export function ActionButton({
   return (
     <Button
       variant={variant}
-      size="icon-xs"
+      size={size}
       className={className}
       title={vm.actionLabel}
       onClick={onClick}

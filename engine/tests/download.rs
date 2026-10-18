@@ -973,6 +973,33 @@ async fn resume_starts_a_download_waiting_in_a_paused_queue() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn notes_when_a_download_last_started() {
+    let ctx = Ctx::new().await;
+    let url = ctx.url("/file.bin");
+    // Started by its queue.
+    let queued = ctx.engine.enqueue(ctx.folder("a"), &url).unwrap();
+    assert!(ctx.engine.get(queued).unwrap().started_at.is_some());
+
+    // Waiting in a paused queue: not started until resumed.
+    let queue = ctx.paused_queue("b", 1);
+    let id = ctx.engine.add(queue, &url).unwrap();
+    assert_eq!(ctx.engine.get(id).unwrap().started_at, None);
+    ctx.engine.resume(id).unwrap();
+    let first = ctx.engine.get(id).unwrap().started_at.expect("started");
+
+    // Resuming again counts as starting again.
+    ctx.engine.pause(id).unwrap();
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    ctx.engine.resume(id).unwrap();
+    let again = ctx.engine.get(id).unwrap().started_at.expect("started again");
+    assert!(again > first, "{again} should be after {first}");
+
+    // Added to a paused queue by the user, it starts right away.
+    let added = ctx.engine.enqueue(ctx.folder("b"), &url).unwrap();
+    assert!(ctx.engine.get(added).unwrap().started_at.is_some());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn resume_right_after_pause_continues_the_download() {
     let ctx = Ctx::new().await;
     let id = ctx

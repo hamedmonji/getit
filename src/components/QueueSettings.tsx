@@ -52,7 +52,7 @@ export function QueueSettings({
       </div>
       {queue ? (
         <Tabs value={tab} onValueChange={(t) => setTab(t as Tab)} className="min-h-0 flex-1 gap-0">
-          <div className="queue-settings-tabs">
+          <div className="panel-tabs">
             <TabsList className="w-full">
               {TABS.map(({ tab: t, label }) => (
                 <TabsTrigger key={t} value={t}>
