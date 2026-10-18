@@ -1,3 +1,6 @@
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+
 const IS_MAC = navigator.userAgent.includes("Mac");
 
 /**
@@ -18,24 +21,36 @@ export function NoAccess({
   onGrant: () => void;
   onSettings: () => void;
 }) {
-  if (!IS_MAC) return <div className="empty">getit doesn't have permission to open “{name}”.</div>;
+  if (!IS_MAC) {
+    return (
+      <Empty className="py-20">
+        <EmptyHeader>
+          <EmptyDescription>getit doesn't have permission to open “{name}”.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
   return (
     // Keeps the folder view's marquee and deselection away from the buttons.
-    <div className="empty no-access" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
-      <p className="no-access-title">getit can't open “{name}”</p>
-      <p>
-        {asked
-          ? "macOS still isn't letting getit in. Allow getit under Files & Folders (or Full Disk Access) in Privacy & Security, then come back."
-          : `macOS protects this folder. Choose it in the next window to let getit open it.`}
-      </p>
-      <div className="no-access-actions">
-        <button className={asked ? "plain-btn" : "primary-btn"} onClick={onGrant}>
-          Grant Access…
-        </button>
-        <button className={asked ? "primary-btn" : "plain-btn"} onClick={onSettings}>
-          Open Privacy Settings
-        </button>
-      </div>
-    </div>
+    <Empty className="py-20" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+      <EmptyHeader>
+        <EmptyTitle>getit can't open “{name}”</EmptyTitle>
+        <EmptyDescription>
+          {asked
+            ? "macOS still isn't letting getit in. Allow getit under Files & Folders (or Full Disk Access) in Privacy & Security, then come back."
+            : `macOS protects this folder. Choose it in the next window to let getit open it.`}
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <div className="flex gap-2">
+          <Button variant={asked ? "outline" : "default"} onClick={onGrant}>
+            Grant Access…
+          </Button>
+          <Button variant={asked ? "default" : "outline"} onClick={onSettings}>
+            Open Privacy Settings
+          </Button>
+        </div>
+      </EmptyContent>
+    </Empty>
   );
 }

@@ -1,4 +1,21 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
+import { Item, ItemActions, ItemContent, ItemTitle } from "@/components/ui/item";
+import { Kbd } from "@/components/ui/kbd";
+import { Label } from "@/components/ui/label";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { isPathLike } from "../lib/paths";
 import type { ViewMode } from "../lib/viewModels";
 import type { UpdatePhase } from "../hooks/useUpdate";
@@ -82,49 +99,50 @@ export interface ToolbarProps {
   /** Downloads running anywhere, shown on the overview button. */
   activeCount: number;
   onToggleOverview: () => void;
-  settingsOpen: boolean;
   onToggleSettings: () => void;
 }
 
 export function Toolbar(p: ToolbarProps) {
-  const nav = (enabled: boolean) => ({ className: "icon-btn", style: { color: enabled ? "var(--ink)" : "var(--track)" } });
   return (
     <div className="toolbar" data-tauri-drag-region>
       {IS_MAC && <div className="traffic-light-space" data-tauri-drag-region />}
       <div className="nav-buttons">
-        <button {...nav(p.canBack)} title={`Back (${MOD}[)`} onClick={p.onBack}>
+        <Button variant="ghost" size="icon" title={`Back (${MOD}[)`} disabled={!p.canBack} onClick={p.onBack}>
           <BackIcon />
-        </button>
-        <button {...nav(p.canForward)} title={`Forward (${MOD}])`} onClick={p.onForward}>
+        </Button>
+        <Button variant="ghost" size="icon" title={`Forward (${MOD}])`} disabled={!p.canForward} onClick={p.onForward}>
           <ForwardIcon />
-        </button>
-        <button {...nav(p.canUp)} title="Enclosing folder" onClick={p.onUp}>
+        </Button>
+        <Button variant="ghost" size="icon" title="Enclosing folder" disabled={!p.canUp} onClick={p.onUp}>
           <UpIcon />
-        </button>
+        </Button>
       </div>
       <AddressBar {...p} />
-      <button
-        className={"square-btn" + (p.showAllFolders ? " toggled" : "")}
+      <Toggle
+        variant="outline"
         title={`${p.showAllFolders ? "Show only folders with downloads" : "Show all folders"} (${MOD}.)`}
-        aria-pressed={p.showAllFolders}
-        onClick={p.onToggleFolders}
+        pressed={p.showAllFolders}
+        onPressedChange={p.onToggleFolders}
       >
         <FolderIcon />
-      </button>
-      <div className="segmented">
+      </Toggle>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        spacing={0}
+        value={p.mode}
+        // Clicking the selected view would clear it; there's always one.
+        onValueChange={(m) => m && p.onMode(m as ViewMode)}
+      >
         {(["Icons", "List"] as const).map((m, i) => (
-          <button
-            key={m}
-            title={`${m} (${MOD}${i + 1})`}
-            className={p.mode === m ? "active" : ""}
-            onClick={() => p.onMode(m)}
-          >
+          <ToggleGroupItem key={m} value={m} title={`${m} (${MOD}${i + 1})`} aria-label={m}>
             {m === "Icons" ? <GridIcon /> : <ListIcon />}
-          </button>
+          </ToggleGroupItem>
         ))}
-      </div>
-      {<button
-        className="square-btn"
+      </ToggleGroup>
+      <Button
+        variant="outline"
+        size="icon"
         title={
           p.queueState === "empty"
             ? "Nothing to download in this queue"
@@ -135,35 +153,27 @@ export function Toolbar(p: ToolbarProps) {
         disabled={!p.queueState || p.queueState === "empty"}
         onClick={p.onToggleQueue}
       >
-        {p.queueState === "running" ? <PauseIcon size={12} /> : <PlayIcon size={12} />}
-      </button>}
-      <button
-        className="square-btn"
-        title={p.theme === "Dark" ? "Light mode" : "Dark mode"}
-        onClick={p.onToggleTheme}
-      >
+        {p.queueState === "running" ? <PauseIcon /> : <PlayIcon />}
+      </Button>
+      <Button variant="outline" size="icon" title={p.theme === "Dark" ? "Light mode" : "Dark mode"} onClick={p.onToggleTheme}>
         <ThemeIcon />
-      </button>
-      <button className="square-btn" onClick={p.onToggleAdd}>
+      </Button>
+      <Button variant="outline" size="icon" title="Add a download" onClick={p.onToggleAdd}>
         <PlusIcon />
-      </button>
-      <button
-        className={"square-btn overview-btn" + (p.overviewOpen ? " toggled" : "")}
+      </Button>
+      <Toggle
+        variant="outline"
+        className="relative"
         title={`${p.overviewOpen ? "Hide overview" : "Show overview"} (${MOD}O)`}
-        aria-pressed={p.overviewOpen}
-        onClick={p.onToggleOverview}
+        pressed={p.overviewOpen}
+        onPressedChange={p.onToggleOverview}
       >
         <OverviewIcon />
-        {p.activeCount > 0 && <span className="overview-badge">{p.activeCount}</span>}
-      </button>
-      <button
-        className={"square-btn" + (p.settingsOpen ? " toggled" : "")}
-        title={`${p.settingsOpen ? "Hide settings" : "Settings"} (${MOD},)`}
-        aria-pressed={p.settingsOpen}
-        onClick={p.onToggleSettings}
-      >
+        {p.activeCount > 0 && <Badge className="absolute -top-2 -right-2">{p.activeCount}</Badge>}
+      </Toggle>
+      <Button variant="outline" size="icon" title={`Settings (${MOD},)`} onClick={p.onToggleSettings}>
         <GearIcon />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -171,18 +181,13 @@ export function Toolbar(p: ToolbarProps) {
 /**
  * The current folder's path, which turns into a field when clicked: text starting with `/`
  * or `~` is a path to go to on Enter, anything else searches as it's typed.
- * The field stays while a search is shown.
+ * The field stays while a search is shown. Its margins leave toolbar on both
+ * sides to drag the window by.
  */
 function AddressBar(p: ToolbarProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  /** Where the filter dropdown opens, under its button; null while closed. */
-  const [filterAt, setFilterAt] = useState<{ left: number; top: number } | null>(null);
-  const searching = p.addressOpen || !!p.query;
-  useEffect(() => {
-    if (!searching) setFilterAt(null);
-  }, [searching]);
 
   useEffect(() => {
     if (!p.addressOpen) return;
@@ -199,32 +204,38 @@ function AddressBar(p: ToolbarProps) {
     const parents = p.crumbs.slice(0, -1);
     const current = p.crumbs[p.crumbs.length - 1];
     return (
-      <div className="address-bar" title="Click to enter a path or search" onClick={() => p.onAddressOpen(true)}>
-        {parents.length > 0 && (
-          <span className="address-parent">
-            <span className="address-run">
-              {parents.map((c) => (
-                <span key={c.path}>
-                  <span
-                    className={"address-segment" + (p.dropTarget === c.path ? " drop-target" : "")}
-                    data-drop={c.path}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      p.onCrumb(c.path);
-                    }}
-                  >
-                    {c.label}
+      <InputGroup
+        className="mx-6 flex-1 cursor-text"
+        title="Click to enter a path or search"
+        onClick={() => p.onAddressOpen(true)}
+      >
+        <div className="address-path">
+          {parents.length > 0 && (
+            <span className="address-parent">
+              <span className="address-run">
+                {parents.map((c) => (
+                  <span key={c.path}>
+                    <span
+                      className={"address-segment" + (p.dropTarget === c.path ? " drop-target" : "")}
+                      data-drop={c.path}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        p.onCrumb(c.path);
+                      }}
+                    >
+                      {c.label}
+                    </span>
+                    {c.label !== "/" && "/"}
                   </span>
-                  {c.label !== "/" && "/"}
-                </span>
-              ))}
+                ))}
+              </span>
             </span>
+          )}
+          <span className="address-name">
+            <span className="address-run">{current.label}</span>
           </span>
-        )}
-        <span className="address-name">
-          <span className="address-run">{current.label}</span>
-        </span>
-      </div>
+        </div>
+      </InputGroup>
     );
   }
 
@@ -233,9 +244,7 @@ function AddressBar(p: ToolbarProps) {
     p.onAddressOpen(false);
   };
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape" && filterAt) {
-      setFilterAt(null);
-    } else if (e.key === "Escape") {
+    if (e.key === "Escape") {
       close();
     } else if (e.key === "Tab") {
       // Switches where to search, unless a path is being typed. The current
@@ -255,10 +264,12 @@ function AddressBar(p: ToolbarProps) {
 
   const typingPath = isPathLike(text) && text !== p.cwdLabel;
   return (
-    <div className={"address-bar editing" + (error ? " invalid" : "")}>
-      <span className="address-icon">{isPathLike(text) ? <FolderIcon size={13} /> : <SearchIcon />}</span>
-      <input
+    <InputGroup className="mx-6 flex-1">
+      <InputGroupAddon>{isPathLike(text) ? <FolderIcon /> : <SearchIcon />}</InputGroupAddon>
+      <InputGroupInput
         ref={input}
+        className="font-mono"
+        aria-invalid={!!error}
         value={text}
         onChange={(e) => {
           setText(e.target.value);
@@ -267,114 +278,99 @@ function AddressBar(p: ToolbarProps) {
         }}
         onKeyDown={onKey}
         onFocus={() => p.onAddressOpen(true)}
-        onBlur={() => p.onAddressOpen(false)}
+        onBlur={(e) => {
+          // The filter menu takes focus while it's open; the field stays meanwhile.
+          if (e.relatedTarget instanceof Element && e.relatedTarget.closest('[data-slot="dropdown-menu-content"]')) return;
+          p.onAddressOpen(false);
+        }}
         placeholder={`Search ${p.searchAll ? "everywhere" : p.cwdLabel} or enter a path`}
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"
       />
-      {error && <span className="address-error ellipsis" title={error}>{error}</span>}
-      {!typingPath && (p.addressOpen || p.searchAll) && (
-        <button
-          className={"address-scope" + (p.searchAll ? " all" : "")}
-          title={p.searchAll ? `Search only ${p.cwdLabel} (Tab)` : "Search everywhere (Tab)"}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            if (isPathLike(text)) setText("");
-            p.onSearchAll(!p.searchAll);
-            input.current?.focus();
-          }}
-        >
-          {p.addressOpen && <kbd>Tab</kbd>}
-          {p.searchAll ? "Everywhere" : "Search everywhere"}
-        </button>
+      {error && (
+        <InputGroupAddon align="inline-end" className="max-w-1/2 min-w-0">
+          <InputGroupText className="min-w-0 text-destructive" title={error}>
+            <span className="truncate">{error}</span>
+          </InputGroupText>
+        </InputGroupAddon>
       )}
-      {!typingPath && (p.addressOpen || p.query) && (
-        <button
-          className={"address-filter" + (p.searchKinds.length ? " on" : "") + (filterAt ? " open" : "")}
-          title="Search only folders or files"
-          aria-haspopup="menu"
-          aria-expanded={!!filterAt}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={(e) => {
-            const r = e.currentTarget.getBoundingClientRect();
-            setFilterAt(filterAt ? null : { left: r.right, top: r.bottom + 6 });
-            input.current?.focus();
-          }}
-        >
-          <FilterIcon />
-          {p.searchKinds.length === 1 && SEARCH_KINDS.find((k) => k.kind === p.searchKinds[0])!.label}
-        </button>
+      {!typingPath && (
+        <InputGroupAddon align="inline-end">
+          {(p.addressOpen || p.searchAll) && (
+            <InputGroupButton
+              variant={p.searchAll ? "secondary" : "ghost"}
+              title={p.searchAll ? `Search only ${p.cwdLabel} (Tab)` : "Search everywhere (Tab)"}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (isPathLike(text)) setText("");
+                p.onSearchAll(!p.searchAll);
+                input.current?.focus();
+              }}
+            >
+              {p.addressOpen && <Kbd>Tab</Kbd>}
+              {p.searchAll ? "Everywhere" : "Search everywhere"}
+            </InputGroupButton>
+          )}
+          <SearchFilter kinds={p.searchKinds} onKinds={p.onSearchKinds} onClosed={() => input.current?.focus()} />
+          {p.query && (
+            <InputGroupButton size="icon-xs" title="Clear search" onMouseDown={(e) => e.preventDefault()} onClick={close}>
+              <CloseIcon />
+            </InputGroupButton>
+          )}
+        </InputGroupAddon>
       )}
-      {filterAt && (
-        <SearchFilter at={filterAt} kinds={p.searchKinds} onKinds={p.onSearchKinds} onClose={() => setFilterAt(null)} />
-      )}
-      {p.query && (
-        <button
-          className="address-clear"
-          title="Clear search"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={close}
-        >
-          <CloseIcon />
-        </button>
-      )}
-    </div>
+    </InputGroup>
   );
 }
 
 /**
- * The dropdown under the search's filter button: check folders, files or both
- * (or neither, which also shows both). Stays open while checking, so both can
- * be set at once; clicks don't take focus from the search field.
+ * The search's filter button and its menu: check folders, files or both (or
+ * neither, which also shows both). Stays open while checking, so both can be
+ * set at once; closing it puts focus back in the search field.
  */
 function SearchFilter({
-  at,
   kinds,
   onKinds,
-  onClose,
+  onClosed,
 }: {
-  /** Its top right corner, under the button. */
-  at: { left: number; top: number };
   kinds: SearchKind[];
   onKinds: (kinds: SearchKind[]) => void;
-  onClose: () => void;
+  onClosed: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onPointer = (e: MouseEvent) => {
-      const target = e.target as Element;
-      if (!ref.current?.contains(target) && !target.closest?.(".address-filter")) onClose();
-    };
-    window.addEventListener("mousedown", onPointer);
-    return () => window.removeEventListener("mousedown", onPointer);
-  }, [onClose]);
-
+  const only = kinds.length === 1 ? SEARCH_KINDS.find((k) => k.kind === kinds[0])!.label : null;
   return (
-    <div
-      ref={ref}
-      className="menu search-filter"
-      role="menu"
-      style={{ left: at.left, top: at.top }}
-      onMouseDown={(e) => e.preventDefault()}
-    >
-      <div className="menu-header">Show</div>
-      {SEARCH_KINDS.map(({ kind, label }) => {
-        const checked = kinds.includes(kind);
-        return (
-          <button
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <InputGroupButton
+          variant={kinds.length ? "secondary" : "ghost"}
+          size={only ? "xs" : "icon-xs"}
+          title="Search only folders or files"
+        >
+          <FilterIcon />
+          {only}
+        </InputGroupButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          onClosed();
+        }}
+      >
+        <DropdownMenuLabel>Show</DropdownMenuLabel>
+        {SEARCH_KINDS.map(({ kind, label }) => (
+          <DropdownMenuCheckboxItem
             key={kind}
-            className="menu-item"
-            role="menuitemcheckbox"
-            aria-checked={checked}
-            onClick={() => onKinds(checked ? kinds.filter((k) => k !== kind) : [...kinds, kind])}
+            checked={kinds.includes(kind)}
+            onSelect={(e) => e.preventDefault()}
+            onCheckedChange={(checked) => onKinds(checked ? [...kinds, kind] : kinds.filter((k) => k !== kind))}
           >
-            <span className="menu-check">{checked ? "✓" : ""}</span>
             {label}
-          </button>
-        );
-      })}
-    </div>
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -421,7 +417,7 @@ export function InputBar({
         {label} <span className="mono ink">{dirLabel}/</span>
       </span>
       <div className="add-input-wrap">
-        <input
+        <Input
           autoFocus
           value={value}
           onChange={(e) => {
@@ -433,13 +429,14 @@ export function InputBar({
           spellCheck={false}
           autoCapitalize="off"
           autoCorrect="off"
-          className={(mono ? "mono-input" : "") + (error ? " invalid" : "")}
+          aria-invalid={!!error}
+          className={mono ? "font-mono" : undefined}
         />
         {error && <span className="add-error">{error}</span>}
       </div>
-      <button className="plain-btn" onClick={submit}>
+      <Button variant="outline" onClick={submit}>
         {submitLabel}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -458,6 +455,7 @@ export function PasteBar({
   onClose: () => void;
 }) {
   const [always, setAlways] = useState(false);
+  const alwaysId = useId();
   const [error, setError] = useState<string | null>(null);
 
   const add = async () => {
@@ -484,16 +482,16 @@ export function PasteBar({
             {error}
           </span>
         )}
-        <label className="paste-always">
-          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
-          Don't ask again
-        </label>
-        <button className="plain-btn" onClick={onClose}>
+        <div className="paste-always">
+          <Checkbox id={alwaysId} checked={always} onCheckedChange={(checked) => setAlways(checked === true)} />
+          <Label htmlFor={alwaysId}>Don't ask again</Label>
+        </div>
+        <Button variant="outline" onClick={onClose}>
           Cancel
-        </button>
-        <button className="plain-btn" autoFocus onClick={add}>
+        </Button>
+        <Button variant="outline" autoFocus onClick={add}>
           Add to queue
-        </button>
+        </Button>
       </div>
       {batch && (
         <ol className="paste-list mono">
@@ -549,12 +547,12 @@ export function CapturedBar({
             {error}
           </span>
         )}
-        <button className="plain-btn" onClick={onClose}>
+        <Button variant="outline" onClick={onClose}>
           Dismiss
-        </button>
-        <button className="plain-btn" title={`Add to ${dirLabel}/`} onClick={add}>
+        </Button>
+        <Button variant="outline" title={`Add to ${dirLabel}/`} onClick={add}>
           Add here
-        </button>
+        </Button>
       </div>
       {batch && (
         <ol className="paste-list mono">
@@ -597,18 +595,18 @@ export function PauseBar({
           The server can't resume {batch ? "them" : "it"}, so the {lost} downloaded so far will be lost and{" "}
           {batch ? "they start" : "it starts"} over.
         </span>
-        <button className="plain-btn" autoFocus onClick={onClose}>
+        <Button variant="outline" autoFocus onClick={onClose}>
           Keep downloading
-        </button>
-        <button
-          className="plain-btn"
+        </Button>
+        <Button
+          variant="outline"
           onClick={() => {
             onPause();
             onClose();
           }}
         >
           Pause anyway
-        </button>
+        </Button>
       </div>
       {batch && (
         <ol className="paste-list">
@@ -677,54 +675,58 @@ export function DuplicatePanel({
         <div className="dup-title">{batch ? `${rows.length} links are already downloaded` : "Already downloaded"}</div>
         {batch && (
           <div className="dup-buttons">
-            <button className="plain-btn" onClick={onSkip}>
+            <Button variant="outline" onClick={onSkip}>
               Skip all
-            </button>
-            <button className="plain-btn" onClick={onAdd}>
+            </Button>
+            <Button variant="outline" onClick={onAdd}>
               Add all as duplicates
-            </button>
-            <button className="primary-btn" autoFocus onClick={onMain}>
+            </Button>
+            <Button autoFocus onClick={onMain}>
               {mainLabel}
-            </button>
+            </Button>
           </div>
         )}
       </div>
       <ul className="dup-rows">
         {rows.map((row, i) => (
-          <li key={row.key} className="dup-row">
-            <div className="dup-main">
-              <div className="dup-name ellipsis" title={row.name}>
-                {row.name}
-              </div>
-              <div className="dup-meta">
-                <span className="dup-status">{row.status}</span>
-                <span>in</span>
-                <button
-                  className={"dup-where ellipsis" + (row.here ? "" : " mono")}
-                  title={row.here ? "Select it" : `Go to ${row.where}`}
-                  onClick={() => onWhere(i)}
+          <Item key={row.key} asChild variant="outline" size="sm">
+            <li>
+              <ItemContent className="min-w-0">
+                <ItemTitle title={row.name}>{row.name}</ItemTitle>
+                <div className="dup-meta">
+                  <Badge variant="secondary">{row.status}</Badge>
+                  <span>in</span>
+                  <Button
+                    variant="link"
+                    size="xs"
+                    className="h-auto min-w-0 p-0"
+                    title={row.here ? "Select it" : `Go to ${row.where}`}
+                    onClick={() => onWhere(i)}
+                  >
+                    <span className={"ellipsis" + (row.here ? "" : " mono")}>{row.where}</span>
+                  </Button>
+                  {row.note && <span className="ellipsis">· {row.note}</span>}
+                </div>
+              </ItemContent>
+              <ItemActions>
+                <Button variant="outline" onClick={() => onRowSkip(i)}>
+                  Skip
+                </Button>
+                <Button variant="outline" onClick={() => onRowAdd(i)}>
+                  Add as duplicate
+                </Button>
+                {/* Start or show, whichever label, lines up from row to row. */}
+                <Button
+                  variant={batch ? "outline" : "default"}
+                  className="min-w-28"
+                  autoFocus={!batch}
+                  onClick={() => onRowMain(i)}
                 >
-                  {row.where}
-                </button>
-                {row.note && <span className="ellipsis">· {row.note}</span>}
-              </div>
-            </div>
-            <div className="dup-buttons">
-              <button className="plain-btn" onClick={() => onRowSkip(i)}>
-                Skip
-              </button>
-              <button className="plain-btn" onClick={() => onRowAdd(i)}>
-                Add as duplicate
-              </button>
-              <button
-                className={batch ? "plain-btn" : "primary-btn"}
-                autoFocus={!batch}
-                onClick={() => onRowMain(i)}
-              >
-                {row.action}
-              </button>
-            </div>
-          </li>
+                  {row.action}
+                </Button>
+              </ItemActions>
+            </li>
+          </Item>
         ))}
       </ul>
     </div>
@@ -768,14 +770,16 @@ export function StatusBar({
       )}
       <span>{left}</span>
       <span className="mono ink">{speed}</span>
-      <button
-        className={detailsOpen ? "status-expand on" : "status-expand"}
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        className="-mr-1.5"
         title={`${detailsOpen ? "Hide" : "Show"} details (${MOD}I)`}
         aria-pressed={detailsOpen}
         onClick={onToggleDetails}
       >
         <ExpandIcon open={detailsOpen} />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -818,19 +822,19 @@ export function UpdateBar({
                 : ""}
         </span>
         {phase.kind !== "downloading" && (
-          <button className="plain-btn" onClick={onClose}>
+          <Button variant="outline" onClick={onClose}>
             Later
-          </button>
+          </Button>
         )}
         {(phase.kind === "available" || phase.kind === "failed") && (
-          <button className="plain-btn" autoFocus onClick={onInstall}>
+          <Button variant="outline" autoFocus onClick={onInstall}>
             {phase.kind === "failed" ? "Try again" : "Update"}
-          </button>
+          </Button>
         )}
         {phase.kind === "ready" && (
-          <button className="plain-btn" autoFocus onClick={onRestart}>
+          <Button variant="outline" autoFocus onClick={onRestart}>
             Restart now
-          </button>
+          </Button>
         )}
       </div>
     </div>

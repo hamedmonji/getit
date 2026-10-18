@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { shortcutFor, type KeyPress, type ShortcutContext } from "./useShortcuts";
+// @vitest-environment jsdom
+import { renderHook } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { shortcutFor, useShortcuts, type KeyPress, type ShortcutAction, type ShortcutContext } from "./useShortcuts";
 
 const mac: ShortcutContext = { isMac: true, settingsOpen: false, selectionCount: 0, onButton: false };
 const other: ShortcutContext = { ...mac, isMac: false };
@@ -129,5 +131,37 @@ describe("shortcutFor", () => {
   it("ignores other keys", () => {
     expect(shortcutFor(press("q"), mac)).toBeNull();
     expect(shortcutFor(cmd("q"), mac)).toBeNull();
+  });
+});
+
+describe("useShortcuts", () => {
+  /** Presses Escape on `target`, with the hook listening, and says whether its handler ran. */
+  const escapeRuns = (target: Element) => {
+    const escape = vi.fn();
+    const handlers = { escape } as unknown as Record<ShortcutAction, (e: KeyboardEvent) => void>;
+    const hook = renderHook(() => useShortcuts({ settingsOpen: false, selectionCount: 0 }, handlers));
+    target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    hook.unmount();
+    return escape.mock.calls.length > 0;
+  };
+
+  it("runs a shortcut pressed outside any menu", () => {
+    expect(escapeRuns(document.body)).toBe(true);
+  });
+
+  it("leaves keys pressed in an open menu to the menu", () => {
+    const menu = document.createElement("div");
+    menu.setAttribute("role", "menu");
+    const item = menu.appendChild(document.createElement("div"));
+    document.body.append(menu);
+    expect(escapeRuns(item)).toBe(false);
+    menu.remove();
+  });
+
+  it("leaves a key that something already handled, like the Escape that closes a dialog", () => {
+    const handle = (e: KeyboardEvent) => e.preventDefault();
+    document.addEventListener("keydown", handle, true);
+    expect(escapeRuns(document.body)).toBe(false);
+    document.removeEventListener("keydown", handle, true);
   });
 });

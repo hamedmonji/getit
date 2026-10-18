@@ -1,6 +1,8 @@
 import { useRef, useState, type PointerEvent } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Item, ItemActions, ItemContent, ItemTitle } from "@/components/ui/item";
 import { SORT_LABELS, type SortKey } from "../lib/sort";
-import { CloseIcon, GripIcon } from "./icons";
+import { GripIcon } from "./icons";
 
 /** How far the pointer moves before a press on a row becomes a drag. */
 const DRAG_THRESHOLD = 4;
@@ -8,42 +10,36 @@ const DRAG_THRESHOLD = 4;
 /**
  * The settings dialog, centred over the app, with settings that apply
  * everywhere, in sections. For now only the sort order: files are sorted by the
- * top key, then the next for ties. Closes on a click outside it (or Escape, in App).
+ * top key, then the next for ties. Closes on a click outside it or Escape.
  */
 export function Settings({
+  open,
   sortOrder,
   onSortOrder,
   onClose,
 }: {
+  open: boolean;
   sortOrder: SortKey[];
   onSortOrder: (order: SortKey[]) => void;
   onClose: () => void;
 }) {
   return (
-    <div
-      className="settings-backdrop"
-      // Only a press on the backdrop itself, not one that started a drag inside.
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="settings" role="dialog" aria-modal="true" aria-label="Settings">
-        <div className="settings-head">
-          <span className="settings-title">Settings</span>
-          <button className="icon-btn" title="Close (Esc)" onClick={onClose}>
-            <CloseIcon />
-          </button>
-        </div>
-        <div className="settings-body">
-          <section className="settings-section">
-            <h3 className="settings-heading">Sort files by</h3>
-            <SortList order={sortOrder} onChange={onSortOrder} />
-            <p className="settings-note">
-              Sorted by the first, then by the next where they're equal. Drag to reorder, or click one to put it
-              first. This doesn't change the order downloads run in.
-            </p>
-          </section>
-        </div>
-      </div>
-    </div>
+    <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
+      {/* The sections describe themselves; there's no one description for the dialog. */}
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>Settings</DialogTitle>
+        </DialogHeader>
+        <section className="settings-section">
+          <h3 className="settings-heading">Sort files by</h3>
+          <SortList order={sortOrder} onChange={onSortOrder} />
+          <p className="settings-note">
+            Sorted by the first, then by the next where they're equal. Drag to reorder, or click one to put it
+            first. This doesn't change the order downloads run in.
+          </p>
+        </section>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -95,19 +91,29 @@ function SortList({ order, onChange }: { order: SortKey[]; onChange: (order: Sor
   return (
     <ol className="sort-list" ref={listRef}>
       {order.map((key, i) => (
-        <li
+        <Item
           key={key}
-          className={"sort-row" + (dragging === key ? " dragging" : "")}
-          title={i === 0 ? "Sorted by this first" : "Click to sort by this first"}
-          onPointerDown={(e) => onPointerDown(key, e)}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
+          asChild
+          variant="outline"
+          size="xs"
+          className={"touch-none " + (dragging === key ? "cursor-grabbing shadow-md" : "cursor-grab")}
         >
-          <span className="sort-rank">{i + 1}</span>
-          <span className="sort-label">{SORT_LABELS[key]}</span>
-          <GripIcon />
-        </li>
+          <li
+            title={i === 0 ? "Sorted by this first" : "Click to sort by this first"}
+            onPointerDown={(e) => onPointerDown(key, e)}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+          >
+            <span className="sort-rank">{i + 1}</span>
+            <ItemContent>
+              <ItemTitle>{SORT_LABELS[key]}</ItemTitle>
+            </ItemContent>
+            <ItemActions className="text-muted-foreground">
+              <GripIcon />
+            </ItemActions>
+          </li>
+        </Item>
       ))}
     </ol>
   );

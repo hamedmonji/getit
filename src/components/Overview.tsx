@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { formatSpeed } from "../lib/format";
 import type { FileVm, OverviewNode } from "../lib/viewModels";
 import { ActionButton, ProgressBar } from "./Glyphs";
@@ -38,10 +39,10 @@ export function Overview({
           {running > 0 && formatSpeed(speed)}
         </span>
         {running > 0 && (
-          <button className="plain-btn overview-stop" title="Pause every queue and download" onClick={onPauseAll}>
-            <PauseIcon size={9} />
+          <Button variant="outline" size="xs" title="Pause every queue and download" onClick={onPauseAll}>
+            <PauseIcon />
             Stop all
-          </button>
+          </Button>
         )}
       </div>
       <div className="overview-body">
@@ -72,16 +73,16 @@ function QueueCard({ node, ...handlers }: Handlers & { node: OverviewNode }) {
             <span className="ov-queue-meta ellipsis">{meta.join(" · ")}</span>
           </span>
         </button>
-        <button className="ov-queue-pause" title="Pause everything in this queue" onClick={() => onPauseQueue(node.id)}>
-          <PauseIcon size={9} />
-        </button>
+        <Button variant="outline" size="icon-xs" title="Pause everything in this queue" onClick={() => onPauseQueue(node.id)}>
+          <PauseIcon />
+        </Button>
       </div>
       <ul className="ov-files">
         {node.files.map((f) => (
           <li key={f.id} className="ov-file" title={f.info} onClick={() => onOpenFile(node.dir, f.id)}>
             <div className="ov-file-line">
               <span className="ov-file-name ellipsis">{f.name}</span>
-              <ActionButton className="ov-file-action" vm={f} onAction={onAction} />
+              <ActionButton variant="secondary" vm={f} onAction={onAction} />
             </div>
             <ProgressBar className="row-bar" pct={f.pct} color={f.color} />
             <div className="ov-file-status ellipsis">{f.status}</div>

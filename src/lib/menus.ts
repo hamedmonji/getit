@@ -1,6 +1,5 @@
 // The context menus for the folder's empty space, its items and the selection.
 
-import type { MenuItem } from "../components/ContextMenu";
 import type { Clip } from "../hooks/useClipboardItems";
 import type { EngineState } from "../hooks/useEngine";
 import { engine, type QueueInfo } from "./engine";
@@ -9,6 +8,30 @@ import { FILE_MANAGER, IS_MAC, MOD } from "./platform";
 import { hasWork, isQueuePaused, pauseQueue, resumeQueue } from "./queueControl";
 import { report } from "./report";
 import { queueForDir, type FileVm, type FolderVm } from "./viewModels";
+
+export type MenuItem =
+  | {
+      kind: "action";
+      label: string;
+      onSelect: () => void;
+      disabled?: boolean;
+      danger?: boolean;
+      /** Shows a check mark column; true checks it. */
+      checked?: boolean;
+      /** Keyboard shortcut shown on the right, such as "⌘C". */
+      shortcut?: string;
+    }
+  | { kind: "separator" }
+  | { kind: "header"; label: string }
+  /** A −/+ control; changing it keeps the menu open. */
+  | {
+      kind: "stepper";
+      label: string;
+      value: number;
+      min: number;
+      max: number;
+      onChange: (value: number) => void;
+    };
 
 /** Most downloads a queue can run at once, as offered in the menu. */
 const MAX_CONCURRENCY = 6;

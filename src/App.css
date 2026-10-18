@@ -1,4 +1,5 @@
-/* Theme tokens from the design. */
+/* Theme tokens from the design. Named apart from shadcn's own tokens in
+   index.css: its --accent and --muted mean other things. */
 :root,
 [data-theme="Light"] {
   --bg: #efeee9;
@@ -7,10 +8,10 @@
   --line: rgba(22, 22, 16, 0.09);
   --track: rgba(22, 22, 16, 0.08);
   --ink: #1c1c1a;
-  --muted: #6f6d66;
+  --ink-muted: #6f6d66;
   --hover: rgba(22, 22, 16, 0.045);
-  --accent: oklch(0.58 0.15 235);
-  --accentSoft: oklch(0.58 0.15 235 / 0.12);
+  --tint: oklch(0.58 0.15 235);
+  --tintSoft: oklch(0.58 0.15 235 / 0.12);
   --danger: oklch(0.58 0.2 25);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   /* Finder's folder icon, measured from Finder on macOS (the same in light
@@ -44,10 +45,10 @@
   --line: rgba(255, 255, 255, 0.08);
   --track: rgba(255, 255, 255, 0.09);
   --ink: #ecebe5;
-  --muted: #8f8d86;
+  --ink-muted: #8f8d86;
   --hover: rgba(255, 255, 255, 0.05);
-  --accent: oklch(0.72 0.13 235);
-  --accentSoft: oklch(0.72 0.13 235 / 0.16);
+  --tint: oklch(0.72 0.13 235);
+  --tintSoft: oklch(0.72 0.13 235 / 0.16);
   --danger: oklch(0.7 0.17 25);
   --shadow: none;
   color-scheme: dark;
@@ -61,15 +62,6 @@ html,
 body {
   margin: 0;
   overflow: hidden;
-}
-
-button {
-  font: inherit;
-  color: inherit;
-}
-
-input::placeholder {
-  color: var(--muted);
 }
 
 .mono {
@@ -97,7 +89,6 @@ input::placeholder {
   flex-direction: column;
   background: var(--bg);
   color: var(--ink);
-  font-family: "Hanken Grotesk", system-ui, sans-serif;
   font-size: 13px;
   overflow: hidden;
   user-select: none;
@@ -129,40 +120,19 @@ input::placeholder {
   gap: 2px;
 }
 
-.icon-btn {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  cursor: pointer;
-}
-
-.icon-btn:hover,
-.square-btn:hover,
-.plain-btn:hover {
-  background: var(--hover);
-}
-
-.address-bar {
+/* The folder's path, in the address bar while it isn't being typed in; the
+   same size as the field it turns into. */
+.address-path {
   flex: 1;
   min-width: 0;
-  /* Leaves toolbar on both sides to drag the window by. */
-  margin: 0 24px;
-  height: 30px;
+  height: 100%;
   display: flex;
   align-items: center;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel2);
+  padding: 0 10px;
   font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 12px;
+  font-size: 0.875rem;
   white-space: nowrap;
   overflow: hidden;
-  cursor: text;
 }
 
 /* Both cut from the start ("…ads/Linux/"), keeping the end nearest the
@@ -173,7 +143,7 @@ input::placeholder {
   overflow: hidden;
   text-overflow: ellipsis;
   direction: rtl;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .address-run {
@@ -193,9 +163,9 @@ input::placeholder {
 }
 
 .address-segment.drop-target {
-  background: var(--accentSoft);
-  box-shadow: 0 0 0 2px var(--accent);
-  color: var(--accent);
+  background: var(--tintSoft);
+  box-shadow: 0 0 0 2px var(--tint);
+  color: var(--tint);
 }
 
 .address-name {
@@ -206,79 +176,6 @@ input::placeholder {
   direction: rtl;
   color: var(--ink);
   font-weight: 600;
-}
-
-.segmented {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 8px;
-  background: var(--panel2);
-  border: 1px solid var(--line);
-}
-
-.segmented button {
-  width: 30px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  cursor: pointer;
-  background: transparent;
-  color: var(--muted);
-}
-
-.segmented button.active {
-  background: var(--panel);
-  color: var(--ink);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
-}
-
-.primary-btn {
-  height: 30px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.primary-btn:hover {
-  opacity: 0.9;
-}
-
-.square-btn {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  cursor: pointer;
-}
-
-.square-btn:disabled {
-  color: var(--track);
-  cursor: default;
-}
-
-.square-btn:disabled:hover {
-  background: var(--panel);
-}
-
-.square-btn.toggled {
-  background: var(--accentSoft);
-  border-color: transparent;
-  color: var(--accent);
 }
 
 /* Add-link bar */
@@ -309,12 +206,13 @@ input::placeholder {
 }
 
 .paste-list {
+  list-style: decimal;
   max-height: 140px;
   overflow: auto;
   margin: 0;
   padding: 0 12px 10px 36px;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ink-muted);
   background: var(--panel);
   user-select: text;
   -webkit-user-select: text;
@@ -331,21 +229,19 @@ input::placeholder {
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .paste-always {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--muted);
+  gap: 8px;
   white-space: nowrap;
 }
 
 .add-label {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ink-muted);
   white-space: nowrap;
 }
 
@@ -354,29 +250,6 @@ input::placeholder {
   min-width: 0;
   position: relative;
   display: flex;
-}
-
-.add-input-wrap input {
-  flex: 1;
-  min-width: 0;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--accent);
-  border-radius: 7px;
-  background: var(--panel2);
-  color: var(--ink);
-  font-size: 12px;
-  outline: none;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.add-input-wrap input.mono-input {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-}
-
-.add-input-wrap input.invalid {
-  border-color: var(--danger);
 }
 
 .add-error {
@@ -393,17 +266,6 @@ input::placeholder {
   pointer-events: none;
 }
 
-.plain-btn {
-  height: 30px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--panel);
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
 /* Content */
 
 .content {
@@ -417,34 +279,9 @@ input::placeholder {
 .marquee {
   position: absolute;
   z-index: 2;
-  border: 1px solid var(--accent);
-  background: var(--accentSoft);
+  border: 1px solid var(--tint);
+  background: var(--tintSoft);
   pointer-events: none;
-}
-
-.empty {
-  padding: 80px 24px;
-  text-align: center;
-  color: var(--muted);
-}
-
-.no-access p {
-  max-width: 420px;
-  margin: 0 auto 8px;
-  line-height: 1.5;
-}
-
-.no-access .no-access-title {
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.no-access-actions {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 16px;
 }
 
 .icon-grid {
@@ -472,7 +309,7 @@ input::placeholder {
 
 .tile.selected,
 .row.selected {
-  background: var(--accentSoft);
+  background: var(--tintSoft);
 }
 
 .tile {
@@ -481,8 +318,8 @@ input::placeholder {
 
 .tile.drop-target,
 .row.drop-target {
-  background: var(--accentSoft);
-  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--tintSoft);
+  box-shadow: inset 0 0 0 2px var(--tint);
 }
 
 .tile.dragging,
@@ -496,7 +333,7 @@ input::placeholder {
   max-width: 240px;
   padding: 4px 10px;
   border-radius: 6px;
-  background: var(--accent);
+  background: var(--tint);
   color: #fff;
   font-size: 12px;
   font-weight: 500;
@@ -542,39 +379,9 @@ input::placeholder {
   max-width: 100%;
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 10.5px;
-  color: var(--muted);
+  color: var(--ink-muted);
   text-align: center;
   margin-top: -3px;
-}
-
-.tile-action,
-.row-action {
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.tile-action:hover,
-.row-action:hover {
-  background: var(--hover);
-  color: var(--ink);
-}
-
-.tile-action {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 22px;
-  height: 22px;
-}
-
-.row-action {
-  width: 26px;
-  height: 26px;
 }
 
 /* File and folder glyphs */
@@ -752,7 +559,7 @@ input::placeholder {
 .folder-count {
   min-width: 20px;
   padding: 0 5px;
-  background: var(--accent);
+  background: var(--tint);
   color: #fff;
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 10.5px;
@@ -761,7 +568,7 @@ input::placeholder {
 
 .folder-paused {
   width: 20px;
-  background: var(--muted);
+  background: var(--ink-muted);
   color: var(--panel);
 }
 
@@ -788,7 +595,7 @@ input::placeholder {
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--ink-muted);
   font-weight: 500;
 }
 
@@ -828,7 +635,7 @@ input::placeholder {
 
 .row-sub {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ink-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -838,7 +645,7 @@ input::placeholder {
 .row-size {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ink-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -872,26 +679,6 @@ input::placeholder {
   min-width: 0;
 }
 
-.overview-btn {
-  position: relative;
-}
-
-.overview-badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 16px;
-  text-align: center;
-}
-
 .overview {
   flex: none;
   width: 300px;
@@ -923,11 +710,7 @@ input::placeholder {
   text-overflow: ellipsis;
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
-  color: var(--muted);
-}
-
-.overview-head .icon-btn {
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .overview-body {
@@ -935,54 +718,6 @@ input::placeholder {
   min-height: 0;
   overflow: auto;
   padding: 8px;
-}
-
-/* The settings dialog, centred over a dimmed window. */
-.settings-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.settings {
-  width: min(440px, 100%);
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  box-shadow:
-    0 16px 48px rgba(0, 0, 0, 0.22),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.settings-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 44px;
-  padding: 0 8px 0 18px;
-  border-bottom: 1px solid var(--line);
-}
-
-.settings-title {
-  font-weight: 600;
-}
-
-.settings-head .icon-btn {
-  color: var(--muted);
-}
-
-.settings-body {
-  min-height: 0;
-  overflow: auto;
-  padding: 16px 18px 18px;
 }
 
 .settings-section + .settings-section {
@@ -997,7 +732,7 @@ input::placeholder {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .sort-list {
@@ -1009,51 +744,18 @@ input::placeholder {
   gap: 4px;
 }
 
-.sort-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 34px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel2);
-  cursor: grab;
-  user-select: none;
-  touch-action: none;
-}
-
-.sort-row:hover {
-  background: color-mix(in oklch, var(--panel2), var(--ink) 4%);
-}
-
-.sort-row.dragging {
-  cursor: grabbing;
-  border-color: var(--accent);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
 .sort-rank {
   width: 16px;
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
-  color: var(--muted);
-}
-
-.sort-label {
-  flex: 1;
-  font-weight: 500;
-}
-
-.sort-row svg {
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .settings-note {
   margin: 10px 2px 0;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .queue-settings-folder {
@@ -1067,7 +769,7 @@ input::placeholder {
 
 .queue-settings-folder svg {
   flex: none;
-  color: var(--accent);
+  color: var(--tint);
 }
 
 .queue-settings-tabs {
@@ -1103,7 +805,7 @@ input::placeholder {
 }
 
 .queue-order-row.selected {
-  background: color-mix(in oklch, var(--accent) 16%, transparent);
+  background: color-mix(in oklch, var(--tint) 16%, transparent);
 }
 
 /* Where dragged rows would land: a line above this row, or below the last. */
@@ -1115,7 +817,7 @@ input::placeholder {
   right: 6px;
   height: 2px;
   border-radius: 1px;
-  background: var(--accent);
+  background: var(--tint);
 }
 
 .queue-order-row.drop-before::before {
@@ -1132,7 +834,7 @@ input::placeholder {
   text-align: right;
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 10.5px;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .queue-order-text {
@@ -1149,24 +851,17 @@ input::placeholder {
 
 .queue-order-status {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .queue-order-note {
   margin: 10px 8px 2px;
 }
 
-.queue-settings-tabs .segmented button {
-  flex: 1;
-  width: auto;
-  font-size: 12px;
-  font-weight: 500;
-}
-
 .overview-empty {
   padding: 24px 8px;
   text-align: center;
-  color: var(--muted);
+  color: var(--ink-muted);
   font-size: 12px;
 }
 
@@ -1218,7 +913,7 @@ input::placeholder {
 .ov-queue-open svg {
   flex: none;
   margin-top: 2px;
-  color: var(--accent);
+  color: var(--tint);
 }
 
 .ov-queue-text {
@@ -1234,32 +929,7 @@ input::placeholder {
 
 .ov-queue-meta {
   font-size: 11px;
-  color: var(--muted);
-}
-
-.ov-queue-pause {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel2);
-  color: var(--ink);
-  cursor: pointer;
-}
-
-.ov-queue-pause:hover {
-  background: var(--hover);
-}
-
-.overview-stop {
-  height: 26px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 9px;
+  color: var(--ink-muted);
 }
 
 .ov-files {
@@ -1293,23 +963,10 @@ input::placeholder {
   font-size: 12px;
 }
 
-.ov-file-action {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: var(--track);
-  color: var(--ink);
-  cursor: pointer;
-}
-
 .ov-file-status {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 10.5px;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 /* Status bar */
@@ -1369,74 +1026,20 @@ input::placeholder {
   gap: 6px;
 }
 
-.dup-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel2);
-}
-
-.dup-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dup-name {
-  font-weight: 600;
-}
-
 .dup-meta {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--ink-muted);
   white-space: nowrap;
-}
-
-.dup-status {
-  flex: none;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--accentSoft);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.dup-where {
-  min-width: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--ink);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.dup-where:hover {
-  color: var(--accent);
-  text-decoration: underline;
 }
 
 .dup-buttons {
   flex: none;
   display: flex;
   gap: 8px;
-}
-
-/* Start or show, whichever label, lines up from row to row. */
-.dup-row .dup-buttons > :last-child {
-  min-width: 112px;
-  justify-content: center;
 }
 
 .status-bar {
@@ -1449,7 +1052,7 @@ input::placeholder {
   border-top: 1px solid var(--line);
   background: var(--panel2);
   font-size: 11.5px;
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .status-bar > span {
@@ -1458,26 +1061,6 @@ input::placeholder {
 
 .status-warning {
   color: var(--danger);
-}
-
-.status-expand {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  margin-right: -6px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.status-expand:hover,
-.status-expand.on {
-  background: var(--hover);
-  color: var(--ink);
 }
 
 /* Details: the selected download, above the status bar */
@@ -1494,7 +1077,7 @@ input::placeholder {
 
 .details-empty {
   padding: 10px 0;
-  color: var(--muted);
+  color: var(--ink-muted);
   text-align: center;
 }
 
@@ -1512,20 +1095,7 @@ input::placeholder {
 
 .details-status {
   flex: none;
-  color: var(--muted);
-}
-
-.details-action {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: var(--track);
-  color: var(--ink);
-  cursor: pointer;
+  color: var(--ink-muted);
 }
 
 .details-bar {
@@ -1549,7 +1119,7 @@ input::placeholder {
 }
 
 .details-grid dt {
-  color: var(--muted);
+  color: var(--ink-muted);
 }
 
 .details-grid dd {
@@ -1574,140 +1144,6 @@ input::placeholder {
   -webkit-user-select: text;
 }
 
-.details-copy {
-  flex: none;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 5px;
-  font-size: 11px;
-}
-
-.details-link {
-  max-width: 100%;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--accent);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.details-link:hover {
-  text-decoration: underline;
-}
-
-/* Context menu */
-
-.menu {
-  position: fixed;
-  z-index: 100;
-  min-width: 200px;
-  padding: 5px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel);
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.16),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-  font-size: 12.5px;
-}
-
-.menu-item {
-  display: block;
-  width: 100%;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  text-align: left;
-  cursor: default;
-  white-space: nowrap;
-}
-
-.menu-item:hover:not(:disabled) {
-  background: var(--accent);
-  color: #fff;
-}
-
-.menu-check {
-  display: inline-block;
-  width: 16px;
-}
-
-.menu-item:disabled {
-  color: var(--muted);
-  opacity: 0.6;
-}
-
-.menu-item.danger {
-  color: var(--danger);
-}
-
-.menu-item.danger:hover:not(:disabled) {
-  background: var(--danger);
-  color: #fff;
-}
-
-.menu-header {
-  padding: 4px 10px 6px;
-  font-size: 11px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.menu-separator {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--line);
-}
-
-.menu-stepper {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 30px;
-  padding: 0 4px 0 10px;
-  white-space: nowrap;
-}
-
-.menu-stepper-control {
-  display: flex;
-  align-items: center;
-  height: 24px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--panel2);
-}
-
-.menu-stepper-control button {
-  width: 24px;
-  height: 100%;
-  border: 0;
-  background: transparent;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.menu-stepper-control button:hover:not(:disabled) {
-  background: var(--hover);
-}
-
-.menu-stepper-control button:disabled {
-  color: var(--muted);
-  opacity: 0.5;
-  cursor: default;
-}
-
-.menu-stepper-control span {
-  min-width: 20px;
-  text-align: center;
-  font-size: 12px;
-}
-
 /* Inline rename */
 
 .name-editor {
@@ -1715,13 +1151,13 @@ input::placeholder {
   min-width: 0;
   height: 22px;
   padding: 0 4px;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--tint);
   border-radius: 4px;
   background: var(--panel);
   color: var(--ink);
   font: inherit;
   font-weight: 500;
-  outline: 3px solid var(--accentSoft);
+  outline: 3px solid var(--tintSoft);
   user-select: text;
   -webkit-user-select: text;
 }
@@ -1733,148 +1169,4 @@ input::placeholder {
 .name-editor.invalid {
   border-color: var(--danger);
   outline-color: color-mix(in oklch, var(--danger) 20%, transparent);
-}
-
-/* Address bar while typing a path or search */
-
-.address-bar.editing {
-  gap: 6px;
-  padding: 0 4px 0 9px;
-  border-color: var(--accent);
-  background: var(--panel);
-  cursor: text;
-}
-
-.address-bar.editing.invalid {
-  border-color: var(--danger);
-}
-
-.address-icon {
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-  flex: none;
-}
-
-.address-bar.editing input {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 12px;
-  outline: none;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.address-error {
-  flex: none;
-  max-width: 50%;
-  font-size: 11px;
-  color: var(--danger);
-}
-
-.address-clear {
-  width: 20px;
-  height: 20px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: var(--track);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.address-clear:hover {
-  color: var(--ink);
-}
-
-.address-scope {
-  height: 22px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.address-scope:hover {
-  background: var(--hover);
-}
-
-.address-scope.all {
-  background: var(--accentSoft);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.address-scope kbd {
-  padding: 1px 4px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--panel2);
-  color: var(--muted);
-  font-family: inherit;
-  font-size: 10px;
-  font-weight: 400;
-}
-
-.address-filter {
-  height: 22px;
-  min-width: 22px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 0 5px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.address-filter:hover,
-.address-filter.open {
-  background: var(--hover);
-  color: var(--ink);
-}
-
-.address-filter.on {
-  background: var(--accentSoft);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-/* Opens under the filter button, its right edge lined up with the button's. */
-.search-filter {
-  min-width: 140px;
-  transform: translateX(-100%);
-}
-
-.menu-shortcut {
-  float: right;
-  margin-left: 24px;
-  color: var(--muted);
-}
-
-.menu-item:hover:not(:disabled) .menu-shortcut {
-  color: inherit;
-  opacity: 0.8;
 }

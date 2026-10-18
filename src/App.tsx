@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { Details } from "./components/Details";
 import { NoAccess } from "./components/NoAccess";
 import { Overview } from "./components/Overview";
@@ -16,7 +26,7 @@ import {
   type SearchKind,
   type Theme,
 } from "./components/Bars";
-import { ContextMenu } from "./components/ContextMenu";
+import { ContextMenuItems } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
 import { canStart, useAddLinks } from "./hooks/useAddLinks";
 import { useClipboardItems } from "./hooks/useClipboardItems";
@@ -34,7 +44,7 @@ import { formatSize, formatSpeed, plural } from "./lib/format";
 import { isFolderKey } from "./lib/keys";
 import { linksIn } from "./lib/links";
 import { bestQueueFor } from "./lib/match";
-import { menuItems, type MenuContext } from "./lib/menus";
+import type { MenuContext } from "./lib/menus";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import { FILE_MANAGER, IS_MAC } from "./lib/platform";
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
@@ -75,13 +85,6 @@ interface History {
 /** How long a failed move's message stays in the status bar. */
 const NOTICE_MS = 6000;
 
-interface Menu {
-  x: number;
-  y: number;
-  /** A folder path or download id; null for the folder's empty space. */
-  target: string | null;
-}
-
 export default function App() {
   const state = useEngine();
   const [home, setHome] = useState<string | null>(null);
@@ -107,11 +110,21 @@ export default function App() {
   const refresh = useCallback(() => setListNonce((n) => n + 1), []);
   /** Folders the user tried granting access to, which still can't be opened. */
   const [accessAsked, setAccessAsked] = useState<Set<string>>(new Set());
-  const [menu, setMenu] = useState<Menu | null>(null);
-  const closeMenu = useCallback(() => setMenu(null), []);
+  /**
+   * What the right-click menu is for: a folder path or download id, or null for
+   * the folder's empty space. Counts the times it opened, to make a new one each time.
+   */
+  const [menu, setMenu] = useState<{ target: string | null; opened: number }>({ target: null, opened: 0 });
   const [theme, setTheme] = useStoredState<Theme>("getit.theme", ["Light", "Dark"], () =>
     window.matchMedia("(prefers-color-scheme: dark)").matches ? "Dark" : "Light",
   );
+  // On the document rather than the app: menus and dialogs show outside it, and
+  // shadcn's components take dark mode from a `dark` class above them.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    root.classList.toggle("dark", theme === "Dark");
+  }, [theme]);
   const [mode, setMode] = useStoredState<ViewMode>("getit.view", ["Icons", "List"], () => "Icons");
   const [folderFilter, setFolderFilter] = useStoredState<"all" | "queues">(
     "getit.folders",
@@ -536,7 +549,7 @@ export default function App() {
   }, []);
 
   useShortcuts(
-    { menuOpen: !!menu, settingsOpen, selectionCount: selection.length },
+    { settingsOpen, selectionCount: selection.length },
     {
       closeSettings: () => setSettingsOpen(false),
       goUp,
@@ -594,7 +607,7 @@ export default function App() {
     return () => window.removeEventListener("contextmenu", onContextMenu);
   }, []);
 
-  if (!home || !cwd) return <div className="app" data-theme={theme} />;
+  if (!home || !cwd) return <div className="app" />;
 
   const own = stats(state, shown ?? cwd, false);
   const summary = [
@@ -704,10 +717,6 @@ export default function App() {
     onOpenFolder: (path) => go(path),
     onOpenFile,
     onAction,
-    onItemMenu: (target, x, y) => {
-      if (!selected.has(target)) select([target]);
-      setMenu({ x, y, target });
-    },
     editing,
     onRename: rename,
     onCancelRename: () => setEditing(null),
@@ -717,7 +726,7 @@ export default function App() {
   };
 
   return (
-    <div className="app" data-theme={theme}>
+    <div className="app">
       <Toolbar
         canBack={history!.back.length > 0}
         canForward={history!.forward.length > 0}
@@ -763,7 +772,6 @@ export default function App() {
         overviewOpen={overviewOpen}
         activeCount={global.active}
         onToggleOverview={toggleOverview}
-        settingsOpen={settingsOpen}
         onToggleSettings={toggleSettings}
       />
 
@@ -815,41 +823,57 @@ export default function App() {
       )}
 
       <div className="main">
-        <div
-          ref={contentRef}
-          className="content"
-          onMouseDown={onContentMouseDown}
-          onClick={(e) => {
-            if (!e.shiftKey && !(IS_MAC ? e.metaKey : e.ctrlKey)) select([]);
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            select([]);
-            setMenu({ x: e.clientX, y: e.clientY, target: null });
-          }}
-        >
-          {mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />}
-          {marquee.box && <div className="marquee" style={marquee.box} />}
-          {isEmpty && noAccess && (
-            <NoAccess
-              name={baseName(cwd)}
-              asked={accessAsked.has(cwd)}
-              onGrant={() => grantAccess(cwd)}
-              onSettings={() => report(engine.openPrivacySettings())}
-            />
-          )}
-          {isEmpty && !noAccess && (
-            <div className="empty">
-              {query
-                ? `${searchKinds.length === 1 ? `No ${searchKinds[0]}` : "Nothing"}${searchAll ? "" : ` in ${displayPath(cwd, home)}`} ${searchKinds.length === 1 ? "match" : "matches"} “${query}”.`
-                : listing.error
-                  ? `Can't open this folder: ${listing.error}`
-                  : hiddenFolders > 0
-                    ? `No downloads here. ${plural(hiddenFolders, "folder")} without downloads ${hiddenFolders === 1 ? "is" : "are"} hidden.`
-                    : "This folder is empty. Right-click to add a download or a queue."}
+        {/* Not modal, so a click outside still lands and a right-click elsewhere moves the menu there. */}
+        <ContextMenu modal={false}>
+          <ContextMenuTrigger asChild>
+            <div
+              ref={contentRef}
+              className="content"
+              onMouseDown={onContentMouseDown}
+              onClick={(e) => {
+                if (!e.shiftKey && !(IS_MAC ? e.metaKey : e.ctrlKey)) select([]);
+              }}
+              // Picks the menu's item before the menu opens: the one under the
+              // pointer, selected unless it already is, or the empty space.
+              onContextMenu={(e) => {
+                const key = (e.target as Element).closest<HTMLElement>("[data-key]")?.dataset.key ?? null;
+                if (key === null) select([]);
+                else if (!selected.has(key)) select([key]);
+                setMenu((m) => ({ target: key, opened: m.opened + 1 }));
+              }}
+            >
+              {mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />}
+              {marquee.box && <div className="marquee" style={marquee.box} />}
+              {isEmpty && noAccess && (
+                <NoAccess
+                  name={baseName(cwd)}
+                  asked={accessAsked.has(cwd)}
+                  onGrant={() => grantAccess(cwd)}
+                  onSettings={() => report(engine.openPrivacySettings())}
+                />
+              )}
+              {isEmpty && !noAccess && (
+                <Empty className="py-20">
+                  <EmptyHeader>
+                    <EmptyDescription>
+                      {query
+                        ? `${searchKinds.length === 1 ? `No ${searchKinds[0]}` : "Nothing"}${searchAll ? "" : ` in ${displayPath(cwd, home)}`} ${searchKinds.length === 1 ? "match" : "matches"} “${query}”.`
+                        : listing.error
+                          ? `Can't open this folder: ${listing.error}`
+                          : hiddenFolders > 0
+                            ? `No downloads here. ${plural(hiddenFolders, "folder")} without downloads ${hiddenFolders === 1 ? "is" : "are"} hidden.`
+                            : "This folder is empty. Right-click to add a download or a queue."}
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              )}
             </div>
-          )}
-        </div>
+          </ContextMenuTrigger>
+          {/* A new menu each time, so one opened over another takes focus as the first did. */}
+          <ContextMenuContent key={menu.opened}>
+            <ContextMenuItems ctx={menuContext} target={menu.target} />
+          </ContextMenuContent>
+        </ContextMenu>
         {overviewOpen && (
           <Overview
             nodes={overview}
@@ -964,8 +988,7 @@ export default function App() {
         onToggleDetails={toggleDetails}
       />
 
-      {settingsOpen && <Settings sortOrder={sortOrder} onSortOrder={setSortOrder} onClose={closeSettings} />}
-      {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems(menuContext, menu.target)} onClose={closeMenu} />}
+      <Settings open={settingsOpen} sortOrder={sortOrder} onSortOrder={setSortOrder} onClose={closeSettings} />
       {drag && (
         <div className="drag-ghost" style={{ left: drag.x + 14, top: drag.y + 10 }}>
           {drag.keys.length === 1 ? nameOf(drag.keys[0]) : plural(drag.keys.length, "item")}

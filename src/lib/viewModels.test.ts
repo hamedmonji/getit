@@ -82,7 +82,7 @@ describe("fileVm", () => {
 
   it("marks a finished file missing when the listing doesn't have it", () => {
     const vm = vmOf({ status: "completed" }, { present: new Set(["other.zip"]) });
-    expect(vm).toMatchObject({ status: "Missing", missing: true, nameColor: "var(--muted)" });
+    expect(vm).toMatchObject({ status: "Missing", missing: true, nameColor: "var(--ink-muted)" });
     expect(vmOf({ status: "completed" }, { present: new Set(["a.zip"]) }).missing).toBe(false);
     expect(vmOf({ status: "completed" }, { present: null }).missing).toBe(false);
   });
@@ -94,7 +94,7 @@ describe("fileVm", () => {
       active: true,
       action: "pause",
       actionLabel: "Pause",
-      color: "var(--accent)",
+      color: "var(--tint)",
     });
     expect(vmOf(running, { speed: MB, mode: "Icons" }).status).toBe("50% · 50s left");
   });
@@ -210,7 +210,7 @@ describe("folderVm", () => {
       paused: false,
       showBar: true,
       pct: 50,
-      barColor: "var(--accent)",
+      barColor: "var(--tint)",
       hasQueue: true,
     });
   });

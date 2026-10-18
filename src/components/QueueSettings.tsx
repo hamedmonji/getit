@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { FileVm } from "../lib/viewModels";
 import { FileGlyph } from "./Glyphs";
 import { CloseIcon, FolderIcon } from "./icons";
@@ -44,34 +46,27 @@ export function QueueSettings({
         </div>
         }
         <span className="overview-total" />
-        <button className="icon-btn" title="Close" onClick={onClose}>
+        <Button variant="ghost" size="icon-sm" title="Close" onClick={onClose}>
           <CloseIcon />
-        </button>
+        </Button>
       </div>
       {queue ? (
-        <>
+        <Tabs value={tab} onValueChange={(t) => setTab(t as Tab)} className="min-h-0 flex-1 gap-0">
           <div className="queue-settings-tabs">
-            <div className="segmented" role="tablist">
+            <TabsList className="w-full">
               {TABS.map(({ tab: t, label }) => (
-                <button
-                  key={t}
-                  role="tab"
-                  aria-selected={tab === t}
-                  className={tab === t ? "active" : ""}
-                  onClick={() => setTab(t)}
-                >
+                <TabsTrigger key={t} value={t}>
                   {label}
-                </button>
+                </TabsTrigger>
               ))}
-            </div>
+            </TabsList>
           </div>
-          {tab === "settings" ? (
-            <div className="overview-body" role="tabpanel" aria-label="Settings" />
-          ) : (
-            // Keyed so each queue has its own selection.
+          <TabsContent value="settings" />
+          <TabsContent value="order" className="flex min-h-0 flex-col">
+            {/* Keyed so each queue has its own selection. */}
             <QueueOrder key={queue.id} files={files} onReorder={onReorder} />
-          )}
-        </>
+          </TabsContent>
+        </Tabs>
       ) : (
         <div className="overview-body">
           <div className="overview-empty">This folder has no queue. Add a download here to start one.</div>
@@ -188,13 +183,13 @@ function QueueOrder({ files, onReorder }: { files: FileVm[]; onReorder: (ids: st
 
   if (!files.length) {
     return (
-      <div className="overview-body" role="tabpanel" aria-label="Queue Order">
+      <div className="overview-body">
         <div className="overview-empty">Nothing left to download in this queue.</div>
       </div>
     );
   }
   return (
-    <div className="overview-body queue-order" role="tabpanel" aria-label="Queue Order">
+    <div className="overview-body">
       <ol
         ref={listRef}
         className={"queue-order-list" + (dropAt !== null ? " dragging" : "")}

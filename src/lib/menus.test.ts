@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { MenuItem } from "../components/ContextMenu";
 import type { EngineState } from "../hooks/useEngine";
 import { item, queue, stateOf } from "../test/fixtures";
 import { engine, type DownloadItem } from "./engine";
-import { backgroundMenu, downloadMenu, folderMenu, menuItems, selectionMenu, type MenuContext } from "./menus";
+import { backgroundMenu, downloadMenu, folderMenu, menuItems, selectionMenu, type MenuContext, type MenuItem } from "./menus";
 import { fileVm, folderVm } from "./viewModels";
 
 vi.mock("./engine", () => ({

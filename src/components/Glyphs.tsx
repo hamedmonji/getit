@@ -1,4 +1,5 @@
 import type { MouseEvent } from "react";
+import { Button } from "@/components/ui/button";
 import { isMediaKind } from "../lib/fileKind";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { FileIcon } from "./FileIcon";
@@ -45,11 +46,13 @@ export function FolderGlyph({ vm, size }: { vm: FolderVm; size: Size }) {
 export function ActionButton({
   vm,
   onAction,
+  variant = "ghost",
   className,
 }: {
   vm: FileVm;
   onAction: (vm: FileVm) => void;
-  className: string;
+  variant?: "ghost" | "secondary";
+  className?: string;
 }) {
   if (!vm.action) return null;
   const onClick = (e: MouseEvent) => {
@@ -57,11 +60,18 @@ export function ActionButton({
     onAction(vm);
   };
   return (
-    <button className={className} title={vm.actionLabel} onClick={onClick} onDoubleClick={(e) => e.stopPropagation()}>
+    <Button
+      variant={variant}
+      size="icon-xs"
+      className={className}
+      title={vm.actionLabel}
+      onClick={onClick}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
       {vm.action === "pause" && <PauseIcon />}
       {vm.action === "resume" && <PlayIcon />}
       {vm.action === "retry" && <RetryIcon />}
-    </button>
+    </Button>
   );
 }
 

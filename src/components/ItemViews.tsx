@@ -16,8 +16,6 @@ export interface ItemViewProps {
   onOpenFolder: (path: string) => void;
   onOpenFile: (vm: FileVm) => void;
   onAction: (vm: FileVm) => void;
-  /** Right-click on a folder (by path) or download (by id). */
-  onItemMenu: (key: string, x: number, y: number) => void;
   /** Folder (by path) or download (by id) whose name is being edited, if any. */
   editing: string | null;
   /** Commits a new name for a folder or download; rejects with a message if it can't be used. */
@@ -142,11 +140,6 @@ function handlers(props: ItemViewProps, key: string, open: () => void) {
       e.stopPropagation();
       open();
     },
-    onContextMenu: (e: MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      props.onItemMenu(key, e.clientX, e.clientY);
-    },
   };
 }
 
@@ -180,7 +173,7 @@ export function IconView(props: ItemViewProps) {
           className={"tile" + stateClass(props, f.id)}
           {...handlers(props, f.id, () => props.onOpenFile(f))}
         >
-          <ActionButton className="tile-action" vm={f} onAction={props.onAction} />
+          <ActionButton className="absolute top-1.5 right-1.5" vm={f} onAction={props.onAction} />
           <FileGlyph vm={f} size="large" />
           <FileName props={props} vm={f} className="tile-name clamp" />
           {f.showBar && <ProgressBar className="tile-bar" pct={f.pct} color={f.color} />}
@@ -242,7 +235,7 @@ export function ListView(props: ItemViewProps) {
             <span className="row-size">{f.sizeLabel}</span>
             <ProgressBar className="row-bar" pct={f.pct} color={f.color} />
             <div className="row-actions">
-              <ActionButton className="row-action" vm={f} onAction={props.onAction} />
+              <ActionButton vm={f} onAction={props.onAction} />
             </div>
           </div>
         ))}

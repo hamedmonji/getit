@@ -83,14 +83,14 @@ export function FileIcon({ kind, ext, reveal = 100, edge = false, hue = 240, hid
           <path
             d="M15 4h24l13 13v41a2 2 0 0 1-2 2H15a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
             fill="var(--panel)"
-            stroke="var(--muted)"
+            stroke="var(--ink-muted)"
             strokeOpacity={0.35}
             strokeWidth={1.2}
           />
           <path
             d="M39 4v11a2 2 0 0 0 2 2h11"
             fill="var(--panel2)"
-            stroke="var(--muted)"
+            stroke="var(--ink-muted)"
             strokeOpacity={0.35}
             strokeWidth={1.2}
             strokeLinejoin="round"
@@ -115,11 +115,11 @@ export function FileIcon({ kind, ext, reveal = 100, edge = false, hue = 240, hid
               ))}
             </linearGradient>
           </defs>
-          <circle cx={32} cy={31} r={27} fill={`url(#sg${uid})`} stroke="var(--muted)" strokeOpacity={0.3} />
+          <circle cx={32} cy={31} r={27} fill={`url(#sg${uid})`} stroke="var(--ink-muted)" strokeOpacity={0.3} />
           <circle cx={32} cy={31} r={20} fill="none" stroke="#fff" strokeOpacity={0.35} strokeWidth={0.8} />
           <circle cx={32} cy={31} r={14} fill="none" stroke="#fff" strokeOpacity={0.25} strokeWidth={0.8} />
           <path d="M32 31L14 12A27 27 0 0 1 27 4.5z" fill="#fff" opacity={0.35} />
-          <circle cx={32} cy={31} r={8} fill="var(--panel)" stroke="var(--muted)" strokeOpacity={0.3} />
+          <circle cx={32} cy={31} r={8} fill="var(--panel)" stroke="var(--ink-muted)" strokeOpacity={0.3} />
           <circle cx={32} cy={31} r={3} fill={t.c1} opacity={0.6} />
           <rect x={32 - pillW / 2} y={52} width={pillW} height={11} rx={5.5} fill={t.c1} />
           <text x={32} y={60.2} textAnchor="middle" fill="#fff" fontSize={7.5} style={MONO}>

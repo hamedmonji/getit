@@ -105,13 +105,15 @@ export function shortcutFor(e: KeyPress, ctx: ShortcutContext): Shortcut | null 
 }
 
 interface Options {
-  /** Shortcuts are off while a menu is open. */
-  menuOpen: boolean;
   settingsOpen: boolean;
   selectionCount: number;
 }
 
-/** Runs `handlers` for the window's keyboard shortcuts; text fields keep their keys. */
+/**
+ * Runs `handlers` for the window's keyboard shortcuts. Text fields and open menus
+ * keep their keys, and so does a key something already handled, such as the
+ * Escape that closes a menu or dialog.
+ */
 export function useShortcuts(options: Options, handlers: Record<ShortcutAction, (e: KeyboardEvent) => void>) {
   const latest = useRef({ options, handlers });
   latest.current = { options, handlers };
@@ -119,7 +121,8 @@ export function useShortcuts(options: Options, handlers: Record<ShortcutAction, 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { options, handlers } = latest.current;
-      if (e.target instanceof HTMLInputElement || options.menuOpen) return;
+      const inMenu = e.target instanceof Element && !!e.target.closest('[role="menu"]');
+      if (e.target instanceof HTMLInputElement || inMenu || e.defaultPrevented) return;
       const shortcut = shortcutFor(e, {
         isMac: IS_MAC,
         settingsOpen: options.settingsOpen,

@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 import type { DownloadItem } from "../lib/engine";
 import { formatEta, formatSize, formatSpeed } from "../lib/format";
 import type { FileVm } from "../lib/viewModels";
@@ -64,7 +65,7 @@ export function Details({
           {vm.missing ? "Finished · file missing" : STATUS[item.status]}
         </span>
         <div className="spacer" />
-        <ActionButton className="details-action" vm={vm} onAction={onAction} />
+        <ActionButton variant="secondary" vm={vm} onAction={onAction} />
       </div>
       {!vm.done && <ProgressBar className="details-bar" pct={pct} color={vm.color} />}
       <dl className="details-grid">
@@ -75,9 +76,9 @@ export function Details({
           {item.url}
         </Row>
         <Row label="Folder">
-          <button className="details-link ellipsis" title="Show in folder" onClick={onReveal}>
-            {folder}
-          </button>
+          <Button variant="link" size="xs" className="h-auto max-w-full p-0" title="Show in folder" onClick={onReveal}>
+            <span className="ellipsis">{folder}</span>
+          </Button>
         </Row>
         <Row label="Resumable">{resumable}</Row>
         <Row label="Added">{new Date(item.added_at).toLocaleString()}</Row>
@@ -119,9 +120,9 @@ function Row({
       <dd className={cls}>
         <span className="details-text">{children}</span>
         {copy !== undefined && onCopy && (
-          <button className="plain-btn details-copy" onClick={() => onCopy(copy)}>
+          <Button variant="outline" size="xs" onClick={() => onCopy(copy)}>
             Copy
-          </button>
+          </Button>
         )}
       </dd>
     </>
