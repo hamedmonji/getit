@@ -26,7 +26,7 @@ export function Settings({
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
       {/* The sections describe themselves; there's no one description for the dialog. */}
-      <DialogContent aria-describedby={undefined}>
+      <DialogContent aria-describedby={undefined} className="[&_[data-slot=dialog-close]]:text-ink-muted">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
@@ -109,7 +109,7 @@ function SortList({ order, onChange }: { order: SortKey[]; onChange: (order: Sor
             <ItemContent>
               <ItemTitle>{SORT_LABELS[key]}</ItemTitle>
             </ItemContent>
-            <ItemActions className="text-muted-foreground">
+            <ItemActions className="text-ink-muted">
               <GripIcon />
             </ItemActions>
           </li>

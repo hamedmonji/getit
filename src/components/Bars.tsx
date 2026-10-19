@@ -102,24 +102,31 @@ export interface ToolbarProps {
   onToggleSettings: () => void;
 }
 
+// The design's icon colours where shadcn's differ: a disabled icon drops to the
+// track colour rather than fading the button, and a pressed one is tinted.
+const DISABLED = "disabled:opacity-100 disabled:text-track";
+const PRESSED =
+  "aria-pressed:bg-tint-soft aria-pressed:text-tint data-[state=on]:bg-tint-soft data-[state=on]:text-tint";
+
 export function Toolbar(p: ToolbarProps) {
   return (
     <div className="toolbar" data-tauri-drag-region>
       {IS_MAC && <div className="traffic-light-space" data-tauri-drag-region />}
       <div className="nav-buttons">
-        <Button variant="ghost" size="icon" title={`Back (${MOD}[)`} disabled={!p.canBack} onClick={p.onBack}>
+        <Button variant="ghost" size="icon" className={DISABLED} title={`Back (${MOD}[)`} disabled={!p.canBack} onClick={p.onBack}>
           <BackIcon />
         </Button>
-        <Button variant="ghost" size="icon" title={`Forward (${MOD}])`} disabled={!p.canForward} onClick={p.onForward}>
+        <Button variant="ghost" size="icon" className={DISABLED} title={`Forward (${MOD}])`} disabled={!p.canForward} onClick={p.onForward}>
           <ForwardIcon />
         </Button>
-        <Button variant="ghost" size="icon" title="Enclosing folder" disabled={!p.canUp} onClick={p.onUp}>
+        <Button variant="ghost" size="icon" className={DISABLED} title="Enclosing folder" disabled={!p.canUp} onClick={p.onUp}>
           <UpIcon />
         </Button>
       </div>
       <AddressBar {...p} />
       <Toggle
         variant="outline"
+        className={PRESSED}
         title={`${p.showAllFolders ? "Show only folders with downloads" : "Show all folders"} (${MOD}.)`}
         pressed={p.showAllFolders}
         onPressedChange={p.onToggleFolders}
@@ -135,7 +142,13 @@ export function Toolbar(p: ToolbarProps) {
         onValueChange={(m) => m && p.onMode(m as ViewMode)}
       >
         {(["Icons", "List"] as const).map((m, i) => (
-          <ToggleGroupItem key={m} value={m} title={`${m} (${MOD}${i + 1})`} aria-label={m}>
+          <ToggleGroupItem
+            key={m}
+            value={m}
+            className="text-ink-muted data-[state=on]:text-ink"
+            title={`${m} (${MOD}${i + 1})`}
+            aria-label={m}
+          >
             {m === "Icons" ? <GridIcon /> : <ListIcon />}
           </ToggleGroupItem>
         ))}
@@ -143,6 +156,7 @@ export function Toolbar(p: ToolbarProps) {
       <Button
         variant="outline"
         size="icon"
+        className={DISABLED}
         title={
           p.queueState === "empty"
             ? "Nothing to download in this queue"
@@ -163,7 +177,7 @@ export function Toolbar(p: ToolbarProps) {
       </Button>
       <Toggle
         variant="outline"
-        className="relative"
+        className={`relative ${PRESSED}`}
         title={`${p.overviewOpen ? "Hide overview" : "Show overview"} (${MOD}O)`}
         pressed={p.overviewOpen}
         onPressedChange={p.onToggleOverview}
@@ -265,7 +279,7 @@ function AddressBar(p: ToolbarProps) {
   const typingPath = isPathLike(text) && text !== p.cwdLabel;
   return (
     <InputGroup className="mx-6 flex-1">
-      <InputGroupAddon>{isPathLike(text) ? <FolderIcon /> : <SearchIcon />}</InputGroupAddon>
+      <InputGroupAddon className="text-ink-muted">{isPathLike(text) ? <FolderIcon /> : <SearchIcon />}</InputGroupAddon>
       <InputGroupInput
         ref={input}
         className="font-mono"
@@ -314,7 +328,7 @@ function AddressBar(p: ToolbarProps) {
           )}
           <SearchFilter kinds={p.searchKinds} onKinds={p.onSearchKinds} onClosed={() => input.current?.focus()} />
           {p.query && (
-            <InputGroupButton size="icon-xs" title="Clear search" onMouseDown={(e) => e.preventDefault()} onClick={close}>
+            <InputGroupButton size="icon-xs" className="text-ink-muted" title="Clear search" onMouseDown={(e) => e.preventDefault()} onClick={close}>
               <CloseIcon />
             </InputGroupButton>
           )}
@@ -343,7 +357,12 @@ function SearchFilter({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <InputGroupButton
-          variant={kinds.length ? "secondary" : "ghost"}
+          // Tinted while it filters, even when hovered or open.
+          className={
+            kinds.length
+              ? "bg-tint-soft text-tint hover:bg-tint-soft hover:text-tint aria-expanded:bg-tint-soft aria-expanded:text-tint"
+              : "text-ink-muted"
+          }
           size={only ? "xs" : "icon-xs"}
           title="Search only folders or files"
         >
@@ -773,7 +792,7 @@ export function StatusBar({
       <Button
         variant="ghost"
         size="icon-xs"
-        className="-mr-1.5"
+        className="-mr-1.5 aria-pressed:text-ink"
         title={`${detailsOpen ? "Hide" : "Show"} details (${MOD}I)`}
         aria-pressed={detailsOpen}
         onClick={onToggleDetails}

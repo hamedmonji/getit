@@ -1,5 +1,6 @@
 import type { MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { isMediaKind } from "../lib/fileKind";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { FileIcon } from "./FileIcon";
@@ -65,7 +66,7 @@ export function ActionButton({
     <Button
       variant={variant}
       size={size}
-      className={className}
+      className={cn(variant === "ghost" ? "text-ink-muted" : "text-ink", className)}
       title={vm.actionLabel}
       onClick={onClick}
       onDoubleClick={(e) => e.stopPropagation()}

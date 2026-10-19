@@ -46,7 +46,7 @@ export function QueueSettings({
         </div>
         }
         <span className="overview-total" />
-        <Button variant="ghost" size="icon-sm" title="Close" onClick={onClose}>
+        <Button variant="ghost" size="icon-sm" className="text-ink-muted" title="Close" onClick={onClose}>
           <CloseIcon />
         </Button>
       </div>
