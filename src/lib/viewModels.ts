@@ -148,8 +148,8 @@ export function fileVm(
       : `${formatSize(item.downloaded)} · ${formatSpeed(speed)}`;
   } else if (waiting) status = `${pct}%`;
   else if (item.status === "queued") status = `Queued #${queuedIds.indexOf(item.id) + 1}`;
-  else if (item.status === "paused") status = `Paused · ${pct}%`;
-  else if (item.status === "failed") status = `Failed at ${pct}%`;
+  else if (item.status === "paused") status = `Paused`;
+  else if (item.status === "failed") status = `Failed`;
   if (mode === "Icons") {
     if (done && !missing) status = formatSize(total ?? item.downloaded);
     else if (active && total) status = `${pct}% · ${formatEta(etaS)} left`;

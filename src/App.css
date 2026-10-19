@@ -575,7 +575,8 @@ body {
 /* List view */
 
 .list {
-  min-width: 640px;
+  /* The columns, plus the rows' padding, icon, and gaps. */
+  min-width: calc(var(--list-columns-width) + 122px);
 }
 
 .list-header,
@@ -589,9 +590,12 @@ body {
   position: sticky;
   top: 0;
   z-index: 1;
-  grid-template-columns: minmax(0, 1fr) 200px 80px 120px 44px;
-  padding: 0 16px 0 56px;
+  grid-template-columns: var(--list-columns);
+  /* Lines the columns up with the rows' below. */
+  padding: 0 16px 0 58px;
   height: 30px;
+  align-items: stretch;
+  line-height: 30px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   font-size: 11.5px;
@@ -599,8 +603,41 @@ body {
   font-weight: 500;
 }
 
-.right {
-  text-align: right;
+.list-column {
+  position: relative;
+  min-width: 0;
+}
+
+/* Fills the gap after a header cell, with a line down its middle. */
+.col-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -11px;
+  width: 10px;
+  z-index: 1;
+  cursor: col-resize;
+}
+
+.col-divider::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 5px;
+  width: 1px;
+  background: var(--line);
+}
+
+.col-divider:hover::after,
+.col-divider:active::after {
+  background: var(--ink-muted);
+}
+
+/* Keeps the cursor while a divider is dragged past the header. */
+.col-resizing,
+.col-resizing * {
+  cursor: col-resize !important;
 }
 
 .list-rows {
@@ -608,7 +645,7 @@ body {
 }
 
 .row {
-  grid-template-columns: 28px minmax(0, 1fr) 200px 80px 120px 44px;
+  grid-template-columns: 28px var(--list-columns);
   padding: 0 10px 0 12px;
   border-radius: 7px;
 }
@@ -649,10 +686,6 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.row-size {
-  text-align: right;
 }
 
 .row-bar {

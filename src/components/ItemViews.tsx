@@ -1,4 +1,15 @@
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { useColumnWidths } from "../hooks/useColumnWidths";
+import { swallowClick } from "../hooks/useItemDrag";
+import {
+  COLUMN_LABELS,
+  COLUMNS,
+  columnTemplate,
+  columnsWidth,
+  pinName,
+  resetColumn,
+  resizeColumn,
+} from "../lib/columns";
 import { splitName } from "../lib/paths";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { ActionButton, FileGlyph, FolderGlyph, ProgressBar } from "./Glyphs";
@@ -195,14 +206,82 @@ export function IconView(props: ItemViewProps) {
   );
 }
 
-export function ListView(props: ItemViewProps) {
+/**
+ * The divider after a header cell: dragging it sizes that column, and
+ * double-clicking puts the column back to its default width.
+ */
+function ColumnDivider({
+  label,
+  onStart,
+  onResize,
+  onReset,
+}: {
+  label: string;
+  onStart: () => void;
+  onResize: (width: number) => void;
+  onReset: () => void;
+}) {
+  const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    // Not a press on the list, which would draw a selection box.
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = e.currentTarget.parentElement!.getBoundingClientRect().width;
+    onStart();
+    const root = document.documentElement;
+    root.classList.add("col-resizing");
+    const onMove = (m: globalThis.MouseEvent) => onResize(startWidth + m.clientX - startX);
+    const onUp = () => {
+      swallowClick();
+      stop();
+    };
+    const stop = () => {
+      root.classList.remove("col-resizing");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", stop);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", stop);
+  };
   return (
-    <div className="list">
+    <div
+      className="col-divider"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${label}`}
+      onMouseDown={onMouseDown}
+      onDoubleClick={(e) => {
+        e.stopPropagation();
+        onReset();
+      }}
+    />
+  );
+}
+
+export function ListView(props: ItemViewProps) {
+  const [widths, setWidths] = useColumnWidths();
+  const nameCell = useRef<HTMLDivElement>(null);
+  const columns = {
+    "--list-columns": columnTemplate(widths),
+    "--list-columns-width": `${columnsWidth(widths)}px`,
+  } as CSSProperties;
+  return (
+    <div className="list" style={columns}>
       <div className="list-header">
-        <span>Name</span>
-        <span>Status</span>
-        <span className="right">Size</span>
-        <span>Progress</span>
+        {COLUMNS.map((key) => (
+          <div key={key} ref={key === "name" ? nameCell : undefined} className="list-column">
+            <div className="ellipsis">{COLUMN_LABELS[key]}</div>
+            <ColumnDivider
+              label={COLUMN_LABELS[key]}
+              onStart={() => setWidths((w) => pinName(w, nameCell.current!.getBoundingClientRect().width))}
+              onResize={(width) => setWidths((w) => resizeColumn(w, key, width))}
+              onReset={() => setWidths((w) => resetColumn(w, key))}
+            />
+          </div>
+        ))}
         <span />
       </div>
       <div className="list-rows">
@@ -216,8 +295,8 @@ export function ListView(props: ItemViewProps) {
             <FolderGlyph vm={g} size="small" />
             <FolderName props={props} path={g.path} name={g.name} className="row-name" />
             <span className="row-sub">{g.sub}</span>
-            <span className="row-size">{g.sizeLabel}</span>
             <ProgressBar className="row-bar" pct={g.pct} color={g.barColor} />
+            <span className="row-size">{g.sizeLabel}</span>
             <span />
           </div>
         ))}
@@ -232,8 +311,8 @@ export function ListView(props: ItemViewProps) {
             <span className="row-status" title={f.status}>
               {f.status}
             </span>
-            <span className="row-size">{f.sizeLabel}</span>
             <ProgressBar className="row-bar" pct={f.pct} color={f.color} />
+            <span className="row-size">{f.sizeLabel}</span>
             <div className="row-actions">
               <ActionButton vm={f} onAction={props.onAction} />
             </div>
@@ -246,8 +325,8 @@ export function ListView(props: ItemViewProps) {
               {f.name}
             </span>
             <span className="row-status">{f.status}</span>
-            <span className="row-size">{f.sizeLabel}</span>
             <span />
+            <span className="row-size">{f.sizeLabel}</span>
             <span />
           </div>
         ))}
