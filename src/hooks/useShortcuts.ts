@@ -34,7 +34,7 @@ export interface ShortcutContext {
   settingsOpen: boolean;
   /** How many items are selected in view. */
   selectionCount: number;
-  /** Whether a button has focus, which takes Return itself. */
+  /** Whether a button has focus, which takes Return and Space itself. */
   onButton: boolean;
 }
 
@@ -56,8 +56,8 @@ export interface Shortcut {
  * removes the selected downloads from the list (finished files stay);
  * Command-A selects everything in the folder; Command-Down opens the selected
  * item and Command-Up goes to the enclosing folder (Control-A and Alt-arrows elsewhere);
- * Return renames the selected folder or file, as in Finder; / opens the search, like
- * Command-F and Command-L.
+ * Return renames the selected folder or file, as in Finder; Space shows or hides the
+ * download details; / opens the search, like Command-F and Command-L.
  */
 export function shortcutFor(e: KeyPress, ctx: ShortcutContext): Shortcut | null {
   const command = ctx.isMac ? e.metaKey : e.ctrlKey;
@@ -80,7 +80,6 @@ export function shortcutFor(e: KeyPress, ctx: ShortcutContext): Shortcut | null 
   if (key === "v" && command) return prevent("paste");
   if ((key === "c" || key === "x") && command && ctx.selectionCount) return prevent(key === "x" ? "cut" : "copy");
   if ((e.key === "[" || e.key === "]") && command) return prevent(e.key === "[" ? "back" : "forward");
-  if (key === "i" && command) return prevent("details");
   if (key === "o" && command) return prevent("overview");
   if (e.key === "," && command) return prevent("settings");
   if ((e.key === "/" || e.code === "Slash") && command && !e.shiftKey) return prevent("queuePanel");
@@ -97,6 +96,9 @@ export function shortcutFor(e: KeyPress, ctx: ShortcutContext): Shortcut | null 
     ctx.selectionCount === 1
   ) {
     return prevent("rename");
+  }
+  if (e.key === " " && !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) && !ctx.onButton) {
+    return prevent("details");
   }
   if (e.key === "Escape") return plain("escape");
   if (key === "z" && command && !e.shiftKey) return prevent("undo");

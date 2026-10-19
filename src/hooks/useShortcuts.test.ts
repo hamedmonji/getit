@@ -26,7 +26,6 @@ describe("shortcutFor", () => {
     expect(action(cmd("v"))).toBe("paste");
     expect(action(cmd("["))).toBe("back");
     expect(action(cmd("]"))).toBe("forward");
-    expect(action(cmd("i"))).toBe("details");
     expect(action(cmd("o"))).toBe("overview");
     expect(action(cmd(","))).toBe("settings");
     expect(action(cmd("/"))).toBe("queuePanel");
@@ -108,6 +107,18 @@ describe("shortcutFor", () => {
       expect(action(press("Enter"), { ...mac, selectionCount: 2 })).toBeNull();
       expect(action(press("Enter", { shiftKey: true }), one)).toBeNull();
       expect(action(press("Enter"), { ...one, onButton: true })).toBeNull();
+    });
+  });
+
+  describe("Space", () => {
+    it("shows or hides the details", () => {
+      expect(shortcutFor(press(" "), mac)).toEqual({ action: "details", preventDefault: true });
+    });
+
+    it("does nothing with a modifier or a focused button", () => {
+      expect(action(press(" ", { shiftKey: true }))).toBeNull();
+      expect(action(cmd(" "))).toBeNull();
+      expect(action(press(" "), { ...mac, onButton: true })).toBeNull();
     });
   });
 

@@ -794,7 +794,7 @@ export function StatusBar({
         variant="ghost"
         size="icon-xs"
         className="-mr-1.5 aria-pressed:text-ink"
-        title={`${detailsOpen ? "Hide" : "Show"} details (${MOD}I)`}
+        title={`${detailsOpen ? "Hide" : "Show"} details (Space)`}
         aria-pressed={detailsOpen}
         onClick={onToggleDetails}
       >
