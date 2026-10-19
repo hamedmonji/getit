@@ -47,7 +47,6 @@ export interface MenuContext {
   /** Finished downloads in this folder's queue. */
   doneHere: number;
   clip: Clip | null;
-  pasteMode: "ask" | "always";
   query: string;
   /** The selected items in view, in display order. */
   selection: string[];
@@ -61,7 +60,6 @@ export interface MenuContext {
   pasteItems: (dest: string) => void;
   pasteLinks: (text: string) => void;
   newQueue: () => void;
-  setPasteMode: (mode: "ask" | "always") => void;
   openQueuePanel: () => void;
   onOpenFile: (vm: FileVm) => void;
   pauseDownloads: (ids: string[]) => void;
@@ -113,12 +111,6 @@ export function backgroundMenu(ctx: MenuContext): MenuItem[] {
     },
     { kind: "action", label: "New queue", shortcut: `${MOD}N`, onSelect: ctx.newQueue },
     { kind: "action", label: `Open in ${FILE_MANAGER}`, onSelect: () => report(engine.openPath(cwd)) },
-    {
-      kind: "action",
-      label: "Ask before adding pasted links",
-      checked: ctx.pasteMode === "ask",
-      onSelect: () => ctx.setPasteMode(ctx.pasteMode === "ask" ? "always" : "ask"),
-    },
   );
   if (queue) {
     const { settings } = queue;

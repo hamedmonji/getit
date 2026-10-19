@@ -654,7 +654,6 @@ export default function App() {
     summary,
     doneHere: own.done,
     clip,
-    pasteMode,
     query,
     selection,
     selected,
@@ -667,7 +666,6 @@ export default function App() {
     pasteItems,
     pasteLinks,
     newQueue,
-    setPasteMode,
     openQueuePanel: () => setQueuePanel("open"),
     onOpenFile,
     pauseDownloads,
@@ -995,7 +993,14 @@ export default function App() {
         onToggleDetails={toggleDetails}
       />
 
-      <Settings open={settingsOpen} sortOrder={sortOrder} onSortOrder={setSortOrder} onClose={closeSettings} />
+      <Settings
+        open={settingsOpen}
+        sortOrder={sortOrder}
+        onSortOrder={setSortOrder}
+        pasteMode={pasteMode}
+        onPasteMode={setPasteMode}
+        onClose={closeSettings}
+      />
       {drag && (
         <div className="drag-ghost" style={{ left: drag.x + 14, top: drag.y + 10 }}>
           {drag.keys.length === 1 ? nameOf(drag.keys[0]) : plural(drag.keys.length, "item")}

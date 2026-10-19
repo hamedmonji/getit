@@ -1,6 +1,8 @@
-import { useRef, useState, type PointerEvent } from "react";
+import { useId, useRef, useState, type PointerEvent } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Item, ItemActions, ItemContent, ItemTitle } from "@/components/ui/item";
+import { Label } from "@/components/ui/label";
 import { SORT_LABELS, type SortKey } from "../lib/sort";
 import { GripIcon } from "./icons";
 
@@ -9,20 +11,26 @@ const DRAG_THRESHOLD = 4;
 
 /**
  * The settings dialog, centred over the app, with settings that apply
- * everywhere, in sections. For now only the sort order: files are sorted by the
- * top key, then the next for ties. Closes on a click outside it or Escape.
+ * everywhere, in sections: the sort order, where files are sorted by the top
+ * key, then the next for ties; and whether pasted links are added without
+ * asking. Closes on a click outside it or Escape.
  */
 export function Settings({
   open,
   sortOrder,
   onSortOrder,
+  pasteMode,
+  onPasteMode,
   onClose,
 }: {
   open: boolean;
   sortOrder: SortKey[];
   onSortOrder: (order: SortKey[]) => void;
+  pasteMode: "ask" | "always";
+  onPasteMode: (mode: "ask" | "always") => void;
   onClose: () => void;
 }) {
+  const askId = useId();
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
       {/* The sections describe themselves; there's no one description for the dialog. */}
@@ -36,6 +44,20 @@ export function Settings({
           <p className="settings-note">
             Sorted by the first, then by the next where they're equal. Drag to reorder, or click one to put it
             first. This doesn't change the order downloads run in.
+          </p>
+        </section>
+        <section className="settings-section">
+          <h3 className="settings-heading">Pasted links</h3>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={askId}
+              checked={pasteMode === "ask"}
+              onCheckedChange={(checked) => onPasteMode(checked === true ? "ask" : "always")}
+            />
+            <Label htmlFor={askId}>Ask before adding pasted links</Label>
+          </div>
+          <p className="settings-note">
+            When off, pasted links go straight into the current folder's queue.
           </p>
         </section>
       </DialogContent>

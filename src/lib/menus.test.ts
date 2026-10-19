@@ -41,7 +41,6 @@ function contextFor(items: DownloadItem[], overrides: Partial<MenuContext> = {},
     summary: "",
     doneHere: items.filter((d) => d.status === "completed").length,
     clip: null,
-    pasteMode: "ask",
     query: "",
     selection: [],
     selected: new Set(),
@@ -54,7 +53,6 @@ function contextFor(items: DownloadItem[], overrides: Partial<MenuContext> = {},
     pasteItems: vi.fn(),
     pasteLinks: vi.fn(),
     newQueue: vi.fn(),
-    setPasteMode: vi.fn(),
     openQueuePanel: vi.fn(),
     onOpenFile: vi.fn(),
     pauseDownloads: vi.fn(),
@@ -125,14 +123,6 @@ describe("backgroundMenu", () => {
     const ctx = contextFor([]);
     find(backgroundMenu(ctx), "Paste link").onSelect();
     await vi.waitFor(() => expect(ctx.pasteLinks).toHaveBeenCalledWith("https://example.com/x.zip"));
-  });
-
-  it("toggles asking before adding pasted links", () => {
-    const ctx = contextFor([]);
-    const ask = find(backgroundMenu(ctx), "Ask before adding pasted links");
-    expect(ask.checked).toBe(true);
-    ask.onSelect();
-    expect(ctx.setPasteMode).toHaveBeenCalledWith("always");
   });
 
   it("pauses a running queue, and only when it has work", () => {
