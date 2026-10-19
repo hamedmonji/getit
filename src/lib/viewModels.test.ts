@@ -127,7 +127,7 @@ describe("fileVm", () => {
 
   it("offers to resume a paused download", () => {
     expect(vmOf({ status: "paused", downloaded: 40 })).toMatchObject({
-      status: "Paused · 40%",
+      status: "Paused",
       action: "resume",
       actionLabel: "Resume",
     });
@@ -136,7 +136,7 @@ describe("fileVm", () => {
   it("offers to retry a failed download, with its error", () => {
     const vm = vmOf({ status: "failed", downloaded: 40, error: "timed out" });
     expect(vm).toMatchObject({
-      status: "Failed at 40%",
+      status: "Failed",
       action: "retry",
       actionLabel: "Retry",
       color: "var(--danger)",
