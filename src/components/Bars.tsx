@@ -133,10 +133,11 @@ export function Toolbar(p: ToolbarProps) {
       >
         <FolderIcon />
       </Toggle>
+      {/* A segmented control: the selected view is raised out of a recessed track. */}
       <ToggleGroup
         type="single"
-        variant="outline"
-        spacing={0}
+        spacing={0.5}
+        className="h-8 border border-line bg-panel2 p-0.5"
         value={p.mode}
         // Clicking the selected view would clear it; there's always one.
         onValueChange={(m) => m && p.onMode(m as ViewMode)}
@@ -145,7 +146,7 @@ export function Toolbar(p: ToolbarProps) {
           <ToggleGroupItem
             key={m}
             value={m}
-            className="text-ink-muted data-[state=on]:text-ink"
+            className="h-full w-[30px] min-w-0 rounded-md px-0 text-ink-muted hover:bg-transparent hover:text-ink data-[state=on]:bg-panel data-[state=on]:text-ink data-[state=on]:shadow-[0_1px_2px_rgba(0,0,0,0.12)]"
             title={`${m} (${MOD}${i + 1})`}
             aria-label={m}
           >
