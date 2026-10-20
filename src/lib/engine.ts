@@ -93,6 +93,8 @@ export const engine = {
   fileExists: (dir: string, name: string) => invoke<boolean>("file_exists", { dir, name }),
   /** Adds a link to the queue for `dir`: in line if the queue runs, started right away if it's paused. */
   addDownload: (dir: string, url: string) => invoke<DownloadId>("add_download", { dir, url }),
+  /** Links the browser extension sent before the window listened for them; call once listening. */
+  takeBrowserLinks: () => invoke<Captured[]>("take_browser_links"),
   pause: (id: DownloadId) => invoke<void>("pause_download", { id }),
   /** Starts a waiting, paused or failed download right away, past its queue's limit or pause. */
   resume: (id: DownloadId) => invoke<void>("resume_download", { id }),

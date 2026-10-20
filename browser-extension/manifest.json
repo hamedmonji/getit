@@ -3,13 +3,15 @@
   "name": "getit",
   "version": "0.1.0",
   "description": "Send links to the getit download manager.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0fj0+uHbCmMjRftS1iwdcYYIWtU7lt3N62vQq1NrYcZCRQgaimwPs7LXGkC+SXhxyPLZVFr35hNbw+vTE3ESAyHJr6RI3NjdYbLDULonV40Ox0r4aKrX/dSAW0QAMgVKwWgQzQkOBnPpkvFUsYVlXpXiZFdg/Th6aXXWG5vceJY4z1gupnCo3t2QTfD2ySlqLIAhXvTGBCy5wipGeeJZcs+Pghz+STLPyX244gRe1gTS6JQhbM5/H4hw+7EvYjOT0zktI5ya1TJQkp8J4CEquUKirK5MVArhA/kmXsYbq7gDvAVwgAr04+67X8ROAg21gw9SyoO0DxWrJDs8wZXVPQIDAQAB",
   "permissions": [
     "contextMenus",
     "notifications",
     "scripting",
     "activeTab",
     "downloads",
-    "storage"
+    "storage",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "http://127.0.0.1:47615/*"

@@ -4,11 +4,18 @@
 //! links are handed to the frontend, which shows them as captured until the user
 //! adds them to a folder. Only requests from extension pages are accepted, so a
 //! website can't add downloads by calling the port itself.
+//!
+//! When the app isn't running, the extension starts it through the `getit://`
+//! link scheme and sends the links once this listener answers. The listener is
+//! up before the window is, so links that arrive before the frontend asks for
+//! them with `take_browser_links` wait in the [`Inbox`].
 
+use std::mem;
+use std::sync::Mutex;
 use std::thread;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 /// Must match `PORT` in `browser-extension/background.js`.
@@ -27,10 +34,42 @@ struct AddRequest {
 }
 
 /// What the frontend gets.
-#[derive(Clone, Serialize)]
-struct Captured {
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Captured {
     urls: Vec<String>,
     title: Option<String>,
+}
+
+/// Holds links until the frontend is listening for them.
+#[derive(Default)]
+pub struct Inbox {
+    ready: bool,
+    pending: Vec<Captured>,
+}
+
+impl Inbox {
+    /// Returns `captured` if the frontend is listening, to be sent now;
+    /// otherwise keeps it for [`Inbox::open`].
+    fn receive(&mut self, captured: Captured) -> Option<Captured> {
+        if self.ready {
+            return Some(captured);
+        }
+        self.pending.push(captured);
+        None
+    }
+
+    /// Marks the frontend as listening and hands over what arrived before it was.
+    fn open(&mut self) -> Vec<Captured> {
+        self.ready = true;
+        mem::take(&mut self.pending)
+    }
+}
+
+/// Called by the frontend once it listens for links; returns those that came
+/// in before it did.
+#[tauri::command]
+pub fn take_browser_links(inbox: State<'_, Mutex<Inbox>>) -> Vec<Captured> {
+    inbox.lock().expect("inbox lock").open()
 }
 
 /// Starts listening on a background thread. If the port is taken the app runs
@@ -70,7 +109,10 @@ fn handle(app: &AppHandle, mut request: Request) {
                 return respond(request, 400, "no http(s) links");
             }
             let title = add.title.filter(|t| !t.trim().is_empty());
-            if app.emit(LINKS, Captured { urls, title }).is_err() {
+            let ready = app.state::<Mutex<Inbox>>().lock().expect("inbox lock").receive(Captured { urls, title });
+            if let Some(captured) = ready
+                && app.emit(LINKS, captured).is_err()
+            {
                 return respond(request, 500, "couldn't reach the window");
             }
             bring_to_front(app);
@@ -104,4 +146,29 @@ fn bring_to_front(app: &AppHandle) {
 fn respond(request: Request, status: u16, text: &str) {
     let header = Header::from_bytes("Content-Type", "text/plain; charset=utf-8").expect("valid header");
     let _ = request.respond(Response::from_string(text).with_status_code(status).with_header(header));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn captured(url: &str) -> Captured {
+        Captured { urls: vec![url.into()], title: None }
+    }
+
+    #[test]
+    fn inbox_keeps_links_until_opened() {
+        let mut inbox = Inbox::default();
+        assert_eq!(inbox.receive(captured("https://a")), None);
+        assert_eq!(inbox.receive(captured("https://b")), None);
+        assert_eq!(inbox.open(), vec![captured("https://a"), captured("https://b")]);
+    }
+
+    #[test]
+    fn inbox_passes_links_through_once_opened() {
+        let mut inbox = Inbox::default();
+        assert!(inbox.open().is_empty());
+        assert_eq!(inbox.receive(captured("https://a")), Some(captured("https://a")));
+        assert!(inbox.open().is_empty());
+    }
 }

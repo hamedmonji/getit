@@ -1,5 +1,8 @@
 mod browser;
 mod commands;
+pub mod native_host;
+
+use std::sync::Mutex;
 
 use getit_engine::{Engine, JsonDirStore};
 use tauri::async_runtime;
@@ -19,6 +22,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // Registers the `getit://` scheme, which the browser extension opens to
+        // start the app; the link itself carries nothing.
+        .plugin(tauri_plugin_deep_link::init())
+        .manage(Mutex::new(browser::Inbox::default()))
         .setup(|app| {
             let store = JsonDirStore::new(app.path().app_data_dir()?.join("queues"))?;
             // The engine spawns its tasks on the runtime it is created in.
@@ -26,6 +33,7 @@ pub fn run() {
             forward_events(app.handle().clone(), &engine);
             app.manage(engine);
             browser::listen(app.handle().clone());
+            native_host::register(&app.path().home_dir()?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -52,6 +60,7 @@ pub fn run() {
             commands::set_queue_settings,
             commands::reorder_queue,
             commands::clear_completed,
+            browser::take_browser_links,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

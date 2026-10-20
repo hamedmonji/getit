@@ -5,6 +5,14 @@
 // Must match `PORT` in src-tauri/src/browser.rs.
 const PORT = 47615;
 const APP = `http://127.0.0.1:${PORT}`;
+// Registered by the app (src-tauri/src/native_host.rs); asking it to run
+// starts getit without a tab or a prompt.
+const NATIVE_HOST = "com.hamedmonji.getit";
+// Registered by the app (`deep-link` in src-tauri/tauri.conf.json); opening it
+// starts getit, for when the native host isn't registered.
+const LAUNCH_URL = "getit://open";
+// How long to wait for getit to start before giving up.
+const LAUNCH_TIMEOUT_MS = 20000;
 
 const MENU_LINK = "getit-link";
 const MENU_MEDIA = "getit-media";
@@ -76,9 +84,9 @@ function linksInSelection() {
 }
 
 // When "Send browser downloads to getit" is on (options.html), new browser
-// downloads are paused and offered to getit. If getit takes them, the browser's
-// copy is cancelled and erased from its list; otherwise it carries on, so
-// nothing is lost while the app isn't running.
+// downloads are paused and offered to getit, starting it if it isn't running.
+// If getit takes them, the browser's copy is cancelled and erased from its
+// list; otherwise it carries on, so nothing is lost when getit can't start.
 chrome.downloads.onCreated.addListener(async (item) => {
   const { takeOver } = await chrome.storage.local.get({ takeOver: false });
   const url = item.finalUrl || item.url;
@@ -88,7 +96,7 @@ chrome.downloads.onCreated.addListener(async (item) => {
   const [now] = await chrome.downloads.search({ id: item.id });
   if (now?.state !== "in_progress") return;
   try {
-    await post([url]);
+    await postStarting([url]);
   } catch {
     await chrome.downloads.resume(item.id).catch(() => {});
     return;
@@ -118,16 +126,77 @@ async function send(urls, title) {
     return;
   }
   try {
-    await post(urls, title);
+    await postStarting(urls, title);
     flashBadge("✓", "#2e7d32");
   } catch (e) {
     flashBadge("!", "#c62828");
-    const unreachable = e instanceof TypeError;
-    notify(
-      unreachable ? "getit isn't running" : "getit couldn't add the links",
-      unreachable ? "Open the getit app and try again." : String(e.message ?? e),
-    );
+    if (e instanceof LaunchError) {
+      notify("Couldn't start getit", "Open the getit app and try again. If the browser asked to open getit, allow it.");
+    } else {
+      notify("getit couldn't add the links", String(e.message ?? e));
+    }
   }
+}
+
+class LaunchError extends Error {}
+
+/**
+ * Like `post`, but starts getit first if it isn't running. Rejects with a
+ * `LaunchError` if it doesn't start.
+ */
+async function postStarting(urls, title) {
+  try {
+    return await post(urls, title);
+  } catch (e) {
+    // A TypeError means nothing is listening; anything else came from getit.
+    if (!(e instanceof TypeError)) throw e;
+  }
+  if (!(await launchApp())) throw new LaunchError("getit didn't start");
+  return post(urls, title);
+}
+
+let launching = null;
+
+/**
+ * Starts getit and resolves with whether it answered within
+ * `LAUNCH_TIMEOUT_MS`. Sends made while it starts share one launch.
+ */
+function launchApp() {
+  launching ??= (async () => {
+    // The native host starts it quietly; it's registered once getit has run.
+    const started = await chrome.runtime
+      .sendNativeMessage(NATIVE_HOST, { launch: true })
+      .then((reply) => reply?.ok === true)
+      .catch(() => false);
+    // Otherwise the link scheme does. The browser hands the link to the OS
+    // from a tab, asking first unless the user chose to always allow it, so
+    // the tab has to be visible.
+    const tab = started ? null : await chrome.tabs.create({ url: LAUNCH_URL, active: true }).catch(() => null);
+    try {
+      return await waitForApp(LAUNCH_TIMEOUT_MS);
+    } finally {
+      if (tab?.id) await chrome.tabs.remove(tab.id).catch(() => {});
+      launching = null;
+    }
+  })();
+  return launching;
+}
+
+async function waitForApp(timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      // Any answer means getit is listening. Its status can't be relied on:
+      // the browser may leave out the Origin header on a GET, which getit
+      // refuses.
+      await fetch(`${APP}/ping`);
+      return true;
+    } catch {
+      // Not listening yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return false;
 }
 
 function flashBadge(text, color) {

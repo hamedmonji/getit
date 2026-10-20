@@ -550,6 +550,10 @@ export default function App() {
   };
   useEffect(() => {
     const unlisten = onBrowserLinks((captured) => onCaptured.current(captured));
+    // Links that started the app arrive before the listener does.
+    unlisten
+      .then(() => engine.takeBrowserLinks())
+      .then((pending) => pending.forEach((captured) => onCaptured.current(captured)));
     return () => {
       unlisten.then((f) => f());
     };
