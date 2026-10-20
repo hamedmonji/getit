@@ -759,6 +759,33 @@ async fn clear_completed_keeps_files_and_unfinished_downloads() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn enqueue_with_shows_the_probed_name_and_size_until_it_starts() {
+    let ctx = Ctx::new().await;
+    let dir = ctx.folder("Downloads");
+    std::fs::create_dir_all(&dir).unwrap();
+    // The suggested name is taken, so the download must still pick a free one.
+    std::fs::write(dir.join("file.bin"), b"already here").unwrap();
+    let mut events = ctx.engine.subscribe();
+
+    let info = LinkInfo { file_name: "file.bin".into(), total_bytes: Some(FILE_SIZE as u64) };
+    let id = ctx.engine.enqueue_with(&dir, &ctx.url("/file.bin"), Some(info)).unwrap();
+    let added = loop {
+        match events.recv().await.unwrap() {
+            EngineEvent::DownloadAdded(item) if item.id == id => break item,
+            _ => {}
+        }
+    };
+    assert_eq!(added.suggested_name.as_deref(), Some("file.bin"));
+    assert_eq!(added.total_bytes, Some(FILE_SIZE as u64));
+    assert_eq!(added.file_name, None);
+
+    let done = wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert_ne!(done.file_name.as_deref(), Some("file.bin"));
+    assert_eq!(std::fs::read(dir.join("file.bin")).unwrap(), b"already here");
+    ctx.assert_file_matches(id);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn probe_asks_the_server() {
     let ctx = Ctx::new().await;
     let size = Some(FILE_SIZE as u64);

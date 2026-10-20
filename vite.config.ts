@@ -31,8 +31,9 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri`, and the files development
+      //    builds download, which would otherwise reload the page as they land
+      ignored: ["**/src-tauri/**", "**/test-downloads/**"],
     },
   },
 }));

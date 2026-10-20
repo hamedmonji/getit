@@ -19,6 +19,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { LinkInfo } from "../lib/engine";
 import { isPathLike } from "../lib/paths";
 import { useLinkInfo } from "../hooks/useLinkInfo";
+import { chosen, moveTo, syncOrder, syncSelected, totalLabel } from "../lib/batch";
+import { LinkBatch } from "./LinkBatch";
 import { linkHeading, type ViewMode } from "../lib/viewModels";
 import type { UpdatePhase } from "../hooks/useUpdate";
 import {
@@ -475,42 +477,87 @@ function LinkWithInfo({ url, info }: { url: string; info: LinkInfo | null | unde
 }
 
 /**
- * Links waiting at the bottom of the window to be added, listed when there are
- * several, each with its file name and size once the server has given them.
- * `children` are its checkboxes and buttons, after the links.
+ * Links waiting at the bottom of the window to be added, each with its file
+ * name and size once the server has given them. Several show as a table to
+ * tick and order them; the ticked ones are added in that order. `extra` goes
+ * before the buttons.
  */
 function LinksPrompt({
-  label,
   urls,
-  error,
-  children,
+  dirLabel,
+  closeLabel,
+  autoFocus = false,
+  extra,
+  onAdd,
+  onClose,
 }: {
-  label: ReactNode;
   urls: string[];
-  error: string | null;
-  children: ReactNode;
+  dirLabel: string;
+  closeLabel: string;
+  /** Focuses the add button, so Enter adds. */
+  autoFocus?: boolean;
+  extra?: ReactNode;
+  /**
+   * Starts adding these links, in this order. The prompt closes at once; the
+   * links show in the folder while they're checked.
+   */
+  onAdd: (urls: string[]) => void;
+  onClose: () => void;
 }) {
   const infos = useLinkInfo(urls);
+  const [order, setOrder] = useState(urls);
+  const [selected, setSelected] = useState(() => new Set(urls));
+  // Captured links can arrive or leave while this is open.
+  const [seen, setSeen] = useState(urls);
+  if (seen !== urls) {
+    setSeen(urls);
+    setOrder((o) => syncOrder(o, urls));
+    setSelected((s) => syncSelected(s, seen, urls));
+  }
+
   const batch = urls.length > 1;
+  const adding = batch ? chosen(order, selected) : urls;
+  const add = () => {
+    onAdd(adding);
+    onClose();
+  };
+
   return (
     <div className="paste-prompt">
       <div className="add-bar">
-        <span className="paste-urls">{!batch && <LinkWithInfo url={urls[0]} info={infos[urls[0]]} />}</span>
-        {error && (
-          <span className="status-warning ellipsis" title={error}>
-            {error}
-          </span>
-        )}
-        {children}
+        <span className="paste-urls">
+          {batch ? (
+            <span className="link-batch-total">{totalLabel(adding, infos)}</span>
+          ) : (
+            <LinkWithInfo url={urls[0]} info={infos[urls[0]]} />
+          )}
+        </span>
+        {extra}
+        <Button variant="outline" onClick={onClose}>
+          {closeLabel}
+        </Button>
+        <Button variant="outline" title={`Add to ${dirLabel}/`} autoFocus={autoFocus} disabled={!adding.length} onClick={add}>
+          {batch ? `Add ${adding.length} here` : "Add here"}
+        </Button>
       </div>
       {batch && (
-        <ol className="paste-list">
-          {urls.map((url) => (
-            <li key={url}>
-              <LinkWithInfo url={url} info={infos[url]} />
-            </li>
-          ))}
-        </ol>
+        <LinkBatch
+          order={order}
+          ticked={selected}
+          infos={infos}
+          onTick={(urls, ticked) =>
+            setSelected((s) => {
+              const next = new Set(s);
+              for (const url of urls) {
+                if (ticked) next.add(url);
+                else next.delete(url);
+              }
+              return next;
+            })
+          }
+          onTickAll={(ticked) => setSelected(new Set(ticked ? order : []))}
+          onMove={(urls, index) => setOrder((o) => moveTo(o, urls, index))}
+        />
       )}
     </div>
   );
@@ -525,40 +572,27 @@ export function PasteBar({
 }: {
   urls: string[];
   dirLabel: string;
-  /** Adds the links; `always` skips this prompt from now on. Rejects with a message to show. */
-  onAdd: (always: boolean) => Promise<void>;
+  /** Starts adding the chosen links, in order; `always` skips this prompt from now on. */
+  onAdd: (urls: string[], always: boolean) => void;
   onClose: () => void;
 }) {
   const [always, setAlways] = useState(false);
   const alwaysId = useId();
-  const [error, setError] = useState<string | null>(null);
-
-  const add = async () => {
-    try {
-      await onAdd(always);
-      onClose();
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
   return (
     <LinksPrompt
-      label=''
       urls={urls}
-      error={error}
-    >
-      <div className="paste-always">
-        <Checkbox id={alwaysId} checked={always} onCheckedChange={(checked) => setAlways(checked === true)} />
-        <Label htmlFor={alwaysId}>Don't ask again</Label>
-      </div>
-      <Button variant="outline" onClick={onClose}>
-        Cancel
-      </Button>
-      <Button variant="outline" title={`Add to ${dirLabel}/`} autoFocus onClick={add}>
-        Add here
-      </Button>
-    </LinksPrompt>
+      dirLabel={dirLabel}
+      closeLabel="Cancel"
+      autoFocus
+      extra={
+        <div className="paste-always">
+          <Checkbox id={alwaysId} checked={always} onCheckedChange={(checked) => setAlways(checked === true)} />
+          <Label htmlFor={alwaysId}>Don't ask again</Label>
+        </div>
+      }
+      onAdd={(chosen) => onAdd(chosen, always)}
+      onClose={onClose}
+    />
   );
 }
 
@@ -575,32 +609,11 @@ export function CapturedBar({
 }: {
   urls: string[];
   dirLabel: string;
-  /** Adds the links to the current folder. Rejects with a message to show. */
-  onAdd: () => Promise<void>;
+  /** Starts adding the chosen links to the current folder, in order. */
+  onAdd: (urls: string[]) => void;
   onClose: () => void;
 }) {
-  const [error, setError] = useState<string | null>(null);
-
-  const add = async () => {
-    try {
-      await onAdd();
-      onClose();
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const batch = urls.length > 1;
-  return (
-    <LinksPrompt label={`Captured from browser${batch ? `: ${urls.length} links` : ""}`} urls={urls} error={error}>
-      <Button variant="outline" onClick={onClose}>
-        Dismiss
-      </Button>
-      <Button variant="outline" title={`Add to ${dirLabel}/`} onClick={add}>
-        Add here
-      </Button>
-    </LinksPrompt>
-  );
+  return <LinksPrompt urls={urls} dirLabel={dirLabel} closeLabel="Dismiss" onAdd={onAdd} onClose={onClose} />;
 }
 
 /**

@@ -17,11 +17,13 @@ import {
 const MB = 1024 * 1024;
 
 describe("displayName", () => {
-  it("prefers a pending rename, then the file name, then the link", () => {
+  it("prefers a pending rename, then the file name, then the server's name, then the link", () => {
     const base = item({ id: "a", queue_id: "q", url: "https://example.com/from-url.zip" });
     expect(displayName({ ...base, rename_to: "renamed.zip" })).toBe("renamed.zip");
     expect(displayName(base)).toBe("a.zip");
     expect(displayName({ ...base, file_name: null })).toBe("from-url.zip");
+    expect(displayName({ ...base, file_name: null, suggested_name: "server.zip" })).toBe("server.zip");
+    expect(displayName({ ...base, suggested_name: "server.zip" })).toBe("a.zip");
   });
 });
 

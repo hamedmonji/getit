@@ -35,12 +35,42 @@ const setup = () => {
 };
 
 describe("useAddLinks", () => {
-  it("adds new links and selects them", async () => {
+  it("adds new links with what the server said about them, and selects them", async () => {
     const { result, select } = setup();
     await act(() => result.current.addLinks(["https://example.com/b.zip"]));
-    expect(engine.addDownload).toHaveBeenCalledWith(DIR, "https://example.com/b.zip");
+    expect(engine.probeLink).toHaveBeenCalledTimes(1);
+    expect(engine.addDownload).toHaveBeenCalledWith(DIR, "https://example.com/b.zip", {
+      file_name: "b.zip",
+      total_bytes: null,
+    });
     expect(select).toHaveBeenCalledWith(["new:https://example.com/b.zip"]);
     expect(result.current.duplicates).toBeNull();
+    expect(result.current.pendingAdds).toEqual([]);
+  });
+
+  it("adds each link once it and those before it are checked, so a slow one holds up only those after it", async () => {
+    let answerSlow!: () => void;
+    vi.mocked(engine.probeLink).mockImplementation(async (url: string) => {
+      if (url.endsWith("/slow.zip")) await new Promise<void>((resolve) => (answerSlow = resolve));
+      return { file_name: url.split("/").pop()!, total_bytes: null };
+    });
+    const { result, select } = setup();
+    const urls = ["https://example.com/c1.zip", "https://example.com/slow.zip", "https://example.com/c2.zip"];
+    let adding!: Promise<void>;
+    act(() => {
+      adding = result.current.addLinks(urls);
+    });
+    await waitFor(() => expect(engine.addDownload).toHaveBeenCalledTimes(1));
+    expect(engine.addDownload).toHaveBeenLastCalledWith(DIR, urls[0], expect.anything());
+    // The slow one and the one after it are still being checked.
+    expect(result.current.pendingAdds.map((p) => p.url)).toEqual(urls.slice(1));
+
+    await act(async () => {
+      answerSlow();
+      await adding;
+    });
+    expect(vi.mocked(engine.addDownload).mock.calls.map((c) => c[1])).toEqual(urls);
+    expect(select).toHaveBeenLastCalledWith(urls.map((u) => `new:${u}`));
     expect(result.current.pendingAdds).toEqual([]);
   });
 
@@ -90,7 +120,8 @@ describe("useAddLinks", () => {
     const { result } = setup();
     await act(() => result.current.addLinks(["https://example.com/a.zip"]));
     act(() => result.current.settleDuplicates(result.current.duplicates!.items, "add"));
-    await waitFor(() => expect(engine.addDownload).toHaveBeenCalledWith(DIR, "https://example.com/a.zip"));
+    // It was never looked up, so it has nothing to show until it starts.
+    await waitFor(() => expect(engine.addDownload).toHaveBeenCalledWith(DIR, "https://example.com/a.zip", null));
     expect(result.current.duplicates).toBeNull();
   });
 

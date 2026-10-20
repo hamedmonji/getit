@@ -97,6 +97,10 @@ pub struct DownloadItem {
     /// the download stops, and is renamed then.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rename_to: Option<String>,
+    /// The name the server gave before it was added, shown until it starts and
+    /// gets a `file_name`, which may differ if that name is taken in its folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggested_name: Option<String>,
 }
 
 /// One byte range of a segmented download.

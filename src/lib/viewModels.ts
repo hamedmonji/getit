@@ -66,7 +66,7 @@ export interface Stats {
 
 /** A download's name, including one given while it runs that its file doesn't have yet. */
 export function displayName(item: DownloadItem): string {
-  return item.rename_to ?? item.file_name ?? nameFromUrl(item.url);
+  return item.rename_to ?? item.file_name ?? item.suggested_name ?? nameFromUrl(item.url);
 }
 
 /** The name a download of `url` would likely get, before the server says otherwise. */

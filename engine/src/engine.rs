@@ -593,12 +593,18 @@ impl Engine {
     /// the queue's limit allows; in a paused queue it starts right away on its
     /// own, as if resumed, and the queue stays paused.
     pub fn enqueue(&self, dir: impl AsRef<Path>, url: &str) -> Result<DownloadId> {
+        self.enqueue_with(dir, url, None)
+    }
+
+    /// Like [`Engine::enqueue`], with what the server already said about `url`
+    /// (see [`Engine::probe`]), so it shows its name and size before it starts.
+    pub fn enqueue_with(&self, dir: impl AsRef<Path>, url: &str, info: Option<LinkInfo>) -> Result<DownloadId> {
         let dir = normalize(dir.as_ref())?;
         let url = validate_url(url)?;
         let mut guard = self.inner.lock();
         let st = &mut *guard;
         let queue_id = self.inner.ensure_queue(st, dir);
-        let id = self.inner.add(st, queue_id, url);
+        let id = self.inner.add_known(st, queue_id, url, info);
         let queue = st.queues.get_mut(&queue_id).expect("queue exists");
         if queue.settings.paused {
             let item = queue.items.get_mut(&id).expect("just added");
@@ -833,13 +839,20 @@ impl Inner {
     }
 
     fn add(&self, st: &mut State, queue_id: QueueId, url: String) -> DownloadId {
+        self.add_known(st, queue_id, url, None)
+    }
+
+    /// Adds a download, showing `info`'s name and size until it starts. The
+    /// name isn't its file's: that's picked when it starts, free in its folder.
+    fn add_known(&self, st: &mut State, queue_id: QueueId, url: String, info: Option<LinkInfo>) -> DownloadId {
         let queue = st.queues.get_mut(&queue_id).expect("queue exists");
+        let (suggested_name, total_bytes) = info.map_or((None, None), |i| (Some(i.file_name), i.total_bytes));
         let item = DownloadItem {
             id: DownloadId::new(),
             queue_id,
             url,
             file_name: None,
-            total_bytes: None,
+            total_bytes,
             downloaded: 0,
             status: DownloadStatus::Queued,
             resumable: None,
@@ -850,6 +863,7 @@ impl Inner {
             started_at: None,
             segments: Vec::new(),
             rename_to: None,
+            suggested_name,
         };
         let id = item.id;
         queue.push(item.clone());

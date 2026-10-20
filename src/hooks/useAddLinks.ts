@@ -3,7 +3,7 @@ import { engine, type DownloadItem } from "../lib/engine";
 import { plural } from "../lib/format";
 import { sameUrl, withoutCopyNumber } from "../lib/links";
 import { joinPath } from "../lib/paths";
-import { probeLink } from "../lib/probes";
+import { knownProbe, probeLink } from "../lib/probes";
 import { report } from "../lib/report";
 import { displayName, nameFromUrl, queueForDir } from "../lib/viewModels";
 import type { EngineState } from "./useEngine";
@@ -110,20 +110,28 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
     return undefined;
   };
 
+  /** What to reject with when `failed` of `total` links couldn't be added; nothing if none failed. */
+  const throwIfFailed = (failed: unknown[], total: number) => {
+    if (failed.length === 1 && total === 1) throw failed[0];
+    if (failed.length) throw `${plural(failed.length, "link")} of ${total} couldn't be added: ${failed[0]}`;
+  };
+
+  /** Adds a link's download to `dir`, with what the server already said, shown until it starts. */
+  const addOne = (url: string, dir: string) => engine.addDownload(dir, url, knownProbe(url) ?? null);
+
   /** Adds the links' downloads to `dir`, selecting them; rejects with how many failed, if any did. */
   const addNow = async (urls: string[], dir: string) => {
     const ids: string[] = [];
     const failed: unknown[] = [];
     for (const url of urls) {
       try {
-        ids.push(await engine.addDownload(dir, url));
+        ids.push(await addOne(url, dir));
       } catch (e) {
         failed.push(e);
       }
     }
     if (ids.length) select(ids);
-    if (failed.length === 1 && urls.length === 1) throw failed[0];
-    if (failed.length) throw `${plural(failed.length, "link")} of ${urls.length} couldn't be added: ${failed[0]}`;
+    throwIfFailed(failed, urls.length);
   };
 
   /** Asks about these duplicates too, alongside any already being asked about for `dir`. */
@@ -143,9 +151,11 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
   /**
    * Adds links to `dir`, unless they already exist; then the user is asked.
    * Links already in the list are found at once. The rest show as temporary
-   * items while the server is asked for their file names, which are checked
-   * against other downloads and the files in `dir`; each becomes a download, or
-   * stays until the user decides. Links already being checked or asked about
+   * items while the server is asked for their file names, all at once, which
+   * are checked against other downloads and the files in `dir`; each becomes a
+   * download as soon as it and the links before it are checked, so they queue
+   * in order and a slow server holds up only the links after it. Duplicates
+   * stay until the user decides. Links already being checked or asked about
    * are left to that. `again` adds them all without checking.
    * Rejects with how many failed to add, if any did.
    */
@@ -161,35 +171,36 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
 
     const pending: PendingAdd[] = rest.map((url) => ({ key: `pending:${crypto.randomUUID()}`, url, dir, name: null }));
     setPendingAdds((list) => [...list, ...pending]);
-    const checked = await Promise.all(
-      pending.map(async (p) => {
-        // The name in the link stands in when the server can't be asked.
-        const name = await probeLink(p.url)
-          .then((info) => info.file_name)
-          .catch(() => nameFromUrl(p.url));
-        const duplicate = await findByName(p.url, name, dir);
-        return { p, name, duplicate: duplicate && { ...duplicate, pendingKey: p.key } };
-      }),
-    );
+    const checks = pending.map(async (p) => {
+      // The name in the link stands in when the server can't be asked, or
+      // already couldn't be when the link was shown.
+      const name = await probeLink(p.url, false)
+        .then((info) => info.file_name)
+        .catch(() => nameFromUrl(p.url));
+      const duplicate = await findByName(p.url, name, dir);
+      return { p, name, duplicate: duplicate && { ...duplicate, pendingKey: p.key } };
+    });
 
-    const byName = checked.flatMap((c) => c.duplicate ?? []);
-    if (byName.length) {
-      const names = new Map(checked.map((c) => [c.p.key, c.name]));
-      setPendingAdds((list) => list.map((p) => (names.has(p.key) ? { ...p, name: names.get(p.key)! } : p)));
-      askAbout(dir, byName);
+    const ids: string[] = [];
+    const failed: unknown[] = [];
+    for (const check of checks) {
+      const { p, name, duplicate } = await check;
+      if (duplicate) {
+        setPendingAdds((list) => list.map((item) => (item.key === p.key ? { ...item, name } : item)));
+        askAbout(dir, [duplicate]);
+        continue;
+      }
+      try {
+        ids.push(await addOne(p.url, dir));
+        select([...ids]);
+      } catch (e) {
+        failed.push(e);
+      } finally {
+        // The download has replaced it by now.
+        setPendingAdds((list) => list.filter((item) => item.key !== p.key));
+      }
     }
-    const fresh = checked.filter((c) => !c.duplicate).map((c) => c.p);
-    if (!fresh.length) return;
-    try {
-      await addNow(
-        fresh.map((p) => p.url),
-        dir,
-      );
-    } finally {
-      // The downloads have replaced them by now.
-      const keys = new Set(fresh.map((p) => p.key));
-      setPendingAdds((list) => list.filter((p) => !keys.has(p.key)));
-    }
+    throwIfFailed(failed, pending.length);
   };
 
   /**

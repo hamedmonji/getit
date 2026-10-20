@@ -254,6 +254,122 @@ body {
   color: var(--ink-muted);
 }
 
+/* Several links to add: a table to tick them and drag them into queue order. */
+.link-batch {
+  --link-batch-columns: 14px 16px minmax(120px, 1fr) 72px minmax(120px, 1.3fr);
+  max-height: 260px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.link-batch-header,
+.link-batch-row {
+  display: grid;
+  grid-template-columns: var(--link-batch-columns);
+  gap: 10px;
+  align-items: center;
+}
+
+.link-batch-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 30px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+.link-batch-rows {
+  margin: 0;
+  padding: 4px 6px;
+  list-style: none;
+  user-select: none;
+  touch-action: none;
+}
+
+.link-batch-rows.dragging {
+  cursor: grabbing;
+}
+
+.link-batch-row {
+  position: relative;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 7px;
+  font-size: 13px;
+  cursor: grab;
+}
+
+.link-batch-row:hover {
+  background: var(--hover);
+}
+
+.link-batch-row.selected {
+  background: var(--tintSoft);
+}
+
+.link-batch-row.unticked .link-batch-name,
+.link-batch-row.unticked .link-batch-size,
+.link-batch-row.unticked .link-batch-url {
+  opacity: 0.5;
+}
+
+/* Where the dragged row would land: a line above this row, or below the last. */
+.link-batch-row.drop-before::before,
+.link-batch-row.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tint);
+}
+
+.link-batch-row.drop-before::before {
+  top: -1px;
+}
+
+.link-batch-row.drop-after::after {
+  bottom: -1px;
+}
+
+.link-batch-grip {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-muted);
+  opacity: 0.6;
+}
+
+.link-batch-name {
+  color: var(--ink);
+}
+
+.link-batch-name.fetching {
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+.link-batch-size {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.link-batch-url {
+  font-size: 12px;
+}
+
+.link-batch-total {
+  font-size: 13px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
 .paste-always {
   display: flex;
   align-items: center;

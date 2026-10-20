@@ -31,6 +31,8 @@ export interface DownloadItem {
   segments?: Segment[];
   /** Name given while it was running; its file is renamed when it stops. */
   rename_to?: string | null;
+  /** The name the server gave before it was added, shown until it starts and gets `file_name`. */
+  suggested_name?: string | null;
 }
 
 export interface Segment {
@@ -100,7 +102,8 @@ export const engine = {
   /** Whether `name` is taken in `dir` by a file or a partial download. */
   fileExists: (dir: string, name: string) => invoke<boolean>("file_exists", { dir, name }),
   /** Adds a link to the queue for `dir`: in line if the queue runs, started right away if it's paused. */
-  addDownload: (dir: string, url: string) => invoke<DownloadId>("add_download", { dir, url }),
+  addDownload: (dir: string, url: string, info: LinkInfo | null = null) =>
+    invoke<DownloadId>("add_download", { dir, url, info }),
   /** Links the browser extension sent before the window listened for them; call once listening. */
   takeBrowserLinks: () => invoke<Captured[]>("take_browser_links"),
   pause: (id: DownloadId) => invoke<void>("pause_download", { id }),

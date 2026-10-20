@@ -945,9 +945,9 @@ export default function App() {
         <PasteBar
           urls={pasting}
           dirLabel={displayPath(cwd, home)}
-          onAdd={async (always) => {
+          onAdd={(urls, always) => {
             if (always) setPasteMode("always");
-            await addLinks(pasting);
+            addLinks(urls).catch((e) => setNotice(`Couldn't add: ${e}`));
           }}
           onClose={() => setPasting(null)}
         />
@@ -957,7 +957,7 @@ export default function App() {
         <CapturedBar
           urls={captured}
           dirLabel={displayPath(cwd, home)}
-          onAdd={() => addLinks(captured)}
+          onAdd={(urls) => addLinks(urls).catch((e) => setNotice(`Couldn't add: ${e}`))}
           onClose={() => setCaptured(null)}
         />
       )}

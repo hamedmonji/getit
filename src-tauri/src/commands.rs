@@ -42,7 +42,8 @@ pub fn initial_dir(app: AppHandle) -> CommandResult<String> {
     if cfg!(debug_assertions) {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
-            .expect("src-tauri has a parent");
+            .expect("src-tauri has a parent")
+            .join("test-downloads");
         fs::create_dir_all(&dir).map_err(err)?;
         return Ok(dir.to_string_lossy().into_owned());
     }
@@ -158,8 +159,13 @@ pub async fn probe_link(engine: State<'_, Engine>, url: String) -> CommandResult
 }
 
 #[tauri::command]
-pub fn add_download(engine: State<'_, Engine>, dir: String, url: String) -> CommandResult<DownloadId> {
-    engine.enqueue(dir, &url).map_err(err)
+pub fn add_download(
+    engine: State<'_, Engine>,
+    dir: String,
+    url: String,
+    info: Option<LinkInfo>,
+) -> CommandResult<DownloadId> {
+    engine.enqueue_with(dir, &url, info).map_err(err)
 }
 
 #[tauri::command]
