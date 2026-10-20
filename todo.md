@@ -4,10 +4,6 @@
 3. schedule
 4. don't ask for permissions on lunch
 5. download now
-6. queue settings
-   1. number of active downloads
-   2. file rename
-   3. retries
 
 ## low prio
 

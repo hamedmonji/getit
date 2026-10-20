@@ -59,7 +59,7 @@ impl Queue {
     }
 
     pub fn snapshot(&self) -> QueueSnapshot {
-        QueueSnapshot::new(self.id, self.dir.clone(), self.settings, self.downloads())
+        QueueSnapshot::new(self.id, self.dir.clone(), self.settings.clone(), self.downloads())
     }
 
     pub fn save(&self, store: &dyn QueueStore) -> io::Result<()> {
@@ -70,7 +70,7 @@ impl Queue {
         QueueInfo {
             id: self.id,
             dir: self.dir.clone(),
-            settings: self.settings,
+            settings: self.settings.clone(),
             downloads: self.order.clone(),
         }
     }
@@ -127,6 +127,11 @@ impl Queue {
         self.order = order;
     }
 
+    /// How many downloads may run at once.
+    fn limit(&self) -> usize {
+        self.settings.max_concurrent.unwrap_or(usize::MAX)
+    }
+
     /// The queued downloads to start now, in queue order, to fill the queue's free
     /// slots. Every running download takes up a slot, including ones the user
     /// started past the limit.
@@ -139,7 +144,7 @@ impl Queue {
             .iter()
             .filter(|id| is_running(id))
             .count();
-        let free = self.settings.max_concurrent.saturating_sub(running);
+        let free = self.limit().saturating_sub(running);
         self.order
             .iter()
             .copied()
@@ -171,7 +176,7 @@ impl Queue {
             .filter(|item| item.status == DownloadStatus::Downloading)
             .collect();
         let kept = running.iter().filter(|item| item.resumable == Some(false)).count();
-        let slots = self.settings.max_concurrent.saturating_sub(kept);
+        let slots = self.limit().saturating_sub(kept);
         let wanted: HashSet<DownloadId> = self
             .order
             .iter()
@@ -189,9 +194,69 @@ impl Queue {
     }
 }
 
+/// Most retries a queue can be set to.
+pub(crate) const MAX_RETRIES: u32 = 10;
+
 fn sanitize(settings: QueueSettings) -> QueueSettings {
     QueueSettings {
-        max_concurrent: settings.max_concurrent.max(1),
+        max_concurrent: settings.max_concurrent.map(|n| n.max(1)),
+        retries: settings.retries.min(MAX_RETRIES),
         ..settings
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn queue_with(limit: Option<usize>, waiting: usize) -> Queue {
+        let mut queue = Queue::new(PathBuf::from("/tmp/q"));
+        queue.set_settings(QueueSettings {
+            max_concurrent: limit,
+            ..Default::default()
+        });
+        for n in 0..waiting {
+            queue.push(DownloadItem {
+                id: DownloadId::new(),
+                queue_id: queue.id,
+                url: format!("https://example.com/{n}"),
+                file_name: None,
+                total_bytes: None,
+                downloaded: 0,
+                status: DownloadStatus::Queued,
+                resumable: None,
+                etag: None,
+                last_modified: None,
+                error: None,
+                added_at: 0,
+                started_at: None,
+                segments: Vec::new(),
+                rename_to: None,
+                suggested_name: None,
+                original_name: None,
+            });
+        }
+        queue
+    }
+
+    #[test]
+    fn starts_up_to_the_limit() {
+        assert_eq!(queue_with(Some(2), 5).next_to_start(|_| false).len(), 2);
+    }
+
+    #[test]
+    fn starts_everything_without_a_limit() {
+        assert_eq!(queue_with(None, 5).next_to_start(|_| false).len(), 5);
+    }
+
+    #[test]
+    fn clamps_settings() {
+        let mut queue = queue_with(Some(0), 0);
+        assert_eq!(queue.settings.max_concurrent, Some(1));
+        queue.set_settings(QueueSettings {
+            retries: 1000,
+            ..Default::default()
+        });
+        assert_eq!(queue.settings.retries, MAX_RETRIES);
     }
 }

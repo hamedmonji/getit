@@ -42,6 +42,8 @@ pub fn run() {
             commands::initial_dir,
             commands::list_dir,
             commands::probe_link,
+            commands::auto_names,
+            commands::preview_rename,
             commands::file_exists,
             commands::add_download,
             commands::pause_download,

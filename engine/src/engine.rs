@@ -10,6 +10,7 @@ use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::queue::Queue;
+use crate::rename::apply_rules;
 use crate::store::{QueueSnapshot, QueueStore};
 use crate::types::{
     DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, LinkInfo, QueueId,
@@ -544,7 +545,7 @@ impl Engine {
         for (id, dir) in &copies {
             let source = &st.queues[id];
             let mut queue = Queue::new(dir.clone());
-            queue.settings = source.settings;
+            queue.settings = source.settings.clone();
             for item in source.downloads() {
                 let mut copy = copy_of(&item);
                 copy.queue_id = queue.id;
@@ -586,6 +587,24 @@ impl Engine {
         worker::probe(&self.inner.client, &url)
             .await
             .map_err(|error| EngineError::NameLookupFailed { url, error })
+    }
+
+    /// `names` as downloads added to the queue for `dir` would be named by its
+    /// auto rename, before a free name is picked in the folder. Unchanged if
+    /// the folder has no queue.
+    pub fn auto_names(&self, dir: impl AsRef<Path>, names: &[String]) -> Result<Vec<String>> {
+        let dir = normalize(dir.as_ref())?;
+        let guard = self.inner.lock();
+        let rules = guard
+            .by_dir
+            .get(&dir)
+            .and_then(|id| guard.queues.get(id))
+            .map(|queue| queue.settings.rename.as_slice())
+            .unwrap_or_default();
+        Ok(names
+            .iter()
+            .map(|name| apply_rules(name, rules))
+            .collect())
     }
 
     /// Adds `url` to the queue for `dir`, creating the queue if needed, as the
@@ -844,9 +863,20 @@ impl Inner {
 
     /// Adds a download, showing `info`'s name and size until it starts. The
     /// name isn't its file's: that's picked when it starts, free in its folder.
+    /// A name without an `original_name` is the server's, and gets the queue's
+    /// auto rename; one with it was named already.
     fn add_known(&self, st: &mut State, queue_id: QueueId, url: String, info: Option<LinkInfo>) -> DownloadId {
         let queue = st.queues.get_mut(&queue_id).expect("queue exists");
-        let (suggested_name, total_bytes) = info.map_or((None, None), |i| (Some(i.file_name), i.total_bytes));
+        let (suggested_name, original_name, total_bytes) = match info {
+            None => (None, None, None),
+            Some(LinkInfo { file_name, total_bytes, original_name: Some(original) }) => {
+                (Some(file_name), Some(original), total_bytes)
+            }
+            Some(LinkInfo { file_name, total_bytes, original_name: None }) => {
+                let renamed = apply_rules(&file_name, &queue.settings.rename);
+                (Some(renamed), Some(file_name), total_bytes)
+            }
+        };
         let item = DownloadItem {
             id: DownloadId::new(),
             queue_id,
@@ -864,6 +894,7 @@ impl Inner {
             segments: Vec::new(),
             rename_to: None,
             suggested_name,
+            original_name,
         };
         let id = item.id;
         queue.push(item.clone());
@@ -907,7 +938,13 @@ impl Inner {
         );
         self.runtime.spawn(worker::run(
             self.client.clone(),
-            Job::new(item, &queue.dir, queue.names_except(id)),
+            Job::new(
+                item,
+                &queue.dir,
+                queue.names_except(id),
+                queue.settings.rename.clone(),
+                queue.settings.retries,
+            ),
             token,
             self.worker_tx.clone(),
         ));
@@ -920,6 +957,7 @@ impl Inner {
             WorkerMsg::Meta {
                 id,
                 file_name,
+                original_name,
                 total_bytes,
                 resumable,
                 etag,
@@ -931,6 +969,9 @@ impl Inner {
                 };
                 if let Some(item) = queue.items.get_mut(&id) {
                     item.file_name = Some(file_name);
+                    if item.original_name.is_none() {
+                        item.original_name = original_name;
+                    }
                     item.total_bytes = total_bytes;
                     item.resumable = Some(resumable);
                     item.etag = etag;

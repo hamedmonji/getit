@@ -5,7 +5,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use getit_engine::{DownloadId, DownloadItem, DownloadStatus, Engine, LinkInfo, QueueId, QueueInfo, QueueSettings, QueueSnapshot};
+use getit_engine::{
+    DownloadId, DownloadItem, DownloadStatus, Engine, LinkInfo, QueueId, QueueInfo, QueueSettings, QueueSnapshot,
+    RenameRule,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
@@ -156,6 +159,28 @@ pub fn file_exists(dir: String, name: String) -> bool {
 #[tauri::command]
 pub async fn probe_link(engine: State<'_, Engine>, url: String) -> CommandResult<LinkInfo> {
     engine.probe(&url).await.map_err(err)
+}
+
+/// `names` as the queue for `dir` would name new downloads with its auto rename.
+#[tauri::command]
+pub fn auto_names(engine: State<'_, Engine>, dir: String, names: Vec<String>) -> CommandResult<Vec<String>> {
+    engine.auto_names(dir, &names).map_err(err)
+}
+
+/// What auto rename `rules` make of `names`, and what's wrong with each rule's
+/// regex, if anything; a rule with an invalid one is skipped.
+#[derive(serde::Serialize)]
+pub struct RenamePreview {
+    names: Vec<String>,
+    errors: Vec<Option<String>>,
+}
+
+#[tauri::command]
+pub fn preview_rename(names: Vec<String>, rules: Vec<RenameRule>) -> RenamePreview {
+    RenamePreview {
+        names: names.iter().map(|name| getit_engine::apply_rules(name, &rules)).collect(),
+        errors: getit_engine::rule_errors(&rules),
+    }
 }
 
 #[tauri::command]

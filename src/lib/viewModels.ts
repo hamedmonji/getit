@@ -69,6 +69,12 @@ export function displayName(item: DownloadItem): string {
   return item.rename_to ?? item.file_name ?? item.suggested_name ?? nameFromUrl(item.url);
 }
 
+/** The name the server gave, when the download's name isn't that any more; else null. */
+export function originalName(item: DownloadItem): string | null {
+  const original = item.original_name;
+  return original && original !== displayName(item) ? original : null;
+}
+
 /** The name a download of `url` would likely get, before the server says otherwise. */
 export function nameFromUrl(raw: string): string {
   try {

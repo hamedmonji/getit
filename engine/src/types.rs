@@ -63,6 +63,10 @@ pub struct LinkInfo {
     pub file_name: String,
     /// Its size, when the server tells.
     pub total_bytes: Option<u64>,
+    /// The name the server gave, when `file_name` is that name with the queue's
+    /// auto rename rules applied (or changed by the user) before it was added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_name: Option<String>,
 }
 
 /// Snapshot of a download's state.
@@ -101,6 +105,10 @@ pub struct DownloadItem {
     /// gets a `file_name`, which may differ if that name is taken in its folder.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested_name: Option<String>,
+    /// The name the server gave, before the queue's auto rename rules or the
+    /// user renamed it. `None` until known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_name: Option<String>,
 }
 
 /// One byte range of a segmented download.
@@ -208,22 +216,51 @@ pub(crate) fn part_path(dir: &Path, file_name: &str) -> PathBuf {
 }
 
 /// A queue's own settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct QueueSettings {
-    /// How many of the queue's downloads may run at once (at least 1).
-    pub max_concurrent: usize,
+    /// How many of the queue's downloads may run at once (at least 1), or
+    /// `None` for no limit.
+    pub max_concurrent: Option<usize>,
     /// A paused queue starts nothing; its running downloads go back to `Queued`.
     pub paused: bool,
+    /// How many times in a row a download retries network trouble before it fails.
+    pub retries: u32,
+    /// Applied in order to the name of each new download, without its extension.
+    pub rename: Vec<RenameRule>,
 }
 
 impl Default for QueueSettings {
     fn default() -> Self {
         Self {
-            max_concurrent: 2,
+            max_concurrent: Some(2),
             paused: false,
+            retries: 3,
+            rename: Vec::new(),
         }
     }
+}
+
+/// One step of a queue's auto rename.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum RenameRule {
+    /// Adds text before the name.
+    Prefix { text: String },
+    /// Adds text after the name, before its extension.
+    Suffix { text: String },
+    /// Removes every match of the pattern.
+    Remove { pattern: Pattern },
+    /// Replaces every match of the pattern. A regex's `with` can use `$1`, `${name}`.
+    Replace { pattern: Pattern, with: String },
+}
+
+/// Text to find in a name: as it is, or as a regular expression.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Pattern {
+    pub text: String,
+    #[serde(default)]
+    pub regex: bool,
 }
 
 /// Snapshot of a queue: its folder, settings and download order.

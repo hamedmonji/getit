@@ -11,6 +11,7 @@ vi.mock("../lib/engine", () => ({
     addDownload: vi.fn(async (_dir: string, url: string) => `new:${url}`),
     probeLink: vi.fn(async (url: string) => ({ file_name: url.split("/").pop(), total_bytes: null })),
     fileExists: vi.fn(async () => false),
+    autoNames: vi.fn(async (_dir: string, names: string[]) => names.map((n) => `new ${n}`)),
     resume: vi.fn(async () => {}),
     reveal: vi.fn(async () => {}),
   },
@@ -91,6 +92,24 @@ describe("useAddLinks", () => {
     expect(result.current.duplicates?.items).toMatchObject([{ kind: "name", existing }]);
     // Its temporary item stays while the user decides.
     expect(result.current.pendingAdds).toMatchObject([{ url: "https://cdn.example.com/signed/a.zip", name: "a.zip" }]);
+  });
+
+  it("checks names as the queue's auto rename gives them", async () => {
+    const renamed = item({ id: "r", queue_id: "q", url: "https://example.com/r", file_name: "new b.zip" });
+    const rules = [{ op: "prefix" as const, text: "new " }];
+    const withRules = stateOf([queue({ id: "q", dir: DIR, settings: { ...queue({ id: "q", dir: DIR }).settings, rename: rules } })], [renamed]);
+    const { result } = renderHook(() =>
+      useAddLinks({ state: withRules, cwd: DIR, select: vi.fn(), go: vi.fn(), setNotice: vi.fn() }),
+    );
+    await act(() => result.current.addLinks(["https://cdn.example.com/b.zip"]));
+    expect(engine.autoNames).toHaveBeenCalledWith(DIR, ["b.zip"]);
+    expect(result.current.duplicates?.items).toMatchObject([{ kind: "name", existing: renamed }]);
+  });
+
+  it("doesn't ask the engine to rename names in a queue without auto rename", async () => {
+    const { result } = setup();
+    await act(() => result.current.addLinks(["https://example.com/b.zip"]));
+    expect(engine.autoNames).not.toHaveBeenCalled();
   });
 
   it("asks once about a link added again while it's being asked about", async () => {

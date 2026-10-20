@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { DownloadItem, QueueSettings as Settings } from "../lib/engine";
 import type { FileVm } from "../lib/viewModels";
 import { FileGlyph } from "./Glyphs";
 import { CloseIcon, FolderIcon } from "./icons";
+import { QueueSettingsForm } from "./QueueSettingsForm";
 
 type Tab = "settings" | "order";
 
@@ -19,17 +21,26 @@ const SCROLL_EDGE = 28;
 
 /**
  * The side panel for the selected queue folder's queue, or else the
- * current folder's, with a tab for its settings (empty for now) and one for the
+ * current folder's, with a tab for its settings and one for the
  * order its downloads run in. It follows the selection and the folder you're in.
  */
 export function QueueSettings({
   queue,
   files,
+  items,
+  onSettings,
+  onRename,
   onReorder,
   onClose,
 }: {
   /** The queue to show, or null if there's none to show. */
-  queue: { id: string; name: string; path: string } | null;
+  queue: { id: string; name: string; path: string; settings: Settings } | null;
+  /** The queue's unfinished downloads, in queue order. */
+  items: DownloadItem[];
+  /** Saves the queue's settings. */
+  onSettings: (settings: Settings) => void;
+  /** Renames downloads already in the queue. */
+  onRename: (renames: { id: string; name: string }[]) => void;
   /** The queue's unfinished downloads, in queue order. */
   files: FileVm[];
   /** Puts these downloads first, in this order; finished ones follow. */
@@ -37,8 +48,10 @@ export function QueueSettings({
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("settings");
+  // Each queue's limit before it went unlimited, to go back to.
+  const limits = useRef(new Map<string, number>());
   return (
-    <aside className="overview" aria-label="Queue settings">
+    <aside className="overview queue-settings-panel" aria-label="Queue settings">
       <div className="overview-head">
         {queue && <div className="queue-settings-folder" title={queue.path}>
           <FolderIcon />
@@ -61,7 +74,18 @@ export function QueueSettings({
               ))}
             </TabsList>
           </div>
-          <TabsContent value="settings" />
+          <TabsContent value="settings" className="flex min-h-0 flex-col">
+            {/* Keyed so rules being edited don't carry over to another queue. */}
+            <QueueSettingsForm
+              key={queue.id}
+              settings={queue.settings}
+              items={items}
+              rememberedLimit={limits.current.get(queue.id)}
+              onChange={onSettings}
+              onRememberLimit={(limit) => limits.current.set(queue.id, limit)}
+              onRename={onRename}
+            />
+          </TabsContent>
           <TabsContent value="order" className="flex min-h-0 flex-col">
             {/* Keyed so each queue has its own selection. */}
             <QueueOrder key={queue.id} files={files} onReorder={onReorder} />

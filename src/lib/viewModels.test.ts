@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { item, queue, stateOf } from "../test/fixtures";
 import {
   displayName,
+  originalName,
   fileVm,
   folderVm,
   linkHeading,
@@ -220,7 +221,7 @@ describe("folderVm", () => {
 
   it("shows its own paused queue as paused, with nothing active", () => {
     const state = stateOf(
-      [queue({ id: "q", dir: "/h/q", settings: { max_concurrent: 2, paused: true } })],
+      [queue({ id: "q", dir: "/h/q", settings: { max_concurrent: 2, paused: true, retries: 3, rename: [] } })],
       [item({ id: "x", queue_id: "q", status: "downloading" })],
     );
     expect(folderVm(state, "/h/q")).toMatchObject({ paused: true, active: 0 });
@@ -228,7 +229,7 @@ describe("folderVm", () => {
 
   it("isn't paused when its paused queue has nothing left", () => {
     const state = stateOf(
-      [queue({ id: "q", dir: "/h/q", settings: { max_concurrent: 2, paused: true } })],
+      [queue({ id: "q", dir: "/h/q", settings: { max_concurrent: 2, paused: true, retries: 3, rename: [] } })],
       [item({ id: "x", queue_id: "q", status: "completed" })],
     );
     expect(folderVm(state, "/h/q")).toMatchObject({ paused: false, showBar: false });
@@ -325,5 +326,18 @@ describe("linkHeading", () => {
 
   it("falls back to the name in the link when the server couldn't say", () => {
     expect(linkHeading(url, null)).toEqual({ text: "a b.zip", fetching: false });
+  });
+});
+
+describe("originalName", () => {
+  const base = item({ id: "a", queue_id: "q", url: "https://example.com/a.zip", file_name: "new a.zip" });
+
+  it("shows the server's name when the download was renamed", () => {
+    expect(originalName({ ...base, original_name: "a.zip" })).toBe("a.zip");
+  });
+
+  it("is null when the name is still the server's, or not known", () => {
+    expect(originalName({ ...base, original_name: "new a.zip" })).toBeNull();
+    expect(originalName(base)).toBeNull();
   });
 });

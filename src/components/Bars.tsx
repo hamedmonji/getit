@@ -16,8 +16,9 @@ import { Kbd } from "@/components/ui/kbd";
 import { Label } from "@/components/ui/label";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { LinkInfo } from "../lib/engine";
+import type { LinkInfo, RenameRule } from "../lib/engine";
 import { isPathLike } from "../lib/paths";
+import { useAutoNames } from "../hooks/useAutoNames";
 import { useLinkInfo } from "../hooks/useLinkInfo";
 import { chosen, moveTo, syncOrder, syncSelected, totalLabel } from "../lib/batch";
 import { LinkBatch } from "./LinkBatch";
@@ -484,6 +485,8 @@ function LinkWithInfo({ url, info }: { url: string; info: LinkInfo | null | unde
  */
 function LinksPrompt({
   urls,
+  dir,
+  rename,
   dirLabel,
   closeLabel,
   autoFocus = false,
@@ -492,6 +495,10 @@ function LinksPrompt({
   onClose,
 }: {
   urls: string[];
+  /** Folder the links would be added to. */
+  dir: string | null;
+  /** Its queue's auto rename, to show the names the links would get. */
+  rename: RenameRule[] | undefined;
   dirLabel: string;
   closeLabel: string;
   /** Focuses the add button, so Enter adds. */
@@ -504,7 +511,7 @@ function LinksPrompt({
   onAdd: (urls: string[]) => void;
   onClose: () => void;
 }) {
-  const infos = useLinkInfo(urls);
+  const infos = useAutoNames(dir, rename, useLinkInfo(urls));
   const [order, setOrder] = useState(urls);
   const [selected, setSelected] = useState(() => new Set(urls));
   // Captured links can arrive or leave while this is open.
@@ -566,11 +573,15 @@ function LinksPrompt({
 /** Asks whether to add the links found on the clipboard. Enter adds, Escape cancels. */
 export function PasteBar({
   urls,
+  dir,
+  rename,
   dirLabel,
   onAdd,
   onClose,
 }: {
   urls: string[];
+  dir: string | null;
+  rename: RenameRule[] | undefined;
   dirLabel: string;
   /** Starts adding the chosen links, in order; `always` skips this prompt from now on. */
   onAdd: (urls: string[], always: boolean) => void;
@@ -581,6 +592,8 @@ export function PasteBar({
   return (
     <LinksPrompt
       urls={urls}
+      dir={dir}
+      rename={rename}
       dirLabel={dirLabel}
       closeLabel="Cancel"
       autoFocus
@@ -603,17 +616,31 @@ export function PasteBar({
  */
 export function CapturedBar({
   urls,
+  dir,
+  rename,
   dirLabel,
   onAdd,
   onClose,
 }: {
   urls: string[];
+  dir: string | null;
+  rename: RenameRule[] | undefined;
   dirLabel: string;
   /** Starts adding the chosen links to the current folder, in order. */
   onAdd: (urls: string[]) => void;
   onClose: () => void;
 }) {
-  return <LinksPrompt urls={urls} dirLabel={dirLabel} closeLabel="Dismiss" onAdd={onAdd} onClose={onClose} />;
+  return (
+    <LinksPrompt
+      urls={urls}
+      dir={dir}
+      rename={rename}
+      dirLabel={dirLabel}
+      closeLabel="Dismiss"
+      onAdd={onAdd}
+      onClose={onClose}
+    />
+  );
 }
 
 /**

@@ -11,13 +11,15 @@
 
 mod engine;
 mod queue;
+mod rename;
 mod store;
 mod types;
 mod worker;
 
 pub use engine::Engine;
+pub use rename::{apply_rules, rule_errors};
 pub use store::{JsonDirStore, MemoryStore, QueueSnapshot, QueueStore};
 pub use types::{
-    DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, LinkInfo, QueueId,
-    QueueInfo, QueueSettings, Result, Segment,
+    DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, LinkInfo, Pattern, QueueId,
+    QueueInfo, QueueSettings, RenameRule, Result, Segment,
 };

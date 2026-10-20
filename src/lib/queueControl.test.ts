@@ -14,7 +14,7 @@ vi.mock("./engine", () => ({
 beforeEach(() => vi.clearAllMocks());
 
 const q = queue({ id: "q", dir: "/home/q" });
-const paused = queue({ id: "q", dir: "/home/q", settings: { max_concurrent: 2, paused: true } });
+const paused = queue({ id: "q", dir: "/home/q", settings: { max_concurrent: 2, paused: true, retries: 3, rename: [] } });
 
 describe("heldIn", () => {
   it("lists the queue's downloads paused one by one, in queue order", () => {
@@ -86,7 +86,7 @@ describe("resumeQueue", () => {
   it("unpauses a paused queue and puts held downloads back in line", async () => {
     const state = stateOf([paused], [item({ id: "a", queue_id: "q", status: "paused" })]);
     await resumeQueue(state, state.queues.q);
-    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: false });
+    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: false, retries: 3, rename: [] });
     expect(engine.requeue).toHaveBeenCalledWith(["a"]);
   });
 
@@ -109,7 +109,7 @@ describe("pauseQueue", () => {
   it("pauses a running queue in its settings", async () => {
     const state = stateOf([q], [item({ id: "a", queue_id: "q", status: "downloading" })]);
     await pauseQueue(state, state.queues.q);
-    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: true });
+    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: true, retries: 3, rename: [] });
     expect(engine.pause).not.toHaveBeenCalled();
   });
 
@@ -131,6 +131,6 @@ describe("pauseAll", () => {
       [item({ id: "a", queue_id: "q1", status: "downloading" }), item({ id: "b", queue_id: "q2", status: "queued" })],
     );
     await pauseAll(state);
-    expect(engine.setQueueSettings).toHaveBeenCalledExactlyOnceWith("q1", { max_concurrent: 2, paused: true });
+    expect(engine.setQueueSettings).toHaveBeenCalledExactlyOnceWith("q1", { max_concurrent: 2, paused: true, retries: 3, rename: [] });
   });
 });

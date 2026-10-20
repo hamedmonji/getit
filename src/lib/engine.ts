@@ -33,6 +33,8 @@ export interface DownloadItem {
   rename_to?: string | null;
   /** The name the server gave before it was added, shown until it starts and gets `file_name`. */
   suggested_name?: string | null;
+  /** The name the server gave, before the queue's auto rename or the user renamed it; absent until known. */
+  original_name?: string | null;
 }
 
 export interface Segment {
@@ -42,9 +44,27 @@ export interface Segment {
 }
 
 export interface QueueSettings {
-  max_concurrent: number;
+  /** How many downloads may run at once, or null for no limit. */
+  max_concurrent: number | null;
   paused: boolean;
+  /** How many times in a row a download retries network trouble before it fails. */
+  retries: number;
+  /** Applied in order to new downloads' names, without the extension. */
+  rename: RenameRule[];
 }
+
+/** Text to find in a name: as it is, or as a regular expression. */
+export interface Pattern {
+  text: string;
+  regex: boolean;
+}
+
+/** One step of a queue's auto rename. */
+export type RenameRule =
+  | { op: "prefix"; text: string }
+  | { op: "suffix"; text: string }
+  | { op: "remove"; pattern: Pattern }
+  | { op: "replace"; pattern: Pattern; with: string };
 
 export interface QueueInfo {
   id: QueueId;
@@ -79,6 +99,8 @@ export interface LinkInfo {
   file_name: string;
   /** Its size, when the server tells. */
   total_bytes: number | null;
+  /** The server's name, when `file_name` was renamed before adding it. */
+  original_name?: string | null;
 }
 
 export interface Snapshot {
@@ -99,6 +121,11 @@ export const engine = {
   listDir: (path: string) => invoke<DirListing>("list_dir", { path }),
   /** The file name the server gives `url`; rejects if it can't be reached. */
   probeLink: (url: string) => invoke<LinkInfo>("probe_link", { url }),
+  /** `names` as the queue for `dir` would name new downloads with its auto rename. */
+  autoNames: (dir: string, names: string[]) => invoke<string[]>("auto_names", { dir, names }),
+  /** What auto rename `rules` make of `names`, and what's wrong with each rule's regex (such rules are skipped). */
+  previewRename: (names: string[], rules: RenameRule[]) =>
+    invoke<{ names: string[]; errors: (string | null)[] }>("preview_rename", { names, rules }),
   /** Whether `name` is taken in `dir` by a file or a partial download. */
   fileExists: (dir: string, name: string) => invoke<boolean>("file_exists", { dir, name }),
   /** Adds a link to the queue for `dir`: in line if the queue runs, started right away if it's paused. */

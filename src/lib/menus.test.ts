@@ -28,7 +28,7 @@ const SUB = "/home/q/sub";
 function contextFor(items: DownloadItem[], overrides: Partial<MenuContext> = {}, paused = false): MenuContext {
   const state: EngineState = stateOf(
     [
-      queue({ id: "q", dir: CWD, settings: { max_concurrent: 2, paused } }),
+      queue({ id: "q", dir: CWD, settings: { max_concurrent: 2, paused, retries: 3, rename: [] } }),
       queue({ id: "sub", dir: SUB }),
     ],
     items,
@@ -131,19 +131,26 @@ describe("backgroundMenu", () => {
     const busy = find(backgroundMenu(contextFor([item({ id: "a", queue_id: "q" })])), "Pause queue");
     expect(busy.disabled).toBe(false);
     busy.onSelect();
-    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: true });
+    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: true, retries: 3, rename: [] });
   });
 
   it("resumes a paused queue", () => {
     find(backgroundMenu(contextFor([item({ id: "a", queue_id: "q" })], {}, true)), "Resume queue").onSelect();
-    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: false });
+    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: false, retries: 3, rename: [] });
   });
 
   it("sets how many downloads run at a time", () => {
     const stepper = backgroundMenu(contextFor([])).find((i) => i.kind === "stepper");
-    expect(stepper).toMatchObject({ value: 2, min: 1, max: 6 });
+    expect(stepper).toMatchObject({ value: 2, min: 1, max: 16 });
     if (stepper?.kind === "stepper") stepper.onChange(4);
-    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 4, paused: false });
+    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 4, paused: false, retries: 3, rename: [] });
+  });
+
+  it("has no stepper for a queue without a limit", () => {
+    const ctx = contextFor([]);
+    const q = { ...ctx.state.queues.q, settings: { ...ctx.state.queues.q.settings, max_concurrent: null } };
+    const menu = backgroundMenu({ ...ctx, queue: q });
+    expect(menu.some((i) => i.kind === "stepper")).toBe(false);
   });
 
   it("clears finished downloads only when there are some", () => {

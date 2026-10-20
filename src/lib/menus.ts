@@ -6,6 +6,7 @@ import { engine, type QueueInfo } from "./engine";
 import { plural } from "./format";
 import { FILE_MANAGER, IS_MAC, MOD } from "./platform";
 import { hasWork, isQueuePaused, pauseQueue, resumeQueue } from "./queueControl";
+import { MAX_CONCURRENCY } from "./queueSettings";
 import { report } from "./report";
 import { queueForDir, type FileVm, type FolderVm } from "./viewModels";
 
@@ -32,9 +33,6 @@ export type MenuItem =
       max: number;
       onChange: (value: number) => void;
     };
-
-/** Most downloads a queue can run at once, as offered in the menu. */
-const MAX_CONCURRENCY = 6;
 
 /** What the menus show and the actions they run. */
 export interface MenuContext {
@@ -123,14 +121,18 @@ export function backgroundMenu(ctx: MenuContext): MenuItem[] {
         disabled: !hasWork(state, queue),
         onSelect: () => report(paused ? resumeQueue(state, queue) : pauseQueue(state, queue)),
       },
-      {
-        kind: "stepper",
-        label: "Downloads at a time",
-        value: settings.max_concurrent,
-        min: 1,
-        max: MAX_CONCURRENCY,
-        onChange: (n) => report(engine.setQueueSettings(queue.id, { ...settings, max_concurrent: n })),
-      },
+      ...(settings.max_concurrent === null
+        ? []
+        : [
+            {
+              kind: "stepper" as const,
+              label: "Downloads at a time",
+              value: settings.max_concurrent,
+              min: 1,
+              max: MAX_CONCURRENCY,
+              onChange: (n: number) => report(engine.setQueueSettings(queue.id, { ...settings, max_concurrent: n })),
+            },
+          ]),
       {
         kind: "action",
         label: "Clear done",

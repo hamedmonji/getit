@@ -27,9 +27,9 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
-use crate::types::{DownloadId, DownloadItem, LinkInfo, Segment, part_path};
+use crate::rename::apply_rules;
+use crate::types::{DownloadId, DownloadItem, LinkInfo, RenameRule, Segment, part_path};
 
-const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 const SPEED_WINDOW: Duration = Duration::from_secs(3);
@@ -48,6 +48,8 @@ pub(crate) enum WorkerMsg {
     Meta {
         id: DownloadId,
         file_name: String,
+        /// The name the server gave, when the download just got its name.
+        original_name: Option<String>,
         total_bytes: Option<u64>,
         resumable: bool,
         etag: Option<String>,
@@ -84,6 +86,10 @@ pub(crate) struct Job {
     dest_dir: PathBuf,
     /// Names the queue's other downloads use; a new name avoids them.
     taken: HashSet<String>,
+    /// The queue's auto rename, for a download that doesn't have a name yet.
+    rename: Vec<RenameRule>,
+    /// How many times in a row network trouble is retried.
+    retries: u32,
     file_name: Option<String>,
     total_bytes: Option<u64>,
     resumable: Option<bool>,
@@ -93,12 +99,20 @@ pub(crate) struct Job {
 }
 
 impl Job {
-    pub(crate) fn new(item: &DownloadItem, dest_dir: &Path, taken: HashSet<String>) -> Self {
+    pub(crate) fn new(
+        item: &DownloadItem,
+        dest_dir: &Path,
+        taken: HashSet<String>,
+        rename: Vec<RenameRule>,
+        retries: u32,
+    ) -> Self {
         Self {
             id: item.id,
             url: item.url.clone(),
             dest_dir: dest_dir.to_path_buf(),
             taken,
+            rename,
+            retries,
             file_name: item.file_name.clone(),
             total_bytes: item.total_bytes,
             resumable: item.resumable,
@@ -161,7 +175,7 @@ pub(crate) async fn run(
                 if progressed {
                     failures = 0;
                 }
-                if failures >= MAX_RETRIES {
+                if failures >= job.retries {
                     break Outcome::Failed(msg);
                 }
                 let delay = RETRY_BASE_DELAY * 2u32.pow(failures);
@@ -256,12 +270,15 @@ async fn attempt(
         (0, response.content_length())
     };
 
+    let mut original_name = None;
     if job.file_name.is_none() {
-        let candidate = file_name_for(headers, response.url());
+        let original = file_name_for(headers, response.url());
+        let candidate = auto_name(&original, &job.rename);
         let name = reserve_file_name(&job.dest_dir, &candidate, &job.taken)
             .await
             .map_err(|e| io_fatal(&job.dest_dir, e))?;
         job.file_name = Some(name);
+        original_name = Some(original);
     }
     job.total_bytes = total;
     job.resumable = Some(partial || accepts_ranges(headers));
@@ -274,6 +291,7 @@ async fn attempt(
     let _ = tx.send(WorkerMsg::Meta {
         id: job.id,
         file_name: job.file_name.clone().unwrap_or_default(),
+        original_name,
         total_bytes: job.total_bytes,
         resumable: job.resumable.unwrap_or(false),
         etag: job.etag.clone(),
@@ -427,6 +445,8 @@ async fn segmented_part_intact(job: &Job) -> Result<bool, AttemptError> {
 /// What every segment of a download shares.
 struct SegmentCtx<'a> {
     client: &'a Client,
+    /// How many times in a row a segment retries network trouble.
+    retries: u32,
     url: &'a str,
     part: &'a Path,
     total: u64,
@@ -455,6 +475,7 @@ async fn download_segments(
     let stop = cancel.child_token();
     let ctx = SegmentCtx {
         client,
+        retries: job.retries,
         url: &url,
         part: &part,
         total: job.total_bytes.expect("segmented downloads have a size"),
@@ -573,7 +594,7 @@ async fn fetch_segment(
                 if written.load(Ordering::Relaxed) > before {
                     failures = 0;
                 }
-                if failures >= MAX_RETRIES {
+                if failures >= ctx.retries {
                     return Err(AttemptError::Retryable(msg).into());
                 }
                 let delay = RETRY_BASE_DELAY * 2u32.pow(failures);
@@ -796,6 +817,15 @@ fn file_name_for(headers: &HeaderMap, url: &Url) -> String {
         .unwrap_or_else(|| FALLBACK_FILE_NAME.to_string())
 }
 
+/// `name` with the queue's auto rename `rules` applied, made safe for the file
+/// system; `name` itself if that leaves nothing usable.
+fn auto_name(name: &str, rules: &[RenameRule]) -> String {
+    if rules.is_empty() {
+        return name.to_string();
+    }
+    sanitize_file_name(&apply_rules(name, rules)).unwrap_or_else(|| name.to_string())
+}
+
 /// Asks the server for the name a download of `url` would get, before a free
 /// name is picked in its folder, and its size. Reads only the response headers.
 pub(crate) async fn probe(client: &Client, url: &str) -> Result<LinkInfo, String> {
@@ -813,6 +843,7 @@ pub(crate) async fn probe(client: &Client, url: &str) -> Result<LinkInfo, String
     Ok(LinkInfo {
         file_name: file_name_for(response.headers(), response.url()),
         total_bytes: probed_size(status, response.headers()),
+        original_name: None,
     })
 }
 

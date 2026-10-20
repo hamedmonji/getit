@@ -110,6 +110,12 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
     return undefined;
   };
 
+  /** `name` as the queue for `dir` would name a new download, by its auto rename. */
+  const autoName = (name: string, dir: string) => {
+    if (!queueForDir(stateRef.current, dir)?.settings.rename.length) return name;
+    return engine.autoNames(dir, [name]).then(([renamed]) => renamed ?? name, () => name);
+  };
+
   /** What to reject with when `failed` of `total` links couldn't be added; nothing if none failed. */
   const throwIfFailed = (failed: unknown[], total: number) => {
     if (failed.length === 1 && total === 1) throw failed[0];
@@ -175,7 +181,7 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
       // The name in the link stands in when the server can't be asked, or
       // already couldn't be when the link was shown.
       const name = await probeLink(p.url, false)
-        .then((info) => info.file_name)
+        .then((info) => autoName(info.file_name, dir))
         .catch(() => nameFromUrl(p.url));
       const duplicate = await findByName(p.url, name, dir);
       return { p, name, duplicate: duplicate && { ...duplicate, pendingKey: p.key } };
@@ -218,7 +224,7 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
     const byName = Promise.all(
       fresh.map(async (url) => {
         const name = await probeLink(url)
-          .then((info) => info.file_name)
+          .then((info) => autoName(info.file_name, dir))
           .catch(() => nameFromUrl(url));
         return findByName(url, name, dir);
       }),

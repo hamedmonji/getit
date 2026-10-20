@@ -703,11 +703,11 @@ export default function App() {
   // Unfinished downloads in queue order, which is the order they run in. Not a
   // hook: this is past the early return above, so a hook here would break the
   // order React expects.
+  const settingsQueueItems = settingsQueue
+    ? settingsQueue.downloads.map((id) => state.downloads[id]).filter((item) => item && item.status !== "completed")
+    : [];
   const settingsQueueFiles = settingsQueue
-    ? settingsQueue.downloads
-        .map((id) => state.downloads[id])
-        .filter((item) => item && item.status !== "completed")
-        .map((item) => fileVm(item, settingsQueue, state, "List", null))
+    ? settingsQueueItems.map((item) => fileVm(item, settingsQueue, state, "List", null))
     : [];
   const count = folders.length + files.length;
   const single = selection.length === 1 ? selection[0] : null;
@@ -900,10 +900,14 @@ export default function App() {
                     id: settingsQueue.id,
                     name: baseName(settingsQueue.dir) || settingsQueue.dir,
                     path: displayPath(settingsQueue.dir, home),
+                    settings: settingsQueue.settings,
                   }
                 : null
             }
             files={settingsQueueFiles}
+            items={settingsQueueItems}
+            onRename={(renames) => renames.forEach(({ id, name }) => report(engine.renameDownload(id, name)))}
+            onSettings={(settings) => settingsQueue && report(engine.setQueueSettings(settingsQueue.id, settings))}
             onReorder={(ids) => settingsQueue && report(engine.reorderQueue(settingsQueue.id, ids))}
             onClose={() => setQueuePanel("closed")}
           />
@@ -944,6 +948,8 @@ export default function App() {
       {pasting && (
         <PasteBar
           urls={pasting}
+          dir={cwd}
+          rename={queueForDir(state, cwd)?.settings.rename}
           dirLabel={displayPath(cwd, home)}
           onAdd={(urls, always) => {
             if (always) setPasteMode("always");
@@ -956,6 +962,8 @@ export default function App() {
       {captured && captured.length > 0 && (
         <CapturedBar
           urls={captured}
+          dir={cwd}
+          rename={queueForDir(state, cwd)?.settings.rename}
           dirLabel={displayPath(cwd, home)}
           onAdd={(urls) => addLinks(urls).catch((e) => setNotice(`Couldn't add: ${e}`))}
           onClose={() => setCaptured(null)}

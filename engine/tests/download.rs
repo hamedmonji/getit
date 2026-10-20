@@ -15,7 +15,7 @@ use axum::routing::get;
 use futures_util::Stream;
 use getit_engine::{
     DownloadId, DownloadItem, DownloadStatus, Engine, EngineError, EngineEvent, JsonDirStore, LinkInfo,
-    MemoryStore, QueueId, QueueSettings,
+    MemoryStore, Pattern, QueueId, QueueSettings, RenameRule,
 };
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
@@ -223,8 +223,9 @@ impl Ctx {
             .set_queue_settings(
                 id,
                 QueueSettings {
-                    max_concurrent,
+                    max_concurrent: Some(max_concurrent),
                     paused: true,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -767,7 +768,7 @@ async fn enqueue_with_shows_the_probed_name_and_size_until_it_starts() {
     std::fs::write(dir.join("file.bin"), b"already here").unwrap();
     let mut events = ctx.engine.subscribe();
 
-    let info = LinkInfo { file_name: "file.bin".into(), total_bytes: Some(FILE_SIZE as u64) };
+    let info = LinkInfo { file_name: "file.bin".into(), total_bytes: Some(FILE_SIZE as u64), original_name: None };
     let id = ctx.engine.enqueue_with(&dir, &ctx.url("/file.bin"), Some(info)).unwrap();
     let added = loop {
         match events.recv().await.unwrap() {
@@ -789,7 +790,7 @@ async fn enqueue_with_shows_the_probed_name_and_size_until_it_starts() {
 async fn probe_asks_the_server() {
     let ctx = Ctx::new().await;
     let size = Some(FILE_SIZE as u64);
-    let info = |file_name: &str| LinkInfo { file_name: file_name.into(), total_bytes: size };
+    let info = |file_name: &str| LinkInfo { file_name: file_name.into(), total_bytes: size, original_name: None };
     assert_eq!(ctx.engine.probe(&ctx.url("/attachment")).await.unwrap(), info("report final.pdf"));
     assert_eq!(ctx.engine.probe(&ctx.url("/file.bin?sig=1")).await.unwrap(), info("file.bin"));
     // A server that ignores the range sends the whole file's length instead.
@@ -824,6 +825,87 @@ async fn uses_content_disposition_file_name() {
     ctx.assert_file_matches(id);
 }
 
+/// Sets the auto rename of the queue for `dir`, creating it if needed.
+fn set_rename(engine: &Engine, dir: &Path, rename: Vec<RenameRule>) -> QueueId {
+    let queue = engine.ensure_queue(dir).unwrap();
+    let mut settings = engine.queue(queue).unwrap().settings;
+    settings.rename = rename;
+    engine.set_queue_settings(queue, settings).unwrap();
+    queue
+}
+
+fn prefix_and_spaces() -> Vec<RenameRule> {
+    vec![
+        RenameRule::Prefix { text: "new ".into() },
+        RenameRule::Replace {
+            pattern: Pattern { text: r"\s+".into(), regex: true },
+            with: "_".into(),
+        },
+    ]
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn auto_rename_names_new_downloads_and_keeps_the_servers_name() {
+    let ctx = Ctx::new().await;
+    let dir = ctx.folder("a");
+    set_rename(&ctx.engine, &dir, prefix_and_spaces());
+    let id = ctx.engine.enqueue(&dir, &ctx.url("/attachment")).unwrap();
+    let item = wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert_eq!(item.file_name.as_deref(), Some("new_report_final.pdf"));
+    assert_eq!(item.original_name.as_deref(), Some("report final.pdf"));
+    ctx.assert_file_matches(id);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn auto_names_follow_the_folders_queue() {
+    let ctx = Ctx::new().await;
+    let dir = ctx.folder("a");
+    let names = vec!["report final.pdf".to_string()];
+    assert_eq!(ctx.engine.auto_names(&dir, &names).unwrap(), names);
+    set_rename(&ctx.engine, &dir, prefix_and_spaces());
+    assert_eq!(ctx.engine.auto_names(&dir, &names).unwrap(), vec!["new_report_final.pdf"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn enqueue_with_renames_a_server_name_but_not_a_chosen_one() {
+    let ctx = Ctx::new().await;
+    let dir = ctx.folder("a");
+    let queue = set_rename(&ctx.engine, &dir, prefix_and_spaces());
+    let mut settings = ctx.engine.queue(queue).unwrap().settings;
+    settings.paused = true;
+    ctx.engine.set_queue_settings(queue, settings).unwrap();
+
+    let server = LinkInfo { file_name: "a b.bin".into(), total_bytes: None, original_name: None };
+    let id = ctx.engine.enqueue_with(&dir, &ctx.url("/file.bin"), Some(server)).unwrap();
+    let item = ctx.engine.get(id).unwrap();
+    assert_eq!(item.suggested_name.as_deref(), Some("new_a_b.bin"));
+    assert_eq!(item.original_name.as_deref(), Some("a b.bin"));
+
+    let chosen = LinkInfo {
+        file_name: "mine.bin".into(),
+        total_bytes: None,
+        original_name: Some("a b.bin".into()),
+    };
+    let id = ctx.engine.enqueue_with(&dir, &ctx.url("/file.bin"), Some(chosen)).unwrap();
+    let item = ctx.engine.get(id).unwrap();
+    assert_eq!(item.suggested_name.as_deref(), Some("mine.bin"));
+    assert_eq!(item.original_name.as_deref(), Some("a b.bin"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn without_retries_network_errors_fail_at_once() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.engine.ensure_queue(ctx.folder("a")).unwrap();
+    let mut settings = ctx.engine.queue(queue).unwrap().settings;
+    settings.retries = 0;
+    ctx.engine.set_queue_settings(queue, settings).unwrap();
+    let started = Instant::now();
+    // Nothing listens on port 1.
+    let id = ctx.engine.add(queue, "http://127.0.0.1:1/file.bin").unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Failed).await;
+    assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn rejects_invalid_input() {
     let ctx = Ctx::new().await;
@@ -855,8 +937,9 @@ async fn queues_are_saved_and_restored() {
         .set_queue_settings(
             queue,
             QueueSettings {
-                max_concurrent: 1,
+                max_concurrent: Some(1),
                 paused: false,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -866,8 +949,9 @@ async fn queues_are_saved_and_restored() {
         .set_queue_settings(
             queue,
             QueueSettings {
-                max_concurrent: 1,
+                max_concurrent: Some(1),
                 paused: true,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -886,8 +970,9 @@ async fn queues_are_saved_and_restored() {
     assert_eq!(
         queues[0].settings,
         QueueSettings {
-            max_concurrent: 1,
-            paused: true
+            max_concurrent: Some(1),
+            paused: true,
+            ..Default::default()
         }
     );
     assert_eq!(queues[0].downloads, vec![first, second]);
@@ -900,8 +985,9 @@ async fn queues_are_saved_and_restored() {
         .set_queue_settings(
             queue,
             QueueSettings {
-                max_concurrent: 1,
+                max_concurrent: Some(1),
                 paused: false,
+                ..Default::default()
             },
         )
         .unwrap();
@@ -1102,7 +1188,7 @@ async fn changing_a_paused_queues_limit_keeps_resumed_downloads_going() {
     wait_for_progress(&ctx.engine, id).await;
 
     let mut settings = ctx.engine.queue(queue).unwrap().settings;
-    settings.max_concurrent = 3;
+    settings.max_concurrent = Some(3);
     ctx.engine.set_queue_settings(queue, settings).unwrap();
     assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Downloading);
     wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
@@ -1121,8 +1207,9 @@ async fn resumed_downloads_stay_paused_after_restart() {
         .set_queue_settings(
             queue,
             QueueSettings {
-                max_concurrent: 1,
+                max_concurrent: Some(1),
                 paused: true,
+                ..Default::default()
             },
         )
         .unwrap();

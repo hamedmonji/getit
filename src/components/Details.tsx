@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import type { DownloadItem } from "../lib/engine";
 import { formatEta, formatSize, formatSpeed } from "../lib/format";
-import type { FileVm } from "../lib/viewModels";
+import { originalName, type FileVm } from "../lib/viewModels";
 import { ActionButton, ProgressBar } from "./Glyphs";
 
 const STATUS: Record<DownloadItem["status"], string> = {
@@ -69,6 +69,7 @@ export function Details({
       </div>
       {!vm.done && <ProgressBar className="details-bar" pct={pct} color={vm.color} />}
       <dl className="details-grid">
+        {originalName(item) && <Row label="Original name">{originalName(item)}</Row>}
         <Row label="Size">{total || vm.done ? progress : `${progress} · size not reported`}</Row>
         {running && <Row label="Speed">{formatSpeed(speed)}</Row>}
         {running && total ? <Row label="Time left">{formatEta(speed ? (total - item.downloaded) / speed : Infinity)}</Row> : null}
