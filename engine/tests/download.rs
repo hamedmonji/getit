@@ -14,8 +14,8 @@ use axum::response::Response;
 use axum::routing::get;
 use futures_util::Stream;
 use getit_engine::{
-    DownloadId, DownloadItem, DownloadStatus, Engine, EngineError, EngineEvent, JsonDirStore, MemoryStore,
-    QueueId, QueueSettings,
+    DownloadId, DownloadItem, DownloadStatus, Engine, EngineError, EngineEvent, JsonDirStore, LinkInfo,
+    MemoryStore, QueueId, QueueSettings,
 };
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
@@ -759,17 +759,15 @@ async fn clear_completed_keeps_files_and_unfinished_downloads() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn file_name_for_asks_the_server() {
+async fn probe_asks_the_server() {
     let ctx = Ctx::new().await;
-    assert_eq!(
-        ctx.engine.file_name_for(&ctx.url("/attachment")).await.unwrap(),
-        "report final.pdf"
-    );
-    assert_eq!(
-        ctx.engine.file_name_for(&ctx.url("/file.bin?sig=1")).await.unwrap(),
-        "file.bin"
-    );
-    assert!(ctx.engine.file_name_for(&ctx.url("/missing")).await.is_err());
+    let size = Some(FILE_SIZE as u64);
+    let info = |file_name: &str| LinkInfo { file_name: file_name.into(), total_bytes: size };
+    assert_eq!(ctx.engine.probe(&ctx.url("/attachment")).await.unwrap(), info("report final.pdf"));
+    assert_eq!(ctx.engine.probe(&ctx.url("/file.bin?sig=1")).await.unwrap(), info("file.bin"));
+    // A server that ignores the range sends the whole file's length instead.
+    assert_eq!(ctx.engine.probe(&ctx.url("/norange.bin")).await.unwrap(), info("norange.bin"));
+    assert!(ctx.engine.probe(&ctx.url("/missing")).await.is_err());
     // Nothing was added.
     assert!(ctx.engine.queues().is_empty());
 }

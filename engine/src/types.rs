@@ -56,6 +56,15 @@ pub enum DownloadStatus {
     Failed,
 }
 
+/// What the server says about a link before it's downloaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkInfo {
+    /// The name a download of it would get, before a free name is picked in its folder.
+    pub file_name: String,
+    /// Its size, when the server tells.
+    pub total_bytes: Option<u64>,
+}
+
 /// Snapshot of a download's state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadItem {
@@ -277,7 +286,7 @@ pub enum EngineError {
     MoveFailed { name: String, error: String },
     #[error("couldn't copy {name}: {error}")]
     CopyFailed { name: String, error: String },
-    #[error("couldn't get the file name for {url}: {error}")]
+    #[error("couldn't look up {url}: {error}")]
     NameLookupFailed { url: String, error: String },
     #[error("\"{0}\" isn't a valid file name")]
     InvalidName(String),

@@ -2,7 +2,7 @@
 // `fileVm` / `folderStats` logic, using real engine data instead of a simulation.
 
 import type { EngineState } from "../hooks/useEngine";
-import type { DownloadItem, QueueInfo } from "./engine";
+import type { DownloadItem, LinkInfo, QueueInfo } from "./engine";
 import { type FileKind, resolveKind } from "./fileKind";
 import { formatEta, formatSize, formatSpeed } from "./format";
 import { baseName, isWithin, joinPath, parentPath } from "./paths";
@@ -78,6 +78,18 @@ export function nameFromUrl(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+/**
+ * The line shown above a link waiting to be added: its file name and size once
+ * the server has given them (`info`), a placeholder while it's asked (`undefined`),
+ * or the name in the link when it couldn't say (`null`).
+ */
+export function linkHeading(url: string, info: LinkInfo | null | undefined): { text: string; fetching: boolean } {
+  if (info === undefined) return { text: "Fetching file name…", fetching: true };
+  if (info === null) return { text: nameFromUrl(url), fetching: false };
+  const size = info.total_bytes === null ? "" : ` · ${formatSize(info.total_bytes)}`;
+  return { text: `${info.file_name}${size}`, fetching: false };
 }
 
 function hueOf(id: string): number {

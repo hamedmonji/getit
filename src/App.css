@@ -190,27 +190,24 @@ body {
   background: var(--panel);
 }
 
+/* Pasted and captured links sit at the bottom, above the details and status bar. */
 .paste-prompt {
   flex: none;
-  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
 }
 
 .paste-prompt > .add-bar {
-  border-bottom: 0;
-}
-
-/* Captured links sit at the bottom, above the details and status bar. */
-.paste-prompt.captured {
-  border-top: 1px solid var(--line);
+  min-height: 64px;
+  padding: 12px 14px;
   border-bottom: 0;
 }
 
 .paste-list {
   list-style: decimal;
-  max-height: 140px;
+  max-height: 240px;
   overflow: auto;
   margin: 0;
-  padding: 0 12px 10px 36px;
+  padding: 0 14px 12px 38px;
   font-size: 12px;
   color: var(--ink-muted);
   background: var(--panel);
@@ -219,13 +216,38 @@ body {
 }
 
 .paste-list li {
-  line-height: 20px;
+  padding: 4px 0;
 }
 
 .paste-urls {
   flex: 1;
   min-width: 0;
   font-size: 12px;
+}
+
+/* A link waiting to be added: its file name and size, with the link below. */
+.paste-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.paste-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.paste-name.fetching {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--ink-muted);
+}
+
+.paste-url {
+  font-size: 12px;
+  color: var(--ink-muted);
 }
 
 .muted {

@@ -4,6 +4,7 @@ import {
   displayName,
   fileVm,
   folderVm,
+  linkHeading,
   nameFromUrl,
   overviewList,
   pendingVm,
@@ -302,5 +303,25 @@ describe("overviewList", () => {
     const [newest, done] = overviewList(state, home, "all");
     expect(newest).toMatchObject({ dir: "/h", detail: `${newest.file.status} · Home` });
     expect(done).toMatchObject({ dir: "/h/a", detail: "Done · a" });
+  });
+});
+
+describe("linkHeading", () => {
+  const url = "https://example.com/files/a%20b.zip?sig=1";
+
+  it("says the name is being fetched until the server answers", () => {
+    expect(linkHeading(url, undefined)).toEqual({ text: "Fetching file name…", fetching: true });
+  });
+
+  it("shows the name with the size when known", () => {
+    expect(linkHeading(url, { file_name: "report.zip", total_bytes: 20 * 1024 * 1024 })).toEqual({
+      text: "report.zip · 20 MB",
+      fetching: false,
+    });
+    expect(linkHeading(url, { file_name: "report.zip", total_bytes: null }).text).toBe("report.zip");
+  });
+
+  it("falls back to the name in the link when the server couldn't say", () => {
+    expect(linkHeading(url, null)).toEqual({ text: "a b.zip", fetching: false });
   });
 });

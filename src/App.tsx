@@ -808,18 +808,6 @@ export default function App() {
         />
       )}
 
-      {pasting && (
-        <PasteBar
-          urls={pasting}
-          dirLabel={displayPath(cwd, home)}
-          onAdd={async (always) => {
-            if (always) setPasteMode("always");
-            await addLinks(pasting);
-          }}
-          onClose={() => setPasting(null)}
-        />
-      )}
-
       {updater.update && (
         <UpdateBar
           version={updater.update.version}
@@ -950,6 +938,18 @@ export default function App() {
           onRowAdd={(i) => settleDuplicates([duplicates.items[i]], "add")}
           onRowSkip={(i) => settleDuplicates([duplicates.items[i]], "skip")}
           onWhere={(i) => showDuplicate(duplicates.dir, duplicates.items[i])}
+        />
+      )}
+
+      {pasting && (
+        <PasteBar
+          urls={pasting}
+          dirLabel={displayPath(cwd, home)}
+          onAdd={async (always) => {
+            if (always) setPasteMode("always");
+            await addLinks(pasting);
+          }}
+          onClose={() => setPasting(null)}
         />
       )}
 

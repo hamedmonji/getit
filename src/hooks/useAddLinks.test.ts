@@ -2,20 +2,24 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { engine } from "../lib/engine";
+import { clearProbes } from "../lib/probes";
 import { item, queue, stateOf } from "../test/fixtures";
 import { useAddLinks } from "./useAddLinks";
 
 vi.mock("../lib/engine", () => ({
   engine: {
     addDownload: vi.fn(async (_dir: string, url: string) => `new:${url}`),
-    fileNameFor: vi.fn(async (url: string) => url.split("/").pop()),
+    probeLink: vi.fn(async (url: string) => ({ file_name: url.split("/").pop(), total_bytes: null })),
     fileExists: vi.fn(async () => false),
     resume: vi.fn(async () => {}),
     reveal: vi.fn(async () => {}),
   },
 }));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  clearProbes();
+});
 
 const DIR = "/home/q";
 const existing = item({ id: "a", queue_id: "q", url: "https://example.com/a.zip", status: "completed" });

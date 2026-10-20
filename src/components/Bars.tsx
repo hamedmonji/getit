@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,8 +16,10 @@ import { Kbd } from "@/components/ui/kbd";
 import { Label } from "@/components/ui/label";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { LinkInfo } from "../lib/engine";
 import { isPathLike } from "../lib/paths";
-import type { ViewMode } from "../lib/viewModels";
+import { useLinkInfo } from "../hooks/useLinkInfo";
+import { linkHeading, type ViewMode } from "../lib/viewModels";
 import type { UpdatePhase } from "../hooks/useUpdate";
 import {
   BackIcon,
@@ -461,6 +463,59 @@ export function InputBar({
   );
 }
 
+/** A link under its file name and size, or a placeholder while the server is asked. */
+function LinkWithInfo({ url, info }: { url: string; info: LinkInfo | null | undefined }) {
+  const heading = linkHeading(url, info);
+  return (
+    <span className="paste-link" title={url}>
+      <span className={`paste-name ellipsis${heading.fetching ? " fetching" : ""}`}>{heading.text}</span>
+      <span className="paste-url mono ellipsis">{url}</span>
+    </span>
+  );
+}
+
+/**
+ * Links waiting at the bottom of the window to be added, listed when there are
+ * several, each with its file name and size once the server has given them.
+ * `children` are its checkboxes and buttons, after the links.
+ */
+function LinksPrompt({
+  label,
+  urls,
+  error,
+  children,
+}: {
+  label: ReactNode;
+  urls: string[];
+  error: string | null;
+  children: ReactNode;
+}) {
+  const infos = useLinkInfo(urls);
+  const batch = urls.length > 1;
+  return (
+    <div className="paste-prompt">
+      <div className="add-bar">
+        <span className="paste-urls">{!batch && <LinkWithInfo url={urls[0]} info={infos[urls[0]]} />}</span>
+        {error && (
+          <span className="status-warning ellipsis" title={error}>
+            {error}
+          </span>
+        )}
+        {children}
+      </div>
+      {batch && (
+        <ol className="paste-list">
+          {urls.map((url) => (
+            <li key={url}>
+              <LinkWithInfo url={url} info={infos[url]} />
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 /** Asks whether to add the links found on the clipboard. Enter adds, Escape cancels. */
 export function PasteBar({
   urls,
@@ -487,42 +542,23 @@ export function PasteBar({
     }
   };
 
-  const batch = urls.length > 1;
   return (
-    <div className="paste-prompt">
-      <div className="add-bar">
-        <span className="add-label">
-          Add {batch ? `${urls.length} links` : "link"} to <span className="mono ink">{dirLabel}/</span>
-        </span>
-        <span className="paste-urls mono ellipsis" title={batch ? undefined : urls[0]}>
-          {batch ? "" : urls[0]}
-        </span>
-        {error && (
-          <span className="status-warning ellipsis" title={error}>
-            {error}
-          </span>
-        )}
-        <div className="paste-always">
-          <Checkbox id={alwaysId} checked={always} onCheckedChange={(checked) => setAlways(checked === true)} />
-          <Label htmlFor={alwaysId}>Don't ask again</Label>
-        </div>
-        <Button variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button variant="outline" autoFocus onClick={add}>
-          Add to queue
-        </Button>
+    <LinksPrompt
+      label=''
+      urls={urls}
+      error={error}
+    >
+      <div className="paste-always">
+        <Checkbox id={alwaysId} checked={always} onCheckedChange={(checked) => setAlways(checked === true)} />
+        <Label htmlFor={alwaysId}>Don't ask again</Label>
       </div>
-      {batch && (
-        <ol className="paste-list mono">
-          {urls.map((url) => (
-            <li key={url} className="ellipsis" title={url}>
-              {url}
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
+      <Button variant="outline" onClick={onClose}>
+        Cancel
+      </Button>
+      <Button variant="outline" title={`Add to ${dirLabel}/`} autoFocus onClick={add}>
+        Add here
+      </Button>
+    </LinksPrompt>
   );
 }
 
@@ -556,34 +592,14 @@ export function CapturedBar({
 
   const batch = urls.length > 1;
   return (
-    <div className="paste-prompt captured">
-      <div className="add-bar">
-        <span className="add-label">Captured from browser{batch ? `: ${urls.length} links` : ""}</span>
-        <span className="paste-urls mono ellipsis" title={batch ? undefined : urls[0]}>
-          {batch ? "" : urls[0]}
-        </span>
-        {error && (
-          <span className="status-warning ellipsis" title={error}>
-            {error}
-          </span>
-        )}
-        <Button variant="outline" onClick={onClose}>
-          Dismiss
-        </Button>
-        <Button variant="outline" title={`Add to ${dirLabel}/`} onClick={add}>
-          Add here
-        </Button>
-      </div>
-      {batch && (
-        <ol className="paste-list mono">
-          {urls.map((url) => (
-            <li key={url} className="ellipsis" title={url}>
-              {url}
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
+    <LinksPrompt label={`Captured from browser${batch ? `: ${urls.length} links` : ""}`} urls={urls} error={error}>
+      <Button variant="outline" onClick={onClose}>
+        Dismiss
+      </Button>
+      <Button variant="outline" title={`Add to ${dirLabel}/`} onClick={add}>
+        Add here
+      </Button>
+    </LinksPrompt>
   );
 }
 

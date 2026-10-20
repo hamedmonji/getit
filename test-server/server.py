@@ -16,6 +16,8 @@ Usage: python3 server.py [--port 8000] [--size BYTES]
 
 Each connection is throttled to 10 MB/s by default (about 2 minutes per file).
 Pass ?rate=KB_PER_SEC (1 KB = 1000 bytes) on any file to change it, or ?rate=0 for no limit.
+Pass ?delay=SECONDS on any file to wait that long before answering, to watch the
+app while it looks up a file's name and size.
 """
 
 import argparse
@@ -124,6 +126,16 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_text(400, "rate must be a whole number of KB per second\n", send_body)
             return
+        delay_values = parse_qs(url.query).get("delay")
+        if delay_values is not None:
+            try:
+                delay = float(delay_values[0])
+            except ValueError:
+                delay = -1
+            if not 0 <= delay <= 60:
+                self.send_text(400, "delay must be a number of seconds from 0 to 60\n", send_body)
+                return
+            time.sleep(delay)
         if sample:
             name, size, content_type = sample
             self.serve(name, size, content_type, True, rate, send_body)
@@ -201,6 +213,7 @@ def main():
     print(f"  /non-resumable.bin   {args.size} bytes, Range ignored")
     print(f"  /files               {len(SAMPLES)} samples, one per file type (lists their URLs)")
     print(f"  add ?rate=KB_PER_SEC to change the {DEFAULT_RATE // 1000} KB/s default, ?rate=0 for no limit")
+    print("  add ?delay=SECONDS to wait before answering, e.g. to watch the name being fetched")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

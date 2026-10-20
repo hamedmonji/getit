@@ -3,6 +3,7 @@ import { engine, type DownloadItem } from "../lib/engine";
 import { plural } from "../lib/format";
 import { sameUrl, withoutCopyNumber } from "../lib/links";
 import { joinPath } from "../lib/paths";
+import { probeLink } from "../lib/probes";
 import { report } from "../lib/report";
 import { displayName, nameFromUrl, queueForDir } from "../lib/viewModels";
 import type { EngineState } from "./useEngine";
@@ -163,7 +164,9 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
     const checked = await Promise.all(
       pending.map(async (p) => {
         // The name in the link stands in when the server can't be asked.
-        const name = await engine.fileNameFor(p.url).catch(() => nameFromUrl(p.url));
+        const name = await probeLink(p.url)
+          .then((info) => info.file_name)
+          .catch(() => nameFromUrl(p.url));
         const duplicate = await findByName(p.url, name, dir);
         return { p, name, duplicate: duplicate && { ...duplicate, pendingKey: p.key } };
       }),
@@ -203,7 +206,9 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
     const fresh = unasked.filter((url) => !byLink.some((d) => d.url === url));
     const byName = Promise.all(
       fresh.map(async (url) => {
-        const name = await engine.fileNameFor(url).catch(() => nameFromUrl(url));
+        const name = await probeLink(url)
+          .then((info) => info.file_name)
+          .catch(() => nameFromUrl(url));
         return findByName(url, name, dir);
       }),
     ).then((found) => {

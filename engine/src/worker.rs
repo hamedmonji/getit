@@ -27,7 +27,7 @@ use tokio::io::{AsyncSeekExt, AsyncWriteExt, BufWriter};
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
-use crate::types::{DownloadId, DownloadItem, Segment, part_path};
+use crate::types::{DownloadId, DownloadItem, LinkInfo, Segment, part_path};
 
 const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
@@ -797,8 +797,8 @@ fn file_name_for(headers: &HeaderMap, url: &Url) -> String {
 }
 
 /// Asks the server for the name a download of `url` would get, before a free
-/// name is picked in its folder. Reads only the response headers.
-pub(crate) async fn probe_file_name(client: &Client, url: &str) -> Result<String, String> {
+/// name is picked in its folder, and its size. Reads only the response headers.
+pub(crate) async fn probe(client: &Client, url: &str) -> Result<LinkInfo, String> {
     // A one-byte range keeps servers that honour it from sending the file; the
     // body is never read either way.
     let request = client.get(url).header(header::RANGE, "bytes=0-0").send();
@@ -810,7 +810,19 @@ pub(crate) async fn probe_file_name(client: &Client, url: &str) -> Result<String
     if !status.is_success() {
         return Err(format!("HTTP {status}"));
     }
-    Ok(file_name_for(response.headers(), response.url()))
+    Ok(LinkInfo {
+        file_name: file_name_for(response.headers(), response.url()),
+        total_bytes: probed_size(status, response.headers()),
+    })
+}
+
+/// The file's size from the answer to a `bytes=0-0` request: the total in
+/// `Content-Range` when the range was honoured, else the whole body's length.
+fn probed_size(status: StatusCode, headers: &HeaderMap) -> Option<u64> {
+    if status == StatusCode::PARTIAL_CONTENT {
+        return parse_content_range(headers).and_then(|(_, total)| total);
+    }
+    headers.get(header::CONTENT_LENGTH)?.to_str().ok()?.trim().parse().ok()
 }
 
 fn filename_from_disposition(headers: &HeaderMap) -> Option<String> {
@@ -990,6 +1002,21 @@ mod tests {
             HeaderValue::from_static("bytes */500"),
         );
         assert_eq!(parse_content_range_total(&headers), Some(500));
+    }
+
+    #[test]
+    fn probed_size_from_range_or_length() {
+        let mut ranged = HeaderMap::new();
+        ranged.insert(header::CONTENT_RANGE, HeaderValue::from_static("bytes 0-0/5000"));
+        ranged.insert(header::CONTENT_LENGTH, HeaderValue::from_static("1"));
+        assert_eq!(probed_size(StatusCode::PARTIAL_CONTENT, &ranged), Some(5000));
+        let mut unknown = HeaderMap::new();
+        unknown.insert(header::CONTENT_RANGE, HeaderValue::from_static("bytes 0-0/*"));
+        assert_eq!(probed_size(StatusCode::PARTIAL_CONTENT, &unknown), None);
+        let mut whole = HeaderMap::new();
+        whole.insert(header::CONTENT_LENGTH, HeaderValue::from_static("1234"));
+        assert_eq!(probed_size(StatusCode::OK, &whole), Some(1234));
+        assert_eq!(probed_size(StatusCode::OK, &HeaderMap::new()), None);
     }
 
     #[test]

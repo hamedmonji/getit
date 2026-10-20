@@ -12,8 +12,8 @@ use tokio_util::sync::CancellationToken;
 use crate::queue::Queue;
 use crate::store::{QueueSnapshot, QueueStore};
 use crate::types::{
-    DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, QueueId, QueueInfo,
-    QueueSettings, Result,
+    DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, LinkInfo, QueueId,
+    QueueInfo, QueueSettings, Result,
 };
 use crate::types::part_path;
 use crate::worker::{self, Job, Outcome, WorkerMsg, split_extension};
@@ -581,9 +581,9 @@ impl Engine {
     /// The file name the server gives `url`, as a download of it would be saved
     /// before ` (1)`, ` (2)`, ... is added for a name already taken. Makes one
     /// request and reads only its headers.
-    pub async fn file_name_for(&self, url: &str) -> Result<String> {
+    pub async fn probe(&self, url: &str) -> Result<LinkInfo> {
         let url = validate_url(url)?;
-        worker::probe_file_name(&self.inner.client, &url)
+        worker::probe(&self.inner.client, &url)
             .await
             .map_err(|error| EngineError::NameLookupFailed { url, error })
     }

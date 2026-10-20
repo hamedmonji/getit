@@ -71,6 +71,14 @@ export interface Trashed {
   error: string | null;
 }
 
+/** What the server says about a link before it's downloaded. */
+export interface LinkInfo {
+  /** The name a download of it would get, before a free name is picked in its folder. */
+  file_name: string;
+  /** Its size, when the server tells. */
+  total_bytes: number | null;
+}
+
 export interface Snapshot {
   queues: QueueInfo[];
   downloads: DownloadItem[];
@@ -88,7 +96,7 @@ export const engine = {
   initialDir: () => invoke<string>("initial_dir"),
   listDir: (path: string) => invoke<DirListing>("list_dir", { path }),
   /** The file name the server gives `url`; rejects if it can't be reached. */
-  fileNameFor: (url: string) => invoke<string>("file_name_for", { url }),
+  probeLink: (url: string) => invoke<LinkInfo>("probe_link", { url }),
   /** Whether `name` is taken in `dir` by a file or a partial download. */
   fileExists: (dir: string, name: string) => invoke<boolean>("file_exists", { dir, name }),
   /** Adds a link to the queue for `dir`: in line if the queue runs, started right away if it's paused. */

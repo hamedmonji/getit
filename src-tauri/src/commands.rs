@@ -5,7 +5,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use getit_engine::{DownloadId, DownloadItem, DownloadStatus, Engine, QueueId, QueueInfo, QueueSettings, QueueSnapshot};
+use getit_engine::{DownloadId, DownloadItem, DownloadStatus, Engine, LinkInfo, QueueId, QueueInfo, QueueSettings, QueueSnapshot};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
@@ -150,11 +150,11 @@ pub fn file_exists(dir: String, name: String) -> bool {
     dir.join(&name).exists() || dir.join(format!("{name}.part")).exists()
 }
 
-/// The file name the server gives `url`, for checking it against existing
-/// downloads and files before adding it.
+/// The file name and size the server gives `url`, for showing before it's
+/// added and checking it against existing downloads and files.
 #[tauri::command]
-pub async fn file_name_for(engine: State<'_, Engine>, url: String) -> CommandResult<String> {
-    engine.file_name_for(&url).await.map_err(err)
+pub async fn probe_link(engine: State<'_, Engine>, url: String) -> CommandResult<LinkInfo> {
+    engine.probe(&url).await.map_err(err)
 }
 
 #[tauri::command]

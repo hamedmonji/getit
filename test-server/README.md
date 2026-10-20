@@ -28,14 +28,14 @@ The samples cover every icon kind in `src/lib/fileKind.ts`:
 All the samples at 1.3 MB/s (`rate=1300`), to copy and paste into the app together:
 
 ```
-http://127.0.0.1:8000/files/report.pdf?rate=1300
-http://127.0.0.1:8000/files/notes.docx?rate=1300
-http://127.0.0.1:8000/files/changelog.md?rate=1300
+http://127.0.0.1:8000/files/report.pdf?rate=1300&delay=2
+http://127.0.0.1:8000/files/notes.docx?rate=1300&delay=1
+http://127.0.0.1:8000/files/changelog.md?rate=1300&delay=3
 http://127.0.0.1:8000/files/README?rate=1300
 http://127.0.0.1:8000/files/ubuntu-24.04.iso?rate=1300
-http://127.0.0.1:8000/files/Figma.dmg?rate=1300
+http://127.0.0.1:8000/files/Figma.dmg?rate=1300&delay=2
 http://127.0.0.1:8000/files/logo-pack.zip?rate=1300
-http://127.0.0.1:8000/files/repo.tar.gz?rate=1300
+http://127.0.0.1:8000/files/repo.tar.gz?rate=1300&delay=4
 http://127.0.0.1:8000/files/backup.7z?rate=1300
 http://127.0.0.1:8000/files/node-v22.pkg?rate=1300
 http://127.0.0.1:8000/files/setup.exe?rate=1300
@@ -58,5 +58,19 @@ http://127.0.0.1:8000/non-resumable.bin?rate=2000  # 2 MB/s, about 24 seconds pe
 ```
 
 The limit applies to each connection, so a download split across several connections goes faster in total.
+
+## Slow answers
+
+Add `delay`, in seconds, to make any file wait that long before answering. That's long enough to
+watch "Fetching file name…" in the paste and captured prompts before the name and size come in:
+
+```
+http://127.0.0.1:8000/files/report.pdf?delay=3
+http://127.0.0.1:8000/files/Big%20Buck%20Bunny.mp4?delay=5&rate=1300
+```
+
+Every request waits, including the download's own, so a download split across connections waits
+once per connection. getit gives up on the name lookup after 10 seconds, so `delay=10` or more shows
+the name from the link instead.
 
 The content is generated on the fly from a fixed seed, so the same offset always holds the same bytes. A resumed download should hash the same as an uninterrupted one.
