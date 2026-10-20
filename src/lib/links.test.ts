@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asLink, linksIn, sameUrl, withoutCopyNumber } from "./links";
+import { asLink, linksIn, sameUrl, withCaptured, withoutCaptured, withoutCopyNumber } from "./links";
 
 describe("asLink", () => {
   it("accepts http and https links as written", () => {
@@ -93,5 +93,23 @@ describe("withoutCopyNumber", () => {
     expect(withoutCopyNumber("file(1).zip")).toBe("file(1).zip");
     expect(withoutCopyNumber("file (1) final.zip")).toBe("file (1) final.zip");
     expect(withoutCopyNumber("file (a).zip")).toBe("file (a).zip");
+  });
+});
+
+describe("withCaptured", () => {
+  it("joins links on, each once", () => {
+    expect(withCaptured(null, ["a", "b"])).toEqual(["a", "b"]);
+    expect(withCaptured(["a", "b"], ["b", "c"])).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("withoutCaptured", () => {
+  it("drops the links", () => {
+    expect(withoutCaptured(["a", "b", "c"], ["b"])).toEqual(["a", "c"]);
+  });
+
+  it("is null when none are left", () => {
+    expect(withoutCaptured(["a"], ["a"])).toBeNull();
+    expect(withoutCaptured(null, ["a"])).toBeNull();
   });
 });

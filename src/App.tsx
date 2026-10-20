@@ -42,7 +42,7 @@ import { useUpdate } from "./hooks/useUpdate";
 import { engine, onBrowserLinks, type Captured, type DownloadStatus } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
 import { isFolderKey } from "./lib/keys";
-import { linksIn } from "./lib/links";
+import { linksIn, withCaptured, withoutCaptured } from "./lib/links";
 import { bestQueueFor } from "./lib/match";
 import type { MenuContext } from "./lib/menus";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
@@ -233,12 +233,13 @@ export default function App() {
     },
     [select],
   );
-  const { duplicates, pendingAdds, addLinks, settleDuplicates, currentOf, showDuplicate } = useAddLinks({
+  const { duplicates, pendingAdds, addLinks, checkCaptured, settleDuplicates, currentOf, showDuplicate } = useAddLinks({
     state,
     cwd: history?.cwd ?? null,
     select,
     go,
     setNotice,
+    recapture: (urls) => setCaptured((prev) => withCaptured(prev, urls)),
   });
 
   const goBack = () => {
@@ -538,26 +539,35 @@ export default function App() {
   // Links sent from the browser extension wait at the bottom, with any captured
   // before them, until the user adds them to a folder or dismisses them. getit
   // goes to the queue whose name best matches the first link's file name and
-  // page title; when none does, it opens the search to find a folder.
+  // page title; when none does, it opens the search to find a folder. Links
+  // that are already downloads are asked about right away instead; same-name
+  // ones leave the bottom once the server has given their names.
   const onCaptured = useRef<(captured: Captured) => void>(() => {});
   onCaptured.current = ({ urls, title }) => {
     const links = linksIn(urls.join("\n"));
-    if (!links.length) return;
-    setCaptured((prev) => [...new Set([...(prev ?? []), ...links])]);
+    if (!links.length || !cwd) return;
     const match = bestQueueFor(`${nameFromUrl(links[0]).replace(/\.[^.]*$/, "")} ${title ?? ""}`, Object.values(state.queues));
+    const { fresh, byName } = checkCaptured(links, match?.dir ?? cwd);
+    byName.then((asked) => asked.length && setCaptured((prev) => withoutCaptured(prev, asked)));
+    if (!fresh.length) return;
+    setCaptured((prev) => withCaptured(prev, fresh));
     if (!match) setAddressOpen(true);
     else if (match.dir !== cwd) go(match.dir);
   };
+  // Links are checked against the downloads and placed from the current
+  // folder, so they're taken once both have loaded; until then the app keeps
+  // them.
+  const linksReady = state.loaded && !!cwd;
   useEffect(() => {
+    if (!linksReady) return;
     const unlisten = onBrowserLinks((captured) => onCaptured.current(captured));
-    // Links that started the app arrive before the listener does.
     unlisten
       .then(() => engine.takeBrowserLinks())
       .then((pending) => pending.forEach((captured) => onCaptured.current(captured)));
     return () => {
       unlisten.then((f) => f());
     };
-  }, []);
+  }, [linksReady]);
 
   useShortcuts(
     { settingsOpen, selectionCount: selection.length },

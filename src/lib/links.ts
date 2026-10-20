@@ -43,3 +43,14 @@ export function linksIn(text: string): string[] {
   }
   return [...new Set(links)];
 }
+
+/** Captured links with `urls` joined on, each once. */
+export function withCaptured(captured: string[] | null, urls: string[]): string[] {
+  return [...new Set([...(captured ?? []), ...urls])];
+}
+
+/** Captured links without `urls`; null when none are left. */
+export function withoutCaptured(captured: string[] | null, urls: string[]): string[] | null {
+  const rest = captured?.filter((url) => !urls.includes(url)) ?? [];
+  return rest.length ? rest : null;
+}

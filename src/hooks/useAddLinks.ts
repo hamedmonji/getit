@@ -11,6 +11,11 @@ import type { EngineState } from "./useEngine";
 export interface Duplicates {
   /** Folder the links were being added to. */
   dir: string;
+  /**
+   * Whether they were sent by the browser extension and have no folder yet:
+   * adding them anyway hands them back to wait with the other captured links.
+   */
+  captured?: boolean;
   items: Duplicate[];
 }
 
@@ -43,6 +48,8 @@ interface Options {
   /** Goes to a folder with an item selected. */
   go: (path: string, focus: string) => void;
   setNotice: (notice: string | null) => void;
+  /** Takes back captured links the user wants to add anyway, to wait for a folder. */
+  recapture?: (urls: string[]) => void;
 }
 
 /** Unfinished and not running, so starting it means something. */
@@ -50,7 +57,7 @@ export const canStart = (item: DownloadItem | null) =>
   !!item && (item.status === "queued" || item.status === "paused" || item.status === "failed");
 
 /** Adding links as downloads, checking first for ones that already exist. */
-export function useAddLinks({ state, cwd, select, go, setNotice }: Options) {
+export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Options) {
   // For code that runs after waiting on the server, which needs the state as it is then.
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -119,8 +126,12 @@ export function useAddLinks({ state, cwd, select, go, setNotice }: Options) {
   };
 
   /** Asks about these duplicates too, alongside any already being asked about for `dir`. */
-  const askAbout = (dir: string, items: Duplicate[]) =>
-    setDuplicates((prev) => (prev && prev.dir === dir ? { dir, items: [...prev.items, ...items] } : { dir, items }));
+  const askAbout = (dir: string, items: Duplicate[], captured = false) =>
+    setDuplicates((prev) =>
+      prev && prev.dir === dir && !!prev.captured === captured
+        ? { ...prev, items: [...prev.items, ...items] }
+        : { dir, items, ...(captured && { captured }) },
+    );
 
   /** Drops the temporary items of duplicates that have been dealt with. */
   const dropPending = (items: Duplicate[]) => {
@@ -178,6 +189,31 @@ export function useAddLinks({ state, cwd, select, go, setNotice }: Options) {
     }
   };
 
+  /**
+   * Checks links the browser extension sent, headed for `dir`, before the user
+   * picks a folder for them, and asks about those that already exist. Returns
+   * the links that aren't downloads of the same link, found at once, and a
+   * promise of those among them found by file name, once the server says it.
+   * Links already being asked about are left to that.
+   */
+  const checkCaptured = (urls: string[], dir: string) => {
+    const unasked = urls.filter((url) => !isInFlight(url, dir));
+    const byLink = unasked.flatMap((url) => findByLink(url, dir) ?? []);
+    if (byLink.length) askAbout(dir, byLink, true);
+    const fresh = unasked.filter((url) => !byLink.some((d) => d.url === url));
+    const byName = Promise.all(
+      fresh.map(async (url) => {
+        const name = await engine.fileNameFor(url).catch(() => nameFromUrl(url));
+        return findByName(url, name, dir);
+      }),
+    ).then((found) => {
+      const duplicates = found.flatMap((d) => d ?? []);
+      if (duplicates.length) askAbout(dir, duplicates, true);
+      return duplicates.map((d) => d.url);
+    });
+    return { fresh, byName };
+  };
+
   /** A duplicate's existing download as it is now; null for a file. */
   const currentOf = (d: Duplicate): DownloadItem | null =>
     d.kind === "file" ? null : (state.downloads[d.existing.id] ?? d.existing);
@@ -211,14 +247,16 @@ export function useAddLinks({ state, cwd, select, go, setNotice }: Options) {
    */
   const settleDuplicates = (handled: Duplicate[], how: "start" | "add" | "skip") => {
     if (!duplicates) return;
-    const { dir } = duplicates;
+    const { dir, captured } = duplicates;
     const urls = new Set(handled.map((d) => d.url));
     setDuplicates((prev) => {
       const rest = prev?.items.filter((d) => !urls.has(d.url)) ?? [];
       return prev && rest.length ? { ...prev, items: rest } : null;
     });
     if (how === "start") startExisting(dir, handled);
-    if (how === "add") {
+    if (how === "add" && captured) {
+      recapture?.([...urls]);
+    } else if (how === "add") {
       addLinks([...urls], dir, true)
         .catch((e) => setNotice(`Couldn't add: ${e}`))
         .finally(() => dropPending(handled));
@@ -227,5 +265,5 @@ export function useAddLinks({ state, cwd, select, go, setNotice }: Options) {
     }
   };
 
-  return { duplicates, pendingAdds, addLinks, settleDuplicates, currentOf, showDuplicate };
+  return { duplicates, pendingAdds, addLinks, checkCaptured, settleDuplicates, currentOf, showDuplicate };
 }

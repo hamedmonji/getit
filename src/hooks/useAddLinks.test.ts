@@ -25,8 +25,9 @@ const setup = () => {
   const select = vi.fn();
   const go = vi.fn();
   const setNotice = vi.fn();
-  const hook = renderHook(() => useAddLinks({ state, cwd: DIR, select, go, setNotice }));
-  return { ...hook, select, go, setNotice };
+  const recapture = vi.fn();
+  const hook = renderHook(() => useAddLinks({ state, cwd: DIR, select, go, setNotice, recapture }));
+  return { ...hook, select, go, setNotice, recapture };
 };
 
 describe("useAddLinks", () => {
@@ -87,5 +88,55 @@ describe("useAddLinks", () => {
     act(() => result.current.settleDuplicates(result.current.duplicates!.items, "add"));
     await waitFor(() => expect(engine.addDownload).toHaveBeenCalledWith(DIR, "https://example.com/a.zip"));
     expect(result.current.duplicates).toBeNull();
+  });
+
+  describe("checkCaptured", () => {
+    it("asks at once about captured links that are already downloads, and passes on the rest", async () => {
+      const { result } = setup();
+      let checked!: ReturnType<typeof result.current.checkCaptured>;
+      act(() => {
+        checked = result.current.checkCaptured(["https://example.com/a.zip", "https://example.com/b.zip"], DIR);
+      });
+      expect(checked.fresh).toEqual(["https://example.com/b.zip"]);
+      expect(result.current.duplicates).toEqual({
+        dir: DIR,
+        captured: true,
+        items: [{ url: "https://example.com/a.zip", kind: "link", existing }],
+      });
+      await act(async () => expect(await checked.byName).toEqual([]));
+      expect(engine.addDownload).not.toHaveBeenCalled();
+    });
+
+    it("asks about captured links whose file name a download already has, once the server names them", async () => {
+      const { result } = setup();
+      let checked!: ReturnType<typeof result.current.checkCaptured>;
+      act(() => {
+        checked = result.current.checkCaptured(["https://cdn.example.com/signed/a.zip"], DIR);
+      });
+      expect(checked.fresh).toEqual(["https://cdn.example.com/signed/a.zip"]);
+      await act(async () => expect(await checked.byName).toEqual(["https://cdn.example.com/signed/a.zip"]));
+      expect(result.current.duplicates).toMatchObject({ captured: true, items: [{ kind: "name", existing }] });
+      expect(result.current.pendingAdds).toEqual([]);
+    });
+
+    it("leaves out captured links already being asked about", async () => {
+      const { result } = setup();
+      act(() => void result.current.checkCaptured(["https://example.com/a.zip"], DIR));
+      let checked!: ReturnType<typeof result.current.checkCaptured>;
+      act(() => {
+        checked = result.current.checkCaptured(["https://example.com/a.zip"], DIR);
+      });
+      expect(checked.fresh).toEqual([]);
+      expect(result.current.duplicates?.items).toHaveLength(1);
+    });
+
+    it("adding a captured duplicate anyway hands it back to wait for a folder", async () => {
+      const { result, recapture } = setup();
+      act(() => void result.current.checkCaptured(["https://example.com/a.zip"], DIR));
+      act(() => result.current.settleDuplicates(result.current.duplicates!.items, "add"));
+      expect(recapture).toHaveBeenCalledWith(["https://example.com/a.zip"]);
+      expect(engine.addDownload).not.toHaveBeenCalled();
+      expect(result.current.duplicates).toBeNull();
+    });
   });
 });
