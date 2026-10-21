@@ -101,7 +101,7 @@ fn manifest(exe: &Path, family: Family) -> String {
 }
 
 /// The `.app` bundle holding `exe`, if it's in one.
-fn bundle_of(exe: &Path) -> Option<&Path> {
+pub(crate) fn bundle_of(exe: &Path) -> Option<&Path> {
     exe.ancestors().find(|p| p.extension().is_some_and(|e| e == "app"))
 }
 

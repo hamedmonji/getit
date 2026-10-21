@@ -1,4 +1,4 @@
-import { relaunch } from "@tauri-apps/plugin-process";
+import { invoke } from "@tauri-apps/api/core";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useEffect, useState } from "react";
 
@@ -43,5 +43,5 @@ export function useUpdate() {
     }
   };
 
-  return { update, phase, install, restart: relaunch, dismiss: () => setUpdate(null) };
+  return { update, phase, install, restart: () => invoke<void>("relaunch"), dismiss: () => setUpdate(null) };
 }

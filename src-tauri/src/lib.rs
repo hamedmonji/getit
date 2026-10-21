@@ -1,6 +1,7 @@
 mod browser;
 mod commands;
 pub mod native_host;
+mod relaunch;
 
 use std::sync::Mutex;
 
@@ -64,6 +65,7 @@ pub fn run() {
             commands::reorder_queue,
             commands::clear_completed,
             browser::take_browser_links,
+            relaunch::relaunch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
