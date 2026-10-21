@@ -1,6 +1,6 @@
 [package]
 name = "getit"
-version = "0.3.0"
+version = "0.4.0"
 description = "getit download manager"
 authors = ["you"]
 edition = "2024"

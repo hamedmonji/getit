@@ -1467,7 +1467,7 @@ dependencies = [
 
 [[package]]
 name = "getit"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "getit-engine",
  "objc2-foundation",
