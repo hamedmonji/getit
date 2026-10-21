@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asLink, linksIn, sameUrl, withCaptured, withoutCaptured, withoutCopyNumber } from "./links";
+import { asLink, canRefresh, linksIn, refreshPrefill, sameUrl, withCaptured, withoutCaptured, withoutCopyNumber } from "./links";
 
 describe("asLink", () => {
   it("accepts http and https links as written", () => {
@@ -111,5 +111,32 @@ describe("withoutCaptured", () => {
   it("is null when none are left", () => {
     expect(withoutCaptured(["a"], ["a"])).toBeNull();
     expect(withoutCaptured(null, ["a"])).toBeNull();
+  });
+});
+
+describe("refreshPrefill", () => {
+  const current = "https://cdn.example.com/a.zip?token=old";
+
+  it("takes a new link from the clipboard", () => {
+    expect(refreshPrefill(" https://cdn.example.com/a.zip?token=new \n", current)).toBe(
+      "https://cdn.example.com/a.zip?token=new",
+    );
+  });
+
+  it("keeps the current link when the clipboard has no new one", () => {
+    expect(refreshPrefill(null, current)).toBe(current);
+    expect(refreshPrefill("some text", current)).toBe(current);
+    expect(refreshPrefill(current, current)).toBe(current);
+  });
+});
+
+describe("canRefresh", () => {
+  const current = "https://cdn.example.com/a.zip?token=old";
+
+  it("needs a different link", () => {
+    expect(canRefresh("https://cdn.example.com/a.zip?token=new", current)).toBe(true);
+    expect(canRefresh(current, current)).toBe(false);
+    expect(canRefresh("not a link", current)).toBe(false);
+    expect(canRefresh("", current)).toBe(false);
   });
 });

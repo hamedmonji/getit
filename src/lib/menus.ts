@@ -61,6 +61,8 @@ export interface MenuContext {
   openQueuePanel: () => void;
   onOpenFile: (vm: FileVm) => void;
   pauseDownloads: (ids: string[]) => void;
+  /** Asks for a new link for a download whose link expired. */
+  refreshLink: (id: string) => void;
   showInFolder: (key: string) => void;
   /** Where an item is on disk: its file, or for unfinished downloads their folder. */
   diskPath: (key: string) => string | undefined;
@@ -173,6 +175,7 @@ export function downloadMenu(ctx: MenuContext, vm: FileVm): MenuItem[] {
         label: status === "failed" ? "Retry" : "Resume",
         onSelect: () => report(engine.resume(vm.id)),
       });
+      items.push({ kind: "action", label: "Refresh Link…", onSelect: () => ctx.refreshLink(vm.id) });
     }
   }
   if (ctx.query) items.push(showInFolderItem(ctx, vm.id));

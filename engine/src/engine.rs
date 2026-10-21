@@ -688,6 +688,29 @@ impl Engine {
         Ok(())
     }
 
+    /// Gives a download that isn't running or finished a new link, for one whose
+    /// link expired. Its name and partial file are kept, so it carries on from
+    /// where it got to when resumed; if the new link's file turns out different,
+    /// the resume's `If-Range` check starts it over.
+    pub fn set_url(&self, id: DownloadId, url: &str) -> Result<()> {
+        let url = validate_url(url)?;
+        let mut guard = self.inner.lock();
+        let st = &mut *guard;
+        let queue = owner_queue(&mut st.queues, &st.owner, id)?;
+        let item = queue
+            .items
+            .get_mut(&id)
+            .ok_or(EngineError::DownloadNotFound(id))?;
+        if matches!(item.status, DownloadStatus::Downloading | DownloadStatus::Completed) {
+            return Err(invalid("change the link of", item));
+        }
+        item.url = url;
+        item.error = None;
+        self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
+        self.inner.save(queue);
+        Ok(())
+    }
+
     /// Puts paused or failed downloads back in line in their queues, which start
     /// them when they have room. Downloads in other states are left alone.
     pub fn requeue(&self, ids: &[DownloadId]) -> Result<()> {

@@ -814,6 +814,50 @@ async fn missing_file_fails() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn a_failed_download_finishes_from_a_new_link() {
+    let ctx = Ctx::new().await;
+    let id = ctx.engine.enqueue(ctx.folder("a"), &ctx.url("/missing")).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Failed).await;
+
+    ctx.engine.set_url(id, &ctx.url("/file.bin")).unwrap();
+    let item = ctx.engine.get(id).unwrap();
+    assert_eq!(item.url, ctx.url("/file.bin"));
+    assert_eq!(item.error, None);
+    ctx.engine.resume(id).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_paused_download_resumes_its_partial_file_from_a_new_link() {
+    let ctx = Ctx::new().await;
+    let id = ctx.engine.enqueue(ctx.folder("a"), &ctx.url("/file.bin")).unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    ctx.engine.pause(id).unwrap();
+    let paused = wait_for_status(&ctx.engine, id, DownloadStatus::Paused).await;
+    settle().await;
+
+    ctx.engine.set_url(id, &format!("{}?token=new", ctx.url("/file.bin"))).unwrap();
+    assert_eq!(ctx.engine.get(id).unwrap().file_name, paused.file_name);
+    ctx.engine.resume(id).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn set_url_refuses_running_downloads_and_bad_links() {
+    let ctx = Ctx::new().await;
+    let id = ctx.engine.enqueue(ctx.folder("a"), &ctx.url("/file.bin")).unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    assert!(matches!(
+        ctx.engine.set_url(id, &ctx.url("/other.bin")),
+        Err(EngineError::InvalidState { .. })
+    ));
+    ctx.engine.pause(id).unwrap();
+    assert!(matches!(ctx.engine.set_url(id, "not a url"), Err(EngineError::InvalidUrl(_))));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn uses_content_disposition_file_name() {
     let ctx = Ctx::new().await;
     let id = ctx

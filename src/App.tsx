@@ -13,6 +13,7 @@ import { Details } from "./components/Details";
 import { NoAccess } from "./components/NoAccess";
 import { Overview } from "./components/Overview";
 import { QueueSettings } from "./components/QueueSettings";
+import { RefreshLink } from "./components/RefreshLink";
 import { Settings } from "./components/Settings";
 import {
   CapturedBar,
@@ -106,6 +107,8 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   /** Folder whose name is being edited. */
   const [editing, setEditing] = useState<string | null>(null);
+  /** The download being given a new link, if one is. */
+  const [refreshing, setRefreshing] = useState<string | null>(null);
   /** Bumped to re-list the folder after changes the engine doesn't report. */
   const [listNonce, setListNonce] = useState(0);
   const refresh = useCallback(() => setListNonce((n) => n + 1), []);
@@ -683,6 +686,7 @@ export default function App() {
     openQueuePanel: () => setQueuePanel("open"),
     onOpenFile,
     pauseDownloads,
+    refreshLink: setRefreshing,
     showInFolder,
     diskPath,
     clipItems,
@@ -1015,6 +1019,21 @@ export default function App() {
         onToggleDetails={toggleDetails}
       />
 
+      <RefreshLink
+        download={
+          refreshing && state.downloads[refreshing]
+            ? { name: displayName(state.downloads[refreshing]), url: state.downloads[refreshing].url }
+            : null
+        }
+        onSave={(url) => {
+          const id = refreshing!;
+          engine
+            .setDownloadUrl(id, url)
+            .then(() => engine.resume(id))
+            .catch((e) => setNotice(`Couldn't refresh the link: ${e}`));
+        }}
+        onClose={() => setRefreshing(null)}
+      />
       <Settings
         open={settingsOpen}
         sortOrder={sortOrder}

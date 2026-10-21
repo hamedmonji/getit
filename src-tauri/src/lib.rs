@@ -46,6 +46,7 @@ pub fn run() {
             commands::preview_rename,
             commands::file_exists,
             commands::add_download,
+            commands::set_download_url,
             commands::pause_download,
             commands::resume_download,
             commands::requeue_downloads,

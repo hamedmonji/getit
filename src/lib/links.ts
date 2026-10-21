@@ -27,6 +27,22 @@ export function asLink(raw: string): string | null {
 }
 
 /**
+ * What the new-link field starts with when refreshing a download's expired
+ * `current` link: a different link on the clipboard, likely just copied from
+ * the browser, else the current link to edit.
+ */
+export function refreshPrefill(clipboard: string | null, current: string): string {
+  const link = clipboard ? asLink(clipboard.trim()) : null;
+  return link && sameUrl(link) !== sameUrl(current) ? link : current;
+}
+
+/** Whether `input` can replace the link `current`: a link, and a different one. */
+export function canRefresh(input: string, current: string): boolean {
+  const link = asLink(input.trim());
+  return !!link && link !== current;
+}
+
+/**
  * One link per line of `text`, each once, in order, for pasting a batch. A line
  * gives its first http(s) link, or is taken whole when it looks like a link
  * without a scheme (`example.com/file.zip`). Other lines are skipped.

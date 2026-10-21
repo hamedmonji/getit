@@ -56,6 +56,7 @@ function contextFor(items: DownloadItem[], overrides: Partial<MenuContext> = {},
     openQueuePanel: vi.fn(),
     onOpenFile: vi.fn(),
     pauseDownloads: vi.fn(),
+    refreshLink: vi.fn(),
     showInFolder: vi.fn(),
     diskPath: vi.fn((key: string) => (key.startsWith("/") ? key : CWD)),
     clipItems: vi.fn(),
@@ -205,6 +206,18 @@ describe("downloadMenu", () => {
     find(menuFor(item({ id: "b", queue_id: "q", status: "failed" })).items, "Retry").onSelect();
     expect(engine.resume).toHaveBeenCalledWith("a");
     expect(engine.resume).toHaveBeenCalledWith("b");
+  });
+
+  it("offers a new link for stopped downloads only", () => {
+    const labels = (status: DownloadItem["status"]) =>
+      menuFor(item({ id: "a", queue_id: "q", status })).items.flatMap((i) => (i.kind === "action" ? [i.label] : []));
+    expect(labels("paused")).toContain("Refresh Link…");
+    expect(labels("failed")).toContain("Refresh Link…");
+    expect(labels("downloading")).not.toContain("Refresh Link…");
+    expect(labels("completed")).not.toContain("Refresh Link…");
+    const { ctx, items } = menuFor(item({ id: "a", queue_id: "q", status: "failed" }));
+    find(items, "Refresh Link…").onSelect();
+    expect(ctx.refreshLink).toHaveBeenCalledWith("a");
   });
 
   it("shows a search result in its folder", () => {

@@ -133,6 +133,8 @@ export const engine = {
     invoke<DownloadId>("add_download", { dir, url, info }),
   /** Links the browser extension sent before the window listened for them; call once listening. */
   takeBrowserLinks: () => invoke<Captured[]>("take_browser_links"),
+  /** Gives a download that isn't running or finished a new link, keeping its partial file. */
+  setDownloadUrl: (id: DownloadId, url: string) => invoke<void>("set_download_url", { id, url }),
   pause: (id: DownloadId) => invoke<void>("pause_download", { id }),
   /** Starts a waiting, paused or failed download right away, past its queue's limit or pause. */
   resume: (id: DownloadId) => invoke<void>("resume_download", { id }),

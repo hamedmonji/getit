@@ -193,6 +193,12 @@ pub fn add_download(
     engine.enqueue_with(dir, &url, info).map_err(err)
 }
 
+/// Gives a stopped download a new link, for one whose link expired.
+#[tauri::command]
+pub fn set_download_url(engine: State<'_, Engine>, id: DownloadId, url: String) -> CommandResult<()> {
+    engine.set_url(id, &url).map_err(err)
+}
+
 #[tauri::command]
 pub fn pause_download(engine: State<'_, Engine>, id: DownloadId) -> CommandResult<()> {
     engine.pause(id).map_err(err)
