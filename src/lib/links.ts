@@ -36,6 +36,14 @@ export function refreshPrefill(clipboard: string | null, current: string): strin
   return link && sameUrl(link) !== sameUrl(current) ? link : current;
 }
 
+/**
+ * Captured `links` split while a download waits for a new link: the first
+ * becomes its link, the rest are handled as captured links usually are.
+ */
+export function takeForRefresh(links: string[]): { refresh: string | null; rest: string[] } {
+  return { refresh: links[0] ?? null, rest: links.slice(1) };
+}
+
 /** Whether `input` can replace the link `current`: a link, and a different one. */
 export function canRefresh(input: string, current: string): boolean {
   const link = asLink(input.trim());

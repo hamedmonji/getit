@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asLink, canRefresh, linksIn, refreshPrefill, sameUrl, withCaptured, withoutCaptured, withoutCopyNumber } from "./links";
+import { asLink, canRefresh, linksIn, takeForRefresh, refreshPrefill, sameUrl, withCaptured, withoutCaptured, withoutCopyNumber } from "./links";
 
 describe("asLink", () => {
   it("accepts http and https links as written", () => {
@@ -138,5 +138,15 @@ describe("canRefresh", () => {
     expect(canRefresh(current, current)).toBe(false);
     expect(canRefresh("not a link", current)).toBe(false);
     expect(canRefresh("", current)).toBe(false);
+  });
+});
+
+describe("takeForRefresh", () => {
+  it("gives the first captured link to the download and leaves the rest", () => {
+    expect(takeForRefresh(["https://a.com/1", "https://a.com/2"])).toEqual({
+      refresh: "https://a.com/1",
+      rest: ["https://a.com/2"],
+    });
+    expect(takeForRefresh([])).toEqual({ refresh: null, rest: [] });
   });
 });

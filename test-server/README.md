@@ -73,4 +73,24 @@ Every request waits, including the download's own, so a download split across co
 once per connection. getit gives up on the name lookup after 10 seconds, so `delay=10` or more shows
 the name from the link instead.
 
+## Failing downloads
+
+Add `fail`, a percentage from 0 to 100, to make a file fail partway. Each connection is cut once it
+has sent that share of what it asked for, so a download stops at that point whether it uses one
+connection or several. A retry from where a connection was cut gets `403 Link expired`, so the
+download ends up Failed at that percentage. That's handy for trying Refresh Link: give it the same URL
+without `fail` and it carries on from where it stopped.
+
+```
+http://127.0.0.1:8000/resumable.bin?fail=40&rate=20000      # fails at 40%
+http://127.0.0.1:8000/files/report.pdf?fail=75&rate=500      # fails at 75%
+http://127.0.0.1:8000/non-resumable.bin?fail=10&rate=20000  # fails at 10%; its retry restarts from 0 and gets 403
+http://127.0.0.1:8000/files/README?fail=0                    # fails before any data, like a dead link
+```
+
+The app's one-byte name and size lookup isn't failed, so the name still shows. The server remembers
+where it cut each URL until it's restarted, so adding the same failing URL again fails at once;
+restart the server, or change another parameter (such as `rate`), to start fresh. Restart the server
+after editing `server.py`, too: it doesn't reload itself.
+
 The content is generated on the fly from a fixed seed, so the same offset always holds the same bytes. A resumed download should hash the same as an uninterrupted one.

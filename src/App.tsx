@@ -43,7 +43,7 @@ import { useUpdate } from "./hooks/useUpdate";
 import { engine, onBrowserLinks, type Captured, type DownloadStatus } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
 import { isFolderKey } from "./lib/keys";
-import { linksIn, withCaptured, withoutCaptured } from "./lib/links";
+import { linksIn, takeForRefresh, withCaptured, withoutCaptured } from "./lib/links";
 import { bestQueueFor } from "./lib/match";
 import type { MenuContext } from "./lib/menus";
 import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
@@ -109,6 +109,8 @@ export default function App() {
   const [editing, setEditing] = useState<string | null>(null);
   /** The download being given a new link, if one is. */
   const [refreshing, setRefreshing] = useState<string | null>(null);
+  /** A link the browser captured while a download was waiting for a new one. */
+  const [refreshCapture, setRefreshCapture] = useState<string | null>(null);
   /** Bumped to re-list the folder after changes the engine doesn't report. */
   const [listNonce, setListNonce] = useState(0);
   const refresh = useCallback(() => setListNonce((n) => n + 1), []);
@@ -547,7 +549,13 @@ export default function App() {
   // ones leave the bottom once the server has given their names.
   const onCaptured = useRef<(captured: Captured) => void>(() => {});
   onCaptured.current = ({ urls, title }) => {
-    const links = linksIn(urls.join("\n"));
+    let links = linksIn(urls.join("\n"));
+    // A download waiting for a new link takes the first one.
+    if (refreshing) {
+      const { refresh, rest } = takeForRefresh(links);
+      if (refresh) setRefreshCapture(refresh);
+      links = rest;
+    }
     if (!links.length || !cwd) return;
     const match = bestQueueFor(`${nameFromUrl(links[0]).replace(/\.[^.]*$/, "")} ${title ?? ""}`, Object.values(state.queues));
     const { fresh, byName } = checkCaptured(links, match?.dir ?? cwd);
@@ -1025,6 +1033,7 @@ export default function App() {
             ? { name: displayName(state.downloads[refreshing]), url: state.downloads[refreshing].url }
             : null
         }
+        captured={refreshCapture}
         onSave={(url) => {
           const id = refreshing!;
           engine
@@ -1032,7 +1041,10 @@ export default function App() {
             .then(() => engine.resume(id))
             .catch((e) => setNotice(`Couldn't refresh the link: ${e}`));
         }}
-        onClose={() => setRefreshing(null)}
+        onClose={() => {
+          setRefreshing(null);
+          setRefreshCapture(null);
+        }}
       />
       <Settings
         open={settingsOpen}

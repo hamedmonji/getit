@@ -7,16 +7,20 @@ import { canRefresh, refreshPrefill } from "../lib/links";
 
 /**
  * Asks for a new link for a download whose link expired, starting with a link
- * on the clipboard if there's a new one. Saving gives the download the link and
- * resumes it from where it got to.
+ * on the clipboard if there's a new one. A link the browser extension captures
+ * while it's open takes its place, noted as such. Saving gives the download
+ * the link and resumes it from where it got to.
  */
 export function RefreshLink({
   download,
+  captured,
   onSave,
   onClose,
 }: {
   /** The download being given a new link, or null when the dialog is closed. */
   download: { name: string; url: string } | null;
+  /** The latest link the browser captured while it's open. */
+  captured: string | null;
   onSave: (url: string) => void;
   onClose: () => void;
 }) {
@@ -35,6 +39,9 @@ export function RefreshLink({
       live = false;
     };
   }, [current]);
+  useEffect(() => {
+    if (captured) setUrl(captured);
+  }, [captured]);
 
   const ok = !!download && canRefresh(url, download.url);
   const save = () => {
@@ -48,7 +55,8 @@ export function RefreshLink({
         <DialogHeader>
           <DialogTitle>Refresh Link</DialogTitle>
           <DialogDescription className="break-all">
-            Paste a new link for {download?.name}. It carries on from where it stopped.
+            Paste a new link for {download?.name}, or start the download again in your browser and it's captured
+            here. It carries on from where it stopped.
           </DialogDescription>
         </DialogHeader>
         <Input
@@ -61,6 +69,7 @@ export function RefreshLink({
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && save()}
         />
+        {captured && url === captured && <p className="refresh-captured">Link captured from browser</p>}
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel

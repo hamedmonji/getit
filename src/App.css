@@ -943,6 +943,13 @@ body {
   color: var(--tint);
 }
 
+/* Refresh Link dialog */
+.refresh-captured {
+  margin: -6px 2px 0;
+  font-size: 12px;
+  color: var(--tint);
+}
+
 /* Queue settings, from the queue settings design handoff. */
 .queue-settings-panel {
   width: 320px;

@@ -18,11 +18,16 @@ Each connection is throttled to 10 MB/s by default (about 2 minutes per file).
 Pass ?rate=KB_PER_SEC (1 KB = 1000 bytes) on any file to change it, or ?rate=0 for no limit.
 Pass ?delay=SECONDS on any file to wait that long before answering, to watch the
 app while it looks up a file's name and size.
+Pass ?fail=PERCENT (0 to 100) on any file to cut each connection once it has sent
+that share of what it asked for, so a download stops at that point however many
+connections it uses. Retrying from where a connection was cut gets 403, like an
+expired link. Restart the server to forget the cuts.
 """
 
 import argparse
 import random
 import re
+import threading
 import time
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,6 +39,11 @@ BLOCK = random.Random(42).randbytes(BLOCK_SIZE) if hasattr(random.Random, "randb
 DEFAULT_RATE = 10 * 1000 ** 2
 CONFIG = {"size": int(1.2 * 1000 ** 3)}
 MB = 1000 ** 2
+
+# Where connections to each failing URL (path and query) were cut, so a retry
+# from there is refused.
+CUTS = {}
+CUTS_LOCK = threading.Lock()
 
 # One sample per icon kind (see src/lib/fileKind.ts), plus a few edge cases.
 # All support Range. The bytes are the same random data as the .bin files;
@@ -136,12 +146,26 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_text(400, "delay must be a number of seconds from 0 to 60\n", send_body)
                 return
             time.sleep(delay)
+        fail_values = parse_qs(url.query).get("fail")
+        fail = None
+        if fail_values is not None:
+            try:
+                fail = float(fail_values[0])
+            except ValueError:
+                fail = -1
+            if not 0 <= fail <= 100:
+                self.send_text(400, "fail must be a percentage from 0 to 100\n", send_body)
+                return
         if sample:
             name, size, content_type = sample
-            self.serve(name, size, content_type, True, rate, send_body)
+            resumable = True
         else:
+            name, size, content_type = url.path.lstrip("/"), CONFIG["size"], "application/octet-stream"
             resumable = url.path == "/resumable.bin"
-            self.serve(url.path.lstrip("/"), CONFIG["size"], "application/octet-stream", resumable, rate, send_body)
+        # The app's name and size lookup asks for one byte; let it through.
+        if self.headers.get("Range", "").strip() == "bytes=0-0":
+            fail = None
+        self.serve(name, size, content_type, resumable, rate, send_body, fail, self.path)
 
     def send_text(self, status, text, send_body):
         body = text.encode()
@@ -152,7 +176,10 @@ class Handler(BaseHTTPRequestHandler):
         if send_body:
             self.wfile.write(body)
 
-    def serve(self, name, size, content_type, resumable, rate, send_body):
+    def serve(self, name, size, content_type, resumable, rate, send_body, fail=None, key=None):
+        """Send the file, or the requested range of it. With `fail`, a
+        percentage, the connection is cut once it has sent that share of what
+        was asked for, and a retry from a cut gets 403."""
         start, end = 0, size - 1
         status = 200
 
@@ -167,6 +194,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             start, end = parsed
             status = 206
+
+        if fail is not None:
+            with CUTS_LOCK:
+                cuts = CUTS.get(key, set())
+                # A file that can't resume restarts from 0 each time, so any cut refuses it.
+                refused = start in cuts or (not resumable and cuts)
+            if refused:
+                self.send_text(403, "Link expired (fail point reached)\n", send_body)
+                return
 
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -184,10 +220,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if not send_body:
             return
+        # Where to stop: the end, or once `fail` percent of the range is sent.
+        stop = end if fail is None else min(end, start + int((end - start + 1) * fail / 100) - 1)
         began = time.monotonic()
         sent = 0
         try:
-            for chunk in iter_bytes(start, end):
+            for chunk in iter_bytes(start, stop):
                 for i in range(0, len(chunk), 64 * 1024):
                     piece = chunk[i:i + 64 * 1024]
                     self.wfile.write(piece)
@@ -198,6 +236,13 @@ class Handler(BaseHTTPRequestHandler):
                             time.sleep(ahead)
         except (BrokenPipeError, ConnectionResetError):
             self.log_message("client disconnected after %d bytes", sent)
+            return
+        if stop < end:
+            # Promised more than was sent: drop the connection so the client sees it fail.
+            with CUTS_LOCK:
+                CUTS.setdefault(key, set()).add(stop + 1)
+            self.log_message("failing %s at %d of %d bytes", name, stop + 1, size)
+            self.close_connection = True
 
 
 def main():
@@ -214,6 +259,7 @@ def main():
     print(f"  /files               {len(SAMPLES)} samples, one per file type (lists their URLs)")
     print(f"  add ?rate=KB_PER_SEC to change the {DEFAULT_RATE // 1000} KB/s default, ?rate=0 for no limit")
     print("  add ?delay=SECONDS to wait before answering, e.g. to watch the name being fetched")
+    print("  add ?fail=PERCENT to cut each connection that far in, and answer 403 to retries from there")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
