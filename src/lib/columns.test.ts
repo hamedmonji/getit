@@ -48,21 +48,21 @@ describe("resetColumn", () => {
 
 describe("columnTemplate", () => {
   it("lets the name column fill until it's sized", () => {
-    expect(columnTemplate(DEFAULT_WIDTHS)).toBe("minmax(120px, 1fr) 200px 120px 80px 44px");
+    expect(columnTemplate(DEFAULT_WIDTHS)).toBe("minmax(120px, 1fr) 200px 120px 80px 0px");
   });
 
-  it("gives the slack to the action column once the name column is sized", () => {
-    expect(columnTemplate({ ...DEFAULT_WIDTHS, name: 300 })).toBe("300px 200px 120px 80px minmax(44px, 1fr)");
+  it("gives the slack to the empty column at the end once the name column is sized", () => {
+    expect(columnTemplate({ ...DEFAULT_WIDTHS, name: 300 })).toBe("300px 200px 120px 80px minmax(0px, 1fr)");
   });
 });
 
 describe("columnsWidth", () => {
   it("counts the filling name column at its minimum", () => {
-    expect(columnsWidth(DEFAULT_WIDTHS)).toBe(120 + 120 + 80 + 200 + 44);
+    expect(columnsWidth(DEFAULT_WIDTHS)).toBe(120 + 120 + 80 + 200);
   });
 
   it("counts a sized name column at its width", () => {
-    expect(columnsWidth({ ...DEFAULT_WIDTHS, name: 300 })).toBe(300 + 120 + 80 + 200 + 44);
+    expect(columnsWidth({ ...DEFAULT_WIDTHS, name: 300 })).toBe(300 + 120 + 80 + 200);
   });
 });
 

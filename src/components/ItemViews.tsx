@@ -292,6 +292,7 @@ export function ListView(props: ItemViewProps) {
             className={"row folder-row" + stateClass(props, g.path)}
             {...handlers(props, g.path, () => props.onOpenFolder(g.path))}
           >
+            <span />
             <FolderGlyph vm={g} size="small" />
             <FolderName props={props} path={g.path} name={g.name} className="row-name" />
             <span className="row-sub">{g.sub}</span>
@@ -306,6 +307,9 @@ export function ListView(props: ItemViewProps) {
             className={"row file-row" + stateClass(props, f.id)}
             {...handlers(props, f.id, () => props.onOpenFile(f))}
           >
+            <div className="row-actions">
+              <ActionButton vm={f} onAction={props.onAction} />
+            </div>
             <FileGlyph vm={f} size="small" />
             <FileName props={props} vm={f} className="row-name" />
             <span className="row-status" title={f.status}>
@@ -313,13 +317,12 @@ export function ListView(props: ItemViewProps) {
             </span>
             <ProgressBar className="row-bar" pct={f.pct} color={f.color} />
             <span className="row-size">{f.sizeLabel}</span>
-            <div className="row-actions">
-              <ActionButton vm={f} onAction={props.onAction} />
-            </div>
+            <span />
           </div>
         ))}
         {props.pending.map((f) => (
           <div key={f.id} className="row file-row pending" title={f.info}>
+            <span />
             <FileGlyph vm={f} size="small" />
             <span className="row-name" style={{ color: f.nameColor }}>
               {f.name}

@@ -713,8 +713,8 @@ body {
 /* List view */
 
 .list {
-  /* The columns, plus the rows' padding, icon, and gaps. */
-  min-width: calc(var(--list-columns-width) + 122px);
+  /* The columns, plus the rows' padding, action button, icon, and gaps. */
+  min-width: calc(var(--list-columns-width) + 158px);
 }
 
 .list-header,
@@ -730,7 +730,7 @@ body {
   z-index: 1;
   grid-template-columns: var(--list-columns);
   /* Lines the columns up with the rows' below. */
-  padding: 0 16px 0 58px;
+  padding: 0 16px 0 94px;
   height: 30px;
   align-items: stretch;
   line-height: 30px;
@@ -783,7 +783,7 @@ body {
 }
 
 .row {
-  grid-template-columns: 28px var(--list-columns);
+  grid-template-columns: 24px 28px var(--list-columns);
   padding: 0 10px 0 12px;
   border-radius: 7px;
 }
@@ -835,7 +835,7 @@ body {
 
 .row-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 /* Overview: running downloads by queue, on the right */

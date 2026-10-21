@@ -24,8 +24,6 @@ export const DEFAULT_WIDTHS: ColumnWidths = { name: null, progress: 120, size: 8
 /** Narrowest each column can be dragged to; the name column's is also its least when filling. */
 export const MIN_WIDTHS: Record<ColumnKey, number> = { name: 120, progress: 60, size: 56, status: 80 };
 
-/** The column at the end that holds a download's action button. */
-const ACTIONS_WIDTH = 44;
 
 /** `widths` with `key` set to `width`, kept to the column's minimum, in whole pixels. */
 export function resizeColumn(widths: ColumnWidths, key: ColumnKey, width: number): ColumnWidths {
@@ -35,7 +33,7 @@ export function resizeColumn(widths: ColumnWidths, key: ColumnKey, width: number
 /**
  * `widths` with a filling name column fixed at `width`, its current width on screen.
  * Done before resizing any column, so the column grows to the right, into the
- * action column, rather than taking its room from the name column on the left.
+ * empty column at the end, rather than taking its room from the name column on the left.
  */
 export function pinName(widths: ColumnWidths, width: number): ColumnWidths {
   if (widths.name !== null) return widths;
@@ -49,19 +47,19 @@ export function resetColumn(widths: ColumnWidths, key: ColumnKey): ColumnWidths 
 }
 
 /**
- * The columns' `grid-template-columns`, without the icon in front of each row.
- * Once the name column is sized, the action column takes up the slack instead,
- * which keeps the action buttons at the right edge.
+ * The columns' `grid-template-columns`, without the action button and icon in
+ * front of each row. Once the name column is sized, an empty column at the end
+ * takes up the slack instead, so the columns keep their widths.
  */
 export function columnTemplate(w: ColumnWidths): string {
   const name = w.name === null ? `minmax(${MIN_WIDTHS.name}px, 1fr)` : `${w.name}px`;
-  const actions = w.name === null ? `${ACTIONS_WIDTH}px` : `minmax(${ACTIONS_WIDTH}px, 1fr)`;
-  return [...COLUMNS.map((key) => (key === "name" ? name : `${w[key]}px`)), actions].join(" ");
+  const rest = w.name === null ? "0px" : "minmax(0px, 1fr)";
+  return [...COLUMNS.map((key) => (key === "name" ? name : `${w[key]}px`)), rest].join(" ");
 }
 
 /** Total width the columns need, so the list scrolls sideways rather than squeezing them. */
 export function columnsWidth(w: ColumnWidths): number {
-  return (w.name ?? MIN_WIDTHS.name) + w.progress + w.size + w.status + ACTIONS_WIDTH;
+  return (w.name ?? MIN_WIDTHS.name) + w.progress + w.size + w.status;
 }
 
 /** Widths saved as JSON; anything missing, too narrow, or not a number falls back to its default. */

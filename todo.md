@@ -3,7 +3,6 @@
 2. Refresh an expired link
 3. schedule
 4. don't ask for permissions on lunch
-5. download now
 
 ## low prio
 
