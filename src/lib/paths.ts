@@ -57,15 +57,23 @@ export function resolvePath(raw: string, home: string): string {
   return "/" + parts.join("/");
 }
 
-/** Folders from `home` (or the root, outside it) down to `path`, for the address bar. */
-export function crumbsFrom(home: string, path: string): { label: string; path: string }[] {
-  const inHome = isWithin(path, home);
-  const root = inHome ? home : "/";
-  const crumbs = [{ label: inHome ? "~" : "/", path: root }];
-  let current = root;
-  for (const part of path.slice(root.length).split("/").filter(Boolean)) {
+/**
+ * Breadcrumbs for `path`: from `top` (the chosen root, or home) for paths
+ * under it, labelled with its name ("~" for home); from home for other paths
+ * under home; from the file system's root otherwise.
+ */
+export function crumbsFrom(home: string, path: string, top: string = home): { label: string; path: string }[] {
+  const start = isWithin(path, top) ? top : isWithin(path, home) ? home : "/";
+  const crumbs = [{ label: start === home ? "~" : start === "/" ? "/" : baseName(start), path: start }];
+  let current = start;
+  for (const part of path.slice(start.length).split("/").filter(Boolean)) {
     current = joinPath(current, part);
     crumbs.push({ label: part, path: current });
   }
   return crumbs;
+}
+
+/** Whether Up goes anywhere from `path`: it stops at `top` (the chosen root, or home), at home, and at the file system's root. */
+export function canGoUp(path: string, home: string, top: string = home): boolean {
+  return path !== top && path !== home && path !== "/";
 }

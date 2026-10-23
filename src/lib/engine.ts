@@ -116,9 +116,13 @@ export interface DirListing {
 export const engine = {
   snapshot: () => invoke<Snapshot>("snapshot"),
   homeDir: () => invoke<string>("home_dir"),
-  /** Where the browser opens: a test folder in development, home otherwise. */
+  /** Where the browser opens: the chosen root, else a test folder in development, Documents on macOS, home elsewhere. */
   initialDir: () => invoke<string>("initial_dir"),
   listDir: (path: string) => invoke<DirListing>("list_dir", { path }),
+  /** The first-launch choice: a root folder, or null for Full Disk Access; null overall before the user chose. */
+  accessSetup: () => invoke<{ root: string | null } | null>("access_setup"),
+  /** Remembers the first-launch choice: `root` as the top folder, or null for Full Disk Access. */
+  setAccessSetup: (root: string | null) => invoke<void>("set_access_setup", { root }),
   /** The file name the server gives `url`; rejects if it can't be reached. */
   probeLink: (url: string) => invoke<LinkInfo>("probe_link", { url }),
   /** `names` as the queue for `dir` would name new downloads with its auto rename. */
@@ -179,11 +183,15 @@ export const engine = {
    * chosen, or null if cancelled. On macOS, choosing a protected folder there
    * lets getit read it.
    */
-  chooseFolder: (path: string) =>
-    open({ directory: true, defaultPath: path, title: "Grant getit access to this folder" }) as Promise<string | null>,
-  /** Opens macOS's Privacy & Security settings at Files & Folders. */
-  openPrivacySettings: () =>
-    openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders"),
+  chooseFolder: (path: string, title: string) =>
+    open({ directory: true, defaultPath: path, title }) as Promise<string | null>,
+  /** Opens macOS's Privacy & Security settings at Full Disk Access. */
+  openFullDiskAccessSettings: () =>
+    openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"),
+  /** getit's `.app` bundle, to drag into the Full Disk Access list; null when not run from one, as in development. */
+  appBundle: () => invoke<string | null>("app_bundle"),
+  /** Quits and opens getit again, which macOS may need before Full Disk Access applies. */
+  relaunch: () => invoke<void>("relaunch"),
   /** The clipboard's text; rejects when it holds no text. */
   readClipboard: () => readText(),
   writeClipboard: (text: string) => writeText(text),

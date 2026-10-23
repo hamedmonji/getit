@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   baseName,
+  canGoUp,
   crumbsFrom,
   displayPath,
   isPathLike,
@@ -131,5 +132,38 @@ describe("crumbsFrom", () => {
       { label: "Volumes", path: "/Volumes" },
       { label: "x", path: "/Volumes/x" },
     ]);
+  });
+  it("starts at the chosen root, named, for paths under it", () => {
+    expect(crumbsFrom(home, "/Users/me/Documents/dl/a", "/Users/me/Documents/dl")).toEqual([
+      { label: "dl", path: "/Users/me/Documents/dl" },
+      { label: "a", path: "/Users/me/Documents/dl/a" },
+    ]);
+    expect(crumbsFrom(home, "/Volumes/x/y", "/Volumes/x")).toEqual([
+      { label: "x", path: "/Volumes/x" },
+      { label: "y", path: "/Volumes/x/y" },
+    ]);
+  });
+
+  it("falls back to home, then the root, outside the chosen root", () => {
+    expect(crumbsFrom(home, "/Users/me/Music", "/Users/me/Documents/dl")[0]).toEqual({ label: "~", path: home });
+    expect(crumbsFrom(home, "/tmp", "/Users/me/Documents/dl")[0]).toEqual({ label: "/", path: "/" });
+  });
+});
+
+describe("canGoUp", () => {
+  const home = "/Users/me";
+
+  it("stops at home and the file system's root", () => {
+    expect(canGoUp(home, home)).toBe(false);
+    expect(canGoUp("/", home)).toBe(false);
+    expect(canGoUp("/Users/me/a", home)).toBe(true);
+    expect(canGoUp("/Volumes", home)).toBe(true);
+  });
+
+  it("stops at the chosen root too", () => {
+    const top = "/Users/me/Documents/dl";
+    expect(canGoUp(top, home, top)).toBe(false);
+    expect(canGoUp(`${top}/a`, home, top)).toBe(true);
+    expect(canGoUp("/Users/me/Music", home, top)).toBe(true);
   });
 });

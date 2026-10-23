@@ -1,3 +1,4 @@
+mod access;
 mod browser;
 mod commands;
 pub mod native_host;
@@ -35,6 +36,10 @@ pub fn run() {
             app.manage(engine);
             browser::listen(app.handle().clone());
             native_host::register(&app.path().home_dir()?);
+            app.manage(access::Access::load(
+                app.path().home_dir()?,
+                app.path().app_data_dir()?.join("setup.json"),
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -42,6 +47,9 @@ pub fn run() {
             commands::home_dir,
             commands::initial_dir,
             commands::list_dir,
+            commands::access_setup,
+            commands::app_bundle,
+            commands::set_access_setup,
             commands::probe_link,
             commands::auto_names,
             commands::preview_rename,

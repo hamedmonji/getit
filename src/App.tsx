@@ -10,6 +10,7 @@ import {
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { Details } from "./components/Details";
+import { FirstLaunch } from "./components/FirstLaunch";
 import { NoAccess } from "./components/NoAccess";
 import { Overview } from "./components/Overview";
 import { QueueSettings } from "./components/QueueSettings";
@@ -46,7 +47,7 @@ import { isFolderKey } from "./lib/keys";
 import { linksIn, takeForRefresh, withCaptured, withoutCaptured } from "./lib/links";
 import { bestQueueFor } from "./lib/match";
 import type { MenuContext } from "./lib/menus";
-import { baseName, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
+import { baseName, canGoUp, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import { FILE_MANAGER, IS_MAC } from "./lib/platform";
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
@@ -90,6 +91,10 @@ const NOTICE_MS = 6000;
 export default function App() {
   const state = useEngine();
   const [home, setHome] = useState<string | null>(null);
+  /** The folder chosen on first launch as the top, instead of home; null when none was. */
+  const [root, setRoot] = useState<string | null>(null);
+  /** Whether to ask how getit gets into macOS's protected folders, on first launch. */
+  const [firstLaunch, setFirstLaunch] = useState(false);
   const [history, setHistory] = useState<History | null>(null);
   /** Selected folder paths and download ids. */
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -114,8 +119,13 @@ export default function App() {
   /** Bumped to re-list the folder after changes the engine doesn't report. */
   const [listNonce, setListNonce] = useState(0);
   const refresh = useCallback(() => setListNonce((n) => n + 1), []);
-  /** Folders the user tried granting access to, which still can't be opened. */
-  const [accessAsked, setAccessAsked] = useState<Set<string>>(new Set());
+  /** Whether the user went to turn on Full Disk Access, which may need a restart to apply. */
+  const [accessAsked, setAccessAsked] = useState(false);
+  /** getit's app bundle, to drag into the Full Disk Access list; null in development. */
+  const [appBundle, setAppBundle] = useState<string | null>(null);
+  useEffect(() => {
+    engine.appBundle().then(setAppBundle, () => {});
+  }, []);
   /**
    * What the right-click menu is for: a folder path or download id, or null for
    * the folder's empty space. Counts the times it opened, to make a new one each time.
@@ -206,8 +216,10 @@ export default function App() {
   }, [addressOpen, query]);
 
   useEffect(() => {
-    Promise.all([engine.homeDir(), engine.initialDir()]).then(([home, start]) => {
+    Promise.all([engine.homeDir(), engine.initialDir(), engine.accessSetup()]).then(([home, start, setup]) => {
       setHome(home);
+      setRoot(setup?.root ?? null);
+      setFirstLaunch(IS_MAC && !setup);
       setHistory({ cwd: start, back: [], forward: [] });
     });
   }, []);
@@ -260,8 +272,7 @@ export default function App() {
     setHistory({ cwd, back: [...history.back, history.cwd], forward });
     select([]);
   };
-  // Up stops at home, or at the root for folders outside it.
-  const canUp = !!home && !!cwd && cwd !== home && cwd !== "/";
+  const canUp = !!home && !!cwd && canGoUp(cwd, home, root ?? home);
   const goUp = () => {
     if (canUp && cwd) go(parentPath(cwd), cwd);
   };
@@ -504,18 +515,37 @@ export default function App() {
       .catch((e) => console.error(e));
   };
 
-  // Choosing a protected folder in the Open panel lets getit read it. Then it's
-  // listed again; a different folder chosen there is gone to instead.
-  const grantAccess = (dir: string) => {
+  // macOS doesn't list apps under Full Disk Access on its own, so getit is
+  // shown in Finder too, to drag into the list.
+  const revealAppBundle = appBundle ? () => report(engine.reveal([appBundle])) : null;
+  const askFullDiskAccess = () => {
+    setAccessAsked(true);
+    revealAppBundle?.();
+    report(engine.openFullDiskAccessSettings());
+  };
+
+  // First launch: the chosen folder becomes the top and is opened, and getit
+  // may read it even inside a protected folder, since the user chose it.
+  const chooseRoot = () => {
     engine
-      .chooseFolder(dir)
-      .then((picked) => {
+      .chooseFolder(home ?? "/", "Choose a folder for getit")
+      .then(async (picked) => {
         if (!picked) return;
-        setAccessAsked((asked) => new Set(asked).add(dir));
-        if (picked === dir) setListNonce((n) => n + 1);
-        else go(picked);
+        await engine.setAccessSetup(picked);
+        setRoot(picked);
+        setFirstLaunch(false);
+        setHistory({ cwd: picked, back: [], forward: [] });
       })
-      .catch((e) => setNotice(`Couldn't ask for access: ${e}`));
+      .catch((e) => setNotice(`Couldn't choose the folder: ${e}`));
+  };
+  const chooseFullDiskAccess = () => {
+    engine
+      .setAccessSetup(null)
+      .then(() => {
+        setFirstLaunch(false);
+        askFullDiskAccess();
+      })
+      .catch((e) => setNotice(`Couldn't save the choice: ${e}`));
   };
 
   /** Adds the links in `text` to this folder's queue, after asking unless the user chose not to be asked. */
@@ -765,7 +795,7 @@ export default function App() {
         onForward={goForward}
         onUp={goUp}
         cwdLabel={displayPath(cwd, home)}
-        crumbs={crumbsFrom(home, cwd)}
+        crumbs={crumbsFrom(home, cwd, root ?? home)}
         onCrumb={(path) => go(path)}
         dropTarget={drag?.target ?? null}
         addressOpen={addressOpen}
@@ -778,7 +808,10 @@ export default function App() {
         onSearchAll={setSearchAll}
         onGoTo={async (raw) => {
           const path = resolvePath(raw, home);
-          await engine.listDir(path);
+          // A folder getit can't open is still gone to, to offer granting access.
+          await engine.listDir(path).catch((e) => {
+            if (e !== NO_ACCESS) throw e;
+          });
           go(path);
           setAddressOpen(false);
         }}
@@ -865,9 +898,10 @@ export default function App() {
               {isEmpty && noAccess && (
                 <NoAccess
                   name={baseName(cwd)}
-                  asked={accessAsked.has(cwd)}
-                  onGrant={() => grantAccess(cwd)}
-                  onSettings={() => report(engine.openPrivacySettings())}
+                  asked={accessAsked}
+                  onSettings={askFullDiskAccess}
+                  onReveal={revealAppBundle}
+                  onRestart={() => report(engine.relaunch())}
                 />
               )}
               {isEmpty && !noAccess && (
@@ -1046,6 +1080,7 @@ export default function App() {
           setRefreshCapture(null);
         }}
       />
+      <FirstLaunch open={firstLaunch} onChooseFolder={chooseRoot} onFullDiskAccess={chooseFullDiskAccess} />
       <Settings
         open={settingsOpen}
         sortOrder={sortOrder}

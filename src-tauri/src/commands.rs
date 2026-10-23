@@ -12,6 +12,8 @@ use getit_engine::{
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
+use crate::access::{Access, Setup};
+
 type CommandResult<T> = Result<T, String>;
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -38,10 +40,15 @@ pub fn home_dir(app: AppHandle) -> CommandResult<String> {
     Ok(home.to_string_lossy().into_owned())
 }
 
-/// Folder the browser opens at. Development builds start in `test-downloads/`
-/// at the project root (created if needed); release builds start at home.
+/// Folder the browser opens at: the root chosen on first launch, if any.
+/// Otherwise development builds start in `test-downloads/` at the project root
+/// (created if needed); release builds start in Documents on macOS and at home
+/// elsewhere.
 #[tauri::command]
-pub fn initial_dir(app: AppHandle) -> CommandResult<String> {
+pub fn initial_dir(app: AppHandle, access: State<'_, Access>) -> CommandResult<String> {
+    if let Some(root) = access.setup().and_then(|setup| setup.root) {
+        return Ok(root.to_string_lossy().into_owned());
+    }
     if cfg!(debug_assertions) {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -50,7 +57,31 @@ pub fn initial_dir(app: AppHandle) -> CommandResult<String> {
         fs::create_dir_all(&dir).map_err(err)?;
         return Ok(dir.to_string_lossy().into_owned());
     }
-    home_dir(app)
+    let home = app.path().home_dir().map_err(err)?;
+    let start = if cfg!(target_os = "macos") { home.join("Documents") } else { home };
+    Ok(start.to_string_lossy().into_owned())
+}
+
+/// The `.app` bundle getit runs from, for dragging into System Settings' Full
+/// Disk Access list, which apps aren't added to on their own. None when getit
+/// doesn't run from a bundle, as in development.
+#[tauri::command]
+pub fn app_bundle() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    crate::native_host::bundle_of(&exe).map(|bundle| bundle.to_string_lossy().into_owned())
+}
+
+/// What the user chose on first launch, or None if they haven't yet.
+#[tauri::command]
+pub fn access_setup(access: State<'_, Access>) -> Option<Setup> {
+    access.setup()
+}
+
+/// Remembers the first-launch choice: `root` as getit's top folder, or None
+/// for Full Disk Access.
+#[tauri::command]
+pub fn set_access_setup(access: State<'_, Access>, root: Option<String>) -> CommandResult<()> {
+    access.set_setup(Setup { root: root.map(PathBuf::from) }).map_err(err)
 }
 
 #[derive(Serialize)]
@@ -83,11 +114,15 @@ const PACKAGE_EXTENSIONS: &[&str] = &[
 ];
 
 /// What `list_dir` fails with when the system won't let getit read the folder,
-/// such as a privacy-protected one on macOS (Documents, Desktop, ...).
+/// such as a privacy-protected one on macOS (Documents, Desktop, ...), or when
+/// reading it would make macOS ask because getit doesn't have Full Disk Access.
 const NO_ACCESS: &str = "no access";
 
 #[tauri::command]
-pub async fn list_dir(path: String) -> CommandResult<DirListing> {
+pub async fn list_dir(access: State<'_, Access>, path: String) -> CommandResult<DirListing> {
+    if access.blocked(Path::new(&path)) {
+        return Err(NO_ACCESS.to_string());
+    }
     let mut folders = Vec::new();
     let mut files = Vec::new();
     let entries = fs::read_dir(&path).map_err(|e| match e.kind() {
@@ -104,8 +139,10 @@ pub async fn list_dir(path: String) -> CommandResult<DirListing> {
         if meta.is_file() {
             files.push(name);
         } else if meta.is_dir() && !is_hidden(&name, &meta) && !is_package(&name) {
+            let path = entry.path();
             folders.push(Folder {
-                items: count_visible(&entry.path()),
+                // Counting inside a protected folder would make macOS ask.
+                items: if access.blocked(&path) { 0 } else { count_visible(&path) },
                 name,
             });
         }

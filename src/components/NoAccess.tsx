@@ -5,21 +5,24 @@ const IS_MAC = navigator.userAgent.includes("Mac");
 
 /**
  * Shown in place of a folder the system won't let getit read. On macOS that's
- * usually a privacy-protected folder (Documents, Desktop, ...): choosing it in an
- * Open panel lets getit in, and System Settings can allow it for good.
+ * usually a privacy-protected folder (Documents, Desktop, ...), which getit
+ * opens once it has Full Disk Access. macOS may apply that only after a restart.
  */
 export function NoAccess({
   name,
   asked,
-  onGrant,
   onSettings,
+  onReveal,
+  onRestart,
 }: {
   /** The folder's name, such as "Documents". */
   name: string;
-  /** Whether the user already tried granting access to this folder. */
+  /** Whether the user already went to turn on Full Disk Access. */
   asked: boolean;
-  onGrant: () => void;
   onSettings: () => void;
+  /** Shows getit in Finder, to drag into the Full Disk Access list; null when it isn't in an app bundle. */
+  onReveal: (() => void) | null;
+  onRestart: () => void;
 }) {
   if (!IS_MAC) {
     return (
@@ -37,18 +40,21 @@ export function NoAccess({
         <EmptyTitle>getit can't open “{name}”</EmptyTitle>
         <EmptyDescription>
           {asked
-            ? "macOS still isn't letting getit in. Allow getit under Files & Folders (or Full Disk Access) in Privacy & Security, then come back."
-            : `macOS protects this folder. Choose it in the next window to let getit open it.`}
+            ? "Add getit to the Full Disk Access list: drag it in from Finder, or click + and choose it. Turn it on, then restart getit so macOS lets it in."
+            : "macOS protects this folder. Give getit Full Disk Access in Privacy & Security to open it, along with Desktop and Downloads."}
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
         <div className="flex gap-2">
-          <Button variant={asked ? "outline" : "default"} onClick={onGrant}>
-            Grant Access…
+          <Button variant={asked ? "outline" : "default"} onClick={onSettings}>
+            {asked ? "Open Settings" : "Open Full Disk Access Settings"}
           </Button>
-          <Button variant={asked ? "default" : "outline"} onClick={onSettings}>
-            Open Privacy Settings
-          </Button>
+          {asked && onReveal && (
+            <Button variant="outline" onClick={onReveal}>
+              Show getit in Finder
+            </Button>
+          )}
+          {asked && <Button onClick={onRestart}>Restart getit</Button>}
         </div>
       </EmptyContent>
     </Empty>

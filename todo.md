@@ -1,8 +1,9 @@
 
-1. Windows Build
-2. Refresh an expired link
-3. schedule
-4. don't ask for permissions on lunch
+1. average user first time use
+2. Windows Build
+3. Refresh an expired link
+4. schedule
+5. don't ask for permissions on lunch
 
 ## low prio
 
