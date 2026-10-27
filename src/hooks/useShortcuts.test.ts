@@ -3,7 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { shortcutFor, useShortcuts, type KeyPress, type ShortcutAction, type ShortcutContext } from "./useShortcuts";
 
-const mac: ShortcutContext = { isMac: true, settingsOpen: false, selectionCount: 0, onButton: false };
+const mac: ShortcutContext = { isMac: true, settingsOpen: false, selectionCount: 0, onButton: false, typing: false };
 const other: ShortcutContext = { ...mac, isMac: false };
 
 const press = (key: string, mods: Partial<KeyPress> = {}): KeyPress => ({
@@ -122,6 +122,31 @@ describe("shortcutFor", () => {
     });
   });
 
+  describe("typing a name", () => {
+    it("selects by name with plain characters, capitals and digits", () => {
+      expect(shortcutFor(press("d"), mac)).toEqual({ action: "typeSelect", preventDefault: true });
+      expect(action(press("D", { shiftKey: true }))).toBe("typeSelect");
+      expect(action(press("7"))).toBe("typeSelect");
+      expect(action(press("é"))).toBe("typeSelect");
+    });
+
+    it("leaves modified and named keys alone", () => {
+      expect(action(press("d", { altKey: true }))).toBeNull();
+      expect(action(ctrl("d"))).toBeNull();
+      expect(action(press("Tab"))).toBeNull();
+      expect(action(press("F1"))).toBeNull();
+    });
+
+    it("keeps / for search", () => {
+      expect(action(press("/"))).toBe("search");
+    });
+
+    it("takes Space as part of a name only while typing one", () => {
+      expect(action(press(" "), { ...mac, typing: true })).toBe("typeSelect");
+      expect(action(press(" "))).toBe("details");
+    });
+  });
+
   it("passes Escape on without stopping the browser's handling", () => {
     expect(shortcutFor(press("Escape"), mac)).toEqual({ action: "escape", preventDefault: false });
   });
@@ -140,7 +165,7 @@ describe("shortcutFor", () => {
   });
 
   it("ignores other keys", () => {
-    expect(shortcutFor(press("q"), mac)).toBeNull();
+    expect(shortcutFor(press("Home"), mac)).toBeNull();
     expect(shortcutFor(cmd("q"), mac)).toBeNull();
   });
 });
@@ -150,7 +175,7 @@ describe("useShortcuts", () => {
   const escapeRuns = (target: Element) => {
     const escape = vi.fn();
     const handlers = { escape } as unknown as Record<ShortcutAction, (e: KeyboardEvent) => void>;
-    const hook = renderHook(() => useShortcuts({ settingsOpen: false, selectionCount: 0 }, handlers));
+    const hook = renderHook(() => useShortcuts({ settingsOpen: false, selectionCount: 0, typing: () => false }, handlers));
     target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     hook.unmount();
     return escape.mock.calls.length > 0;
@@ -167,6 +192,31 @@ describe("useShortcuts", () => {
     document.body.append(menu);
     expect(escapeRuns(item)).toBe(false);
     menu.remove();
+  });
+
+  /** Types "a" on `target`, with the hook listening, and says whether it selected by name. */
+  const typeSelects = (target: Element) => {
+    const typeSelect = vi.fn();
+    const handlers = { typeSelect } as unknown as Record<ShortcutAction, (e: KeyboardEvent) => void>;
+    const hook = renderHook(() => useShortcuts({ settingsOpen: false, selectionCount: 0, typing: () => false }, handlers));
+    target.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true }));
+    hook.unmount();
+    return typeSelect.mock.calls.length > 0;
+  };
+
+  it("selects by name from typing outside text fields and dialogs", () => {
+    expect(typeSelects(document.body)).toBe(true);
+
+    const textarea = document.body.appendChild(document.createElement("textarea"));
+    expect(typeSelects(textarea)).toBe(false);
+    textarea.remove();
+
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const button = dialog.appendChild(document.createElement("button"));
+    document.body.append(dialog);
+    expect(typeSelects(button)).toBe(false);
+    dialog.remove();
   });
 
   it("leaves a key that something already handled, like the Escape that closes a dialog", () => {

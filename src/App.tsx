@@ -52,6 +52,7 @@ import { FILE_MANAGER, IS_MAC } from "./lib/platform";
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
 import { sortFiles } from "./lib/sort";
+import { isTyping, matchByName, typeAhead, type Typed } from "./lib/typeSelect";
 import {
   displayName,
   fileVm,
@@ -466,9 +467,24 @@ export default function App() {
       select([target]);
     }
     lead.current = target;
-    contentRef.current
-      ?.querySelector(`[data-key="${CSS.escape(target)}"]`)
-      ?.scrollIntoView({ block: "nearest" });
+    scrollToItem(target);
+  };
+  const scrollToItem = (key: string) =>
+    contentRef.current?.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest" });
+
+  /** What the user has typed to select an item by name, like Finder. */
+  const typed = useRef<Typed | null>(null);
+  const typeSelect = (char: string) => {
+    typed.current = typeAhead(typed.current, char, Date.now());
+    const items = [
+      ...folders.map((g) => ({ key: g.path, name: g.name })),
+      ...files.map((f) => ({ key: f.id, name: f.name })),
+    ];
+    const key = matchByName(items, typed.current.text);
+    if (key === null) return;
+    select([key]);
+    lead.current = key;
+    scrollToItem(key);
   };
 
   /** Moves downloads (by id) and folders (by path) to the Trash, files and all. */
@@ -660,7 +676,7 @@ export default function App() {
   }, [linksReady]);
 
   useShortcuts(
-    { settingsOpen, selectionCount: selection.length },
+    { settingsOpen, selectionCount: selection.length, typing: () => isTyping(typed.current, Date.now()) },
     {
       closeSettings: () => setSettingsOpen(false),
       goUp,
@@ -706,6 +722,7 @@ export default function App() {
         setSelected(new Set(order));
         setAnchor(null);
       },
+      typeSelect: (e) => typeSelect(e.key),
     },
   );
 
