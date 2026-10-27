@@ -123,6 +123,10 @@ export const engine = {
   accessSetup: () => invoke<{ root: string | null } | null>("access_setup"),
   /** Remembers the first-launch choice: `root` as the top folder, or null for Full Disk Access. */
   setAccessSetup: (root: string | null) => invoke<void>("set_access_setup", { root }),
+  /** Forgets the first-launch choice so onboarding shows again; development builds only. */
+  resetAccessSetup: () => invoke<void>("reset_access_setup"),
+  /** Whether getit has Full Disk Access; macOS may apply a new grant only after a restart. */
+  fullDiskAccess: () => invoke<boolean>("full_disk_access"),
   /** The file name the server gives `url`; rejects if it can't be reached. */
   probeLink: (url: string) => invoke<LinkInfo>("probe_link", { url }),
   /** `names` as the queue for `dir` would name new downloads with its auto rename. */

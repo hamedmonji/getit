@@ -77,6 +77,23 @@ pub fn access_setup(access: State<'_, Access>) -> Option<Setup> {
     access.setup()
 }
 
+/// Forgets the first-launch choice so onboarding shows again. For development
+/// only: release builds refuse.
+#[tauri::command]
+pub fn reset_access_setup(access: State<'_, Access>) -> CommandResult<()> {
+    if !cfg!(debug_assertions) {
+        return Err("Only available in development".into());
+    }
+    access.reset().map_err(err)
+}
+
+/// Whether getit has Full Disk Access, for onboarding to go on once the user
+/// turns it on.
+#[tauri::command]
+pub fn full_disk_access(access: State<'_, Access>) -> bool {
+    access.full_disk()
+}
+
 /// Remembers the first-launch choice: `root` as getit's top folder, or None
 /// for Full Disk Access.
 #[tauri::command]

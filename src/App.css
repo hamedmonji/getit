@@ -1562,3 +1562,81 @@ body {
   border-color: var(--danger);
   outline-color: color-mix(in oklch, var(--danger) 20%, transparent);
 }
+
+/* Onboarding, in the app's theme: its tint stands in for the design's orange,
+   over the app's panels. Worked out on the root, so they follow the theme. */
+:root {
+  --ob-accent: var(--tint);
+  --ob-accent-hover: color-mix(in oklch, var(--tint) 85%, black);
+  --ob-soft: color-mix(in oklch, var(--tint) 8%, var(--panel));
+  --ob-soft-strong: color-mix(in oklch, var(--tint) 16%, var(--panel));
+  --ob-success: #2f9e6a;
+}
+
+/* The Finder look-alike drawn in onboarding's illustrations, light or dark
+   like Finder in the app's theme. */
+.finder-art {
+  --finder-bg: #ffffff;
+  --finder-sidebar: #ecebee;
+  --finder-stripe: #f4f4f6;
+  --finder-text: #262626;
+  --finder-sub: #6e6e73;
+  --finder-head: #8a8a8e;
+  --finder-faint: #c7c7cc;
+  --finder-line: rgba(0, 0, 0, 0.08);
+  --finder-border: rgba(0, 0, 0, 0.14);
+  --finder-selected: rgba(0, 0, 0, 0.09);
+  --finder-file: linear-gradient(#ffffff, #f3f3f5);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  color: var(--finder-text);
+}
+
+[data-theme="Dark"] .finder-art {
+  --finder-bg: #1e1e1e;
+  --finder-sidebar: #2b2b2d;
+  --finder-stripe: #262628;
+  --finder-text: #e5e5e7;
+  --finder-sub: #98989d;
+  --finder-head: #8e8e93;
+  --finder-faint: #5a5a5e;
+  --finder-line: rgba(255, 255, 255, 0.08);
+  --finder-border: rgba(255, 255, 255, 0.14);
+  --finder-selected: rgba(255, 255, 255, 0.1);
+  --finder-file: linear-gradient(#3a3a3c, #2e2e30);
+}
+
+/* A Finder-style folder glyph, drawn from simple shapes. */
+.finder-folder {
+  position: relative;
+  flex: none;
+}
+.finder-folder::before,
+.finder-folder::after,
+.finder-folder > span {
+  content: "";
+  position: absolute;
+  background: #4a9ff0;
+}
+.finder-folder::before {
+  left: 0;
+  top: 0;
+  width: 45%;
+  height: 30%;
+  border-radius: 2px 2px 0 0;
+}
+.finder-folder::after {
+  left: 0;
+  right: 0;
+  top: 14%;
+  bottom: 0;
+  border-radius: 1px 2.5px 2.5px 2.5px;
+}
+.finder-folder > span {
+  z-index: 1;
+  left: 0;
+  right: 0;
+  top: 30%;
+  bottom: 0;
+  border-radius: 2.5px;
+  background: #7cc0f7;
+}

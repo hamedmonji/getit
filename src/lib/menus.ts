@@ -58,6 +58,8 @@ export interface MenuContext {
   pasteItems: (dest: string) => void;
   pasteLinks: (text: string) => void;
   newQueue: () => void;
+  /** Creates a queue folder here and moves the items with `keys` into it. */
+  newQueueWith: (keys: string[]) => void;
   openQueuePanel: () => void;
   onOpenFile: (vm: FileVm) => void;
   pauseDownloads: (ids: string[]) => void;
@@ -206,6 +208,15 @@ export function selectionMenu(ctx: MenuContext): MenuItem[] {
     danger: true,
     onSelect: () => ctx.trashItems(selection),
   };
+  // Like Finder's New Folder with Selection. Not for search results, which can
+  // come from many folders.
+  if (!ctx.query) {
+    items.push({
+      kind: "action",
+      label: `New queue with ${plural(selection.length, "item")}`,
+      onSelect: () => ctx.newQueueWith(selection),
+    });
+  }
   items.push(revealItem(ctx, selection), { kind: "separator" }, ...clipMenu(ctx, selection), { kind: "separator" });
   if (!selectedFiles.length) return [...items, trash];
   const status = (f: FileVm) => state.downloads[f.id]?.status;

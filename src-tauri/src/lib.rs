@@ -50,6 +50,8 @@ pub fn run() {
             commands::access_setup,
             commands::app_bundle,
             commands::set_access_setup,
+            commands::full_disk_access,
+            commands::reset_access_setup,
             commands::probe_link,
             commands::auto_names,
             commands::preview_rename,

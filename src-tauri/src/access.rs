@@ -81,6 +81,16 @@ impl Access {
         Ok(())
     }
 
+    /// Forgets the first-launch choice, so onboarding shows again.
+    pub fn reset(&self) -> io::Result<()> {
+        match fs::remove_file(&self.file) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+            _ => {}
+        }
+        *self.setup.lock().unwrap() = None;
+        Ok(())
+    }
+
     /// Whether getit has Full Disk Access. Checked each time, since the user
     /// can turn it on while getit runs (macOS may apply it only after a restart).
     pub fn full_disk(&self) -> bool {
@@ -152,7 +162,13 @@ mod tests {
         assert!(!access.blocked(&home.join("Documents/dl/a")));
         assert_eq!(access.blocked(&home.join("Desktop")), cfg!(target_os = "macos"));
         // Remembered for the next launch.
-        assert!(!Access::load(home.clone(), file).blocked(&home.join("Documents/dl")));
+        assert!(!Access::load(home.clone(), file.clone()).blocked(&home.join("Documents/dl")));
+
+        // Forgotten on reset, here and on the next launch; resetting twice is fine.
+        access.reset().unwrap();
+        access.reset().unwrap();
+        assert!(access.setup().is_none());
+        assert!(Access::load(home.clone(), file).setup().is_none());
         let _ = fs::remove_dir_all(&dir);
     }
 }

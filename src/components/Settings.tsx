@@ -1,4 +1,5 @@
 import { useId, useRef, useState, type PointerEvent } from "react";
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Item, ItemActions, ItemContent, ItemTitle } from "@/components/ui/item";
@@ -13,7 +14,8 @@ const DRAG_THRESHOLD = 4;
  * The settings dialog, centred over the app, with settings that apply
  * everywhere, in sections: the sort order, where files are sorted by the top
  * key, then the next for ties; and whether pasted links are added without
- * asking. Closes on a click outside it or Escape.
+ * asking. In development, a way to see onboarding again. Closes on a click
+ * outside it or Escape.
  */
 export function Settings({
   open,
@@ -21,6 +23,7 @@ export function Settings({
   onSortOrder,
   pasteMode,
   onPasteMode,
+  onResetOnboarding,
   onClose,
 }: {
   open: boolean;
@@ -28,6 +31,8 @@ export function Settings({
   onSortOrder: (order: SortKey[]) => void;
   pasteMode: "ask" | "always";
   onPasteMode: (mode: "ask" | "always") => void;
+  /** Forgets the first-launch choice and restarts getit; the section shows only when given. */
+  onResetOnboarding?: () => void;
   onClose: () => void;
 }) {
   const askId = useId();
@@ -60,6 +65,17 @@ export function Settings({
             When off, pasted links go straight into the current folder's queue.
           </p>
         </section>
+        {onResetOnboarding && (
+          <section className="settings-section">
+            <h3 className="settings-heading">Development</h3>
+            <div>
+              <Button variant="outline" size="sm" onClick={onResetOnboarding}>
+                Reset onboarding and restart
+              </Button>
+            </div>
+            <p className="settings-note">Forgets the first-launch choice, so onboarding shows again.</p>
+          </section>
+        )}
       </DialogContent>
     </Dialog>
   );

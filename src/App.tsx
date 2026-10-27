@@ -10,8 +10,8 @@ import {
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { Details } from "./components/Details";
-import { FirstLaunch } from "./components/FirstLaunch";
 import { NoAccess } from "./components/NoAccess";
+import { Onboarding } from "./components/Onboarding";
 import { Overview } from "./components/Overview";
 import { QueueSettings } from "./components/QueueSettings";
 import { RefreshLink } from "./components/RefreshLink";
@@ -43,7 +43,7 @@ import { useUndo } from "./hooks/useUndo";
 import { useUpdate } from "./hooks/useUpdate";
 import { engine, onBrowserLinks, type Captured, type DownloadStatus } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
-import { isFolderKey } from "./lib/keys";
+import { isFolderKey, splitKeys } from "./lib/keys";
 import { linksIn, takeForRefresh, withCaptured, withoutCaptured } from "./lib/links";
 import { bestQueueFor } from "./lib/match";
 import type { MenuContext } from "./lib/menus";
@@ -85,6 +85,8 @@ interface History {
   forward: string[];
 }
 
+/** How often onboarding checks whether Full Disk Access is on. */
+const FULL_DISK_POLL_MS = 1500;
 /** How long a failed move's message stays in the status bar. */
 const NOTICE_MS = 6000;
 
@@ -95,6 +97,9 @@ export default function App() {
   const [root, setRoot] = useState<string | null>(null);
   /** Whether to ask how getit gets into macOS's protected folders, on first launch. */
   const [firstLaunch, setFirstLaunch] = useState(false);
+  // Remembered so onboarding resumes at step 2 when macOS restarts getit to
+  // apply Full Disk Access.
+  const [onboardingStep, setOnboardingStep] = useStoredState("getit.onboardingStep", ["1", "2"] as const, () => "1");
   const [history, setHistory] = useState<History | null>(null);
   /** Selected folder paths and download ids. */
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -332,8 +337,7 @@ export default function App() {
   const { drag, start: startDrag } = useItemDrag(
     (keys, target) => target !== shown && !keys.includes(target),
     (keys, target) => {
-      const ids = keys.filter((key) => key in state.downloads);
-      const paths = keys.filter((key) => !(key in state.downloads));
+      const { ids, paths } = splitKeys(keys);
       Promise.allSettled([
         ids.length ? engine.moveDownloads(ids, target) : null,
         paths.length ? engine.moveFolders(paths, target) : null,
@@ -514,6 +518,26 @@ export default function App() {
       })
       .catch((e) => console.error(e));
   };
+  // Like Finder's New Folder with Selection: the items move into a new queue
+  // folder here, whose name is then edited in place.
+  const newQueueWith = (keys: string[]) => {
+    if (!cwd || !keys.length) return;
+    const { ids, paths } = splitKeys(keys);
+    engine
+      .createQueue(cwd)
+      .then(async (path) => {
+        const results = await Promise.allSettled([
+          ids.length ? engine.moveDownloads(ids, path) : null,
+          paths.length ? engine.moveFolders(paths, path) : null,
+        ]);
+        const failed = results.find((r) => r.status === "rejected");
+        setNotice(failed ? `Couldn't move: ${failed.reason}` : null);
+        setListNonce((n) => n + 1);
+        select([path]);
+        setEditing(path);
+      })
+      .catch((e) => setNotice(`Couldn't create the queue: ${e}`));
+  };
 
   // macOS doesn't list apps under Full Disk Access on its own, so getit is
   // shown in Finder too, to drag into the list.
@@ -524,8 +548,8 @@ export default function App() {
     report(engine.openFullDiskAccessSettings());
   };
 
-  // First launch: the chosen folder becomes the top and is opened, and getit
-  // may read it even inside a protected folder, since the user chose it.
+  // Onboarding's one folder: the chosen folder becomes the top and is opened,
+  // and getit may read it even inside a protected folder, since the user chose it.
   const chooseRoot = () => {
     engine
       .chooseFolder(home ?? "/", "Choose a folder for getit")
@@ -538,15 +562,40 @@ export default function App() {
       })
       .catch((e) => setNotice(`Couldn't choose the folder: ${e}`));
   };
-  const chooseFullDiskAccess = () => {
+
+  // Development only: shows onboarding again from step 1, after a restart.
+  const resetOnboarding = () => {
+    setOnboardingStep("1");
     engine
-      .setAccessSetup(null)
-      .then(() => {
-        setFirstLaunch(false);
-        askFullDiskAccess();
-      })
-      .catch((e) => setNotice(`Couldn't save the choice: ${e}`));
+      .resetAccessSetup()
+      .then(() => engine.relaunch())
+      .catch((e) => setNotice(`Couldn't reset onboarding: ${e}`));
   };
+
+  // While onboarding asks where getit can save, it goes on by itself once Full
+  // Disk Access is on, whether the user turned it on just now or before a restart.
+  useEffect(() => {
+    if (!firstLaunch || onboardingStep !== "2") return;
+    let done = false;
+    const check = () =>
+      engine.fullDiskAccess().then((granted) => {
+        if (!granted || done) return;
+        done = true;
+        engine
+          .setAccessSetup(null)
+          .then(() => {
+            setFirstLaunch(false);
+            setListNonce((n) => n + 1);
+          })
+          .catch((e) => setNotice(`Couldn't save the choice: ${e}`));
+      }, (e) => console.error(e));
+    check();
+    const timer = setInterval(check, FULL_DISK_POLL_MS);
+    return () => {
+      done = true;
+      clearInterval(timer);
+    };
+  }, [firstLaunch, onboardingStep]);
 
   /** Adds the links in `text` to this folder's queue, after asking unless the user chose not to be asked. */
   const pasteLinks = (text: string) => {
@@ -721,6 +770,7 @@ export default function App() {
     pasteItems,
     pasteLinks,
     newQueue,
+    newQueueWith,
     openQueuePanel: () => setQueuePanel("open"),
     onOpenFile,
     pauseDownloads,
@@ -784,6 +834,20 @@ export default function App() {
     dropTarget: drag?.target ?? null,
     cut: new Set(clip?.cut ? clip.keys : []),
   };
+
+  if (firstLaunch) {
+    return (
+      <Onboarding
+        step={onboardingStep === "2" ? 2 : 1}
+        onStep={(step) => setOnboardingStep(step === 2 ? "2" : "1")}
+        home={home ? baseName(home) : "Home"}
+        asked={accessAsked}
+        onFullDiskAccess={askFullDiskAccess}
+        onChooseFolder={chooseRoot}
+        error={notice}
+      />
+    );
+  }
 
   return (
     <div className="app">
@@ -1080,13 +1144,13 @@ export default function App() {
           setRefreshCapture(null);
         }}
       />
-      <FirstLaunch open={firstLaunch} onChooseFolder={chooseRoot} onFullDiskAccess={chooseFullDiskAccess} />
       <Settings
         open={settingsOpen}
         sortOrder={sortOrder}
         onSortOrder={setSortOrder}
         pasteMode={pasteMode}
         onPasteMode={setPasteMode}
+        onResetOnboarding={import.meta.env.DEV ? resetOnboarding : undefined}
         onClose={closeSettings}
       />
       {drag && (

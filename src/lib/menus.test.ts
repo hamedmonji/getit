@@ -53,6 +53,7 @@ function contextFor(items: DownloadItem[], overrides: Partial<MenuContext> = {},
     pasteItems: vi.fn(),
     pasteLinks: vi.fn(),
     newQueue: vi.fn(),
+    newQueueWith: vi.fn(),
     openQueuePanel: vi.fn(),
     onOpenFile: vi.fn(),
     pauseDownloads: vi.fn(),
@@ -248,12 +249,30 @@ describe("selectionMenu", () => {
     selectedFiles: ctx.files.filter((f) => keys.includes(f.id)),
   });
 
-  it("offers only showing, clipping and trashing for folders", () => {
+  it("offers only grouping, showing, clipping and trashing for folders", () => {
     const ctx = select(contextFor([]), [SUB, "/home/q/other"]);
     const items = selectionMenu(ctx);
-    expect(labels(items)).toEqual(["2 items selected", "Show in File Manager", "Cut", "Copy", "Move 2 items to Trash"]);
+    expect(labels(items)).toEqual([
+      "2 items selected",
+      "New queue with 2 items",
+      "Show in File Manager",
+      "Cut",
+      "Copy",
+      "Move 2 items to Trash",
+    ]);
     find(items, "Move 2 items to Trash").onSelect();
     expect(ctx.trashItems).toHaveBeenCalledWith([SUB, "/home/q/other"]);
+  });
+
+  it("creates a queue with the selected downloads and folders", () => {
+    const ctx = select(contextFor([item({ id: "a", queue_id: "q" })]), ["a", SUB]);
+    find(selectionMenu(ctx), "New queue with 2 items").onSelect();
+    expect(ctx.newQueueWith).toHaveBeenCalledWith(["a", SUB]);
+  });
+
+  it("doesn't group search results, which can come from many folders", () => {
+    const ctx = select(contextFor([item({ id: "a", queue_id: "q" })], { query: "x" }), ["a", SUB]);
+    expect(labels(selectionMenu(ctx))).not.toContain("New queue with 2 items");
   });
 
   it("shows each folder once in the file manager", () => {
