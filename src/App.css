@@ -788,6 +788,17 @@ body {
   border-radius: 7px;
 }
 
+/* Neighboring selected rows read as one rounded block, squared where they meet. */
+.row.selected:has(+ .row.selected) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.row.selected + .row.selected {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
 /* Keeps rows reached with the arrow keys clear of the sticky header. */
 .row {
   scroll-margin: 34px 0 4px;
