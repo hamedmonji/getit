@@ -2,19 +2,39 @@ import { useId, useRef, useState, type PointerEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Item, ItemActions, ItemContent, ItemTitle } from "@/components/ui/item";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { displayPath } from "../lib/paths";
+import { SETTINGS_PAGE_LABELS, settingsPages } from "../lib/settingsPages";
 import { SORT_LABELS, type SortKey } from "../lib/sort";
 import { GripIcon } from "./icons";
+
+/** What the Folder access section shows and does, on macOS. */
+export interface AccessSettings {
+  home: string;
+  fullDisk: boolean;
+  /** Whether the user already went to turn on Full Disk Access. */
+  asked: boolean;
+  /** The folder chosen on first launch, if any. */
+  root: string | null;
+  /** Folders added here since. */
+  folders: string[];
+  onFullDiskAccess: () => void;
+  onRestart: () => void;
+  onAddFolder: () => void;
+  onRemoveFolder: (path: string) => void;
+}
 
 /** How far the pointer moves before a press on a row becomes a drag. */
 const DRAG_THRESHOLD = 4;
 
 /**
  * The settings dialog, centred over the app, with settings that apply
- * everywhere, in sections: the sort order, where files are sorted by the top
+ * everywhere, on pages picked in a sidebar: the sort order, where files are sorted by the top
  * key, then the next for ties; and whether pasted links are added without
- * asking. In development, a way to see onboarding again. Closes on a click
+ * asking; on macOS, Full Disk Access and the folders getit may open without
+ * it. In development, a way to see onboarding again. Closes on a click
  * outside it or Escape.
  */
 export function Settings({
@@ -23,6 +43,7 @@ export function Settings({
   onSortOrder,
   pasteMode,
   onPasteMode,
+  access,
   onResetOnboarding,
   onClose,
 }: {
@@ -31,53 +52,146 @@ export function Settings({
   onSortOrder: (order: SortKey[]) => void;
   pasteMode: "ask" | "always";
   onPasteMode: (mode: "ask" | "always") => void;
+  /** The Folder access section shows only when given. */
+  access?: AccessSettings;
   /** Forgets the first-launch choice and restarts getit; the section shows only when given. */
   onResetOnboarding?: () => void;
   onClose: () => void;
 }) {
   const askId = useId();
+  const pages = settingsPages({ access: !!access, development: !!onResetOnboarding });
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-      {/* The sections describe themselves; there's no one description for the dialog. */}
-      <DialogContent aria-describedby={undefined} className="[&_[data-slot=dialog-close]]:text-ink-muted">
-        <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-        </DialogHeader>
-        <section className="settings-section">
-          <h3 className="settings-heading">Sort files by</h3>
-          <SortList order={sortOrder} onChange={onSortOrder} />
-          <p className="settings-note">
-            Sorted by the first, then by the next where they're equal. Drag to reorder, or click one to put it
-            first. This doesn't change the order downloads run in.
-          </p>
-        </section>
-        <section className="settings-section">
-          <h3 className="settings-heading">Pasted links</h3>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id={askId}
-              checked={pasteMode === "ask"}
-              onCheckedChange={(checked) => onPasteMode(checked === true ? "ask" : "always")}
-            />
-            <Label htmlFor={askId}>Ask before adding pasted links</Label>
+      {/* The pages describe themselves; there's no one description for the dialog. */}
+      <DialogContent
+        aria-describedby={undefined}
+        className="flex h-[min(520px,calc(100vh-4rem))] gap-0 overflow-hidden p-0 sm:max-w-2xl [&_[data-slot=dialog-close]]:text-ink-muted"
+      >
+        <Tabs defaultValue="general" orientation="vertical" className="min-h-0 flex-1 gap-0">
+          <div className="flex w-44 flex-none flex-col gap-3 border-r border-line bg-panel2 p-3">
+            <DialogHeader className="px-2 pt-1">
+              <DialogTitle>Settings</DialogTitle>
+            </DialogHeader>
+            <TabsList className="w-full items-stretch gap-0.5 bg-transparent p-0">
+              {pages.map((page) => (
+                <TabsTrigger key={page} value={page} className="h-8 flex-none px-2">
+                  {SETTINGS_PAGE_LABELS[page]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
           </div>
-          <p className="settings-note">
-            When off, pasted links go straight into the current folder's queue.
-          </p>
-        </section>
-        {onResetOnboarding && (
-          <section className="settings-section">
-            <h3 className="settings-heading">Development</h3>
-            <div>
-              <Button variant="outline" size="sm" onClick={onResetOnboarding}>
-                Reset onboarding and restart
-              </Button>
-            </div>
-            <p className="settings-note">Forgets the first-launch choice, so onboarding shows again.</p>
-          </section>
-        )}
+          <TabsContent value="general" className="min-h-0 overflow-y-auto p-5 pt-12">
+            <section className="settings-section">
+              <h3 className="settings-heading">Sort files by</h3>
+              <SortList order={sortOrder} onChange={onSortOrder} />
+              <p className="settings-note">
+                Sorted by the first, then by the next where they're equal. Drag to reorder, or click one to put it
+                first. This doesn't change the order downloads run in.
+              </p>
+            </section>
+            <section className="settings-section">
+              <h3 className="settings-heading">Pasted links</h3>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id={askId}
+                  checked={pasteMode === "ask"}
+                  onCheckedChange={(checked) => onPasteMode(checked === true ? "ask" : "always")}
+                />
+                <Label htmlFor={askId}>Ask before adding pasted links</Label>
+              </div>
+              <p className="settings-note">When off, pasted links go straight into the current folder's queue.</p>
+            </section>
+          </TabsContent>
+          {access && (
+            <TabsContent value="access" className="min-h-0 overflow-y-auto p-5 pt-12">
+              <FolderAccess {...access} />
+            </TabsContent>
+          )}
+          {onResetOnboarding && (
+            <TabsContent value="development" className="min-h-0 overflow-y-auto p-5 pt-12">
+              <section className="settings-section">
+                <h3 className="settings-heading">Onboarding</h3>
+                <div>
+                  <Button variant="outline" size="sm" onClick={onResetOnboarding}>
+                    Reset onboarding and restart
+                  </Button>
+                </div>
+                <p className="settings-note">Forgets the first-launch choice, so onboarding shows again.</p>
+              </section>
+            </TabsContent>
+          )}
+        </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Full Disk Access, and without it, the folders getit may open. */
+function FolderAccess(a: AccessSettings) {
+  return (
+    <section className="settings-section">
+      <h3 className="settings-heading">Folder access</h3>
+      <Item variant="outline" size="sm">
+        <ItemContent>
+          <ItemTitle>Full Disk Access</ItemTitle>
+          <ItemDescription>
+            {a.fullDisk ? "On. getit can open every folder." : "Off. getit can open only the folders below."}
+          </ItemDescription>
+        </ItemContent>
+        {!a.fullDisk && (
+          <ItemActions>
+            <Button variant={a.asked ? "outline" : "default"} size="sm" onClick={a.onFullDiskAccess}>
+              Open System Settings
+            </Button>
+            {a.asked && (
+              <Button size="sm" onClick={a.onRestart}>
+                Restart getit
+              </Button>
+            )}
+          </ItemActions>
+        )}
+      </Item>
+      {a.asked && !a.fullDisk && (
+        <p className="settings-note">
+          Add getit to the Full Disk Access list and turn it on, then restart getit so macOS lets it in.
+        </p>
+      )}
+      {!a.fullDisk && (
+        <>
+          <ItemGroup className="mt-3 gap-1">
+            {a.root && (
+              <Item variant="outline" size="xs">
+                <ItemContent>
+                  <ItemTitle title={a.root}>{displayPath(a.root, a.home)}</ItemTitle>
+                </ItemContent>
+                <ItemActions className="text-xs text-ink-muted">Opens here</ItemActions>
+              </Item>
+            )}
+            {a.folders.map((path) => (
+              <Item key={path} variant="outline" size="xs">
+                <ItemContent>
+                  <ItemTitle title={path}>{displayPath(path, a.home)}</ItemTitle>
+                </ItemContent>
+                <ItemActions>
+                  <Button variant="ghost" size="xs" onClick={() => a.onRemoveFolder(path)}>
+                    Remove
+                  </Button>
+                </ItemActions>
+              </Item>
+            ))}
+          </ItemGroup>
+          <div className="mt-3">
+            <Button variant="outline" size="sm" onClick={a.onAddFolder}>
+              Add Folder…
+            </Button>
+          </div>
+          <p className="settings-note">
+            getit can open these folders and the ones inside them. Desktop, Documents and Downloads stay locked
+            outside them.
+          </p>
+        </>
+      )}
+    </section>
   );
 }
 

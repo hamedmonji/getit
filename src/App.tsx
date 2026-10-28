@@ -49,6 +49,7 @@ import { bestQueueFor } from "./lib/match";
 import type { MenuContext } from "./lib/menus";
 import { baseName, canGoUp, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import { FILE_MANAGER, IS_MAC } from "./lib/platform";
+import { accessTop, addFolder } from "./lib/access";
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
 import { sortFiles } from "./lib/sort";
@@ -96,6 +97,10 @@ export default function App() {
   const [home, setHome] = useState<string | null>(null);
   /** The folder chosen on first launch as the top, instead of home; null when none was. */
   const [root, setRoot] = useState<string | null>(null);
+  /** More folders getit may open, added in Settings. */
+  const [accessFolders, setAccessFolders] = useState<string[]>([]);
+  /** Whether getit has Full Disk Access, as last checked. */
+  const [fullDisk, setFullDisk] = useState(false);
   /** Whether to ask how getit gets into macOS's protected folders, on first launch. */
   const [firstLaunch, setFirstLaunch] = useState(false);
   // Remembered so onboarding resumes at step 2 when macOS restarts getit to
@@ -225,6 +230,7 @@ export default function App() {
     Promise.all([engine.homeDir(), engine.initialDir(), engine.accessSetup()]).then(([home, start, setup]) => {
       setHome(home);
       setRoot(setup?.root ?? null);
+      setAccessFolders(setup?.folders ?? []);
       setFirstLaunch(IS_MAC && !setup);
       setHistory({ cwd: start, back: [], forward: [] });
     });
@@ -278,7 +284,9 @@ export default function App() {
     setHistory({ cwd, back: [...history.back, history.cwd], forward });
     select([]);
   };
-  const canUp = !!home && !!cwd && canGoUp(cwd, home, root ?? home);
+  /** Where Up stops: home, or the chosen folders' common folder without Full Disk Access. */
+  const top = home ? accessTop(home, root, accessFolders, fullDisk) : null;
+  const canUp = !!home && !!cwd && canGoUp(cwd, home, top ?? home);
   const goUp = () => {
     if (canUp && cwd) go(parentPath(cwd), cwd);
   };
@@ -579,6 +587,40 @@ export default function App() {
       .catch((e) => setNotice(`Couldn't choose the folder: ${e}`));
   };
 
+  // Settings' added folders: getit may open each, even inside a protected folder,
+  // since the user chose it.
+  const saveAccessFolders = (folders: string[]) =>
+    engine
+      .setAccessFolders(folders)
+      .then(() => {
+        setAccessFolders(folders);
+        setListNonce((n) => n + 1);
+      })
+      .catch((e) => setNotice(`Couldn't save the folders: ${e}`));
+  const addAccessFolder = () => {
+    engine
+      .chooseFolder(cwd ?? home ?? "/", "Choose a folder getit can open")
+      .then((picked) => {
+        if (!picked) return;
+        const next = addFolder(accessFolders, root, picked);
+        if (next !== accessFolders) return saveAccessFolders(next);
+      })
+      .catch((e) => setNotice(`Couldn't choose the folder: ${e}`));
+  };
+  const removeAccessFolder = (path: string) => saveAccessFolders(accessFolders.filter((f) => f !== path));
+
+  // Checks Full Disk Access on launch, and again while the settings are open,
+  // where the user may be turning it on; the folder is listed again when it changes.
+  useEffect(() => {
+    if (!IS_MAC) return;
+    const check = () => engine.fullDiskAccess().then(setFullDisk, (e) => console.error(e));
+    check();
+    if (!settingsOpen) return;
+    const timer = setInterval(check, FULL_DISK_POLL_MS);
+    return () => clearInterval(timer);
+  }, [settingsOpen]);
+  useEffect(() => setListNonce((n) => n + 1), [fullDisk]);
+
   // Development only: shows onboarding again from step 1, after a restart.
   const resetOnboarding = () => {
     setOnboardingStep("1");
@@ -876,7 +918,7 @@ export default function App() {
         onForward={goForward}
         onUp={goUp}
         cwdLabel={displayPath(cwd, home)}
-        crumbs={crumbsFrom(home, cwd, root ?? home)}
+        crumbs={crumbsFrom(home, cwd, top ?? home)}
         onCrumb={(path) => go(path)}
         dropTarget={drag?.target ?? null}
         addressOpen={addressOpen}
@@ -1167,6 +1209,21 @@ export default function App() {
         onSortOrder={setSortOrder}
         pasteMode={pasteMode}
         onPasteMode={setPasteMode}
+        access={
+          IS_MAC && home
+            ? {
+                home,
+                fullDisk,
+                asked: accessAsked,
+                root,
+                folders: accessFolders,
+                onFullDiskAccess: askFullDiskAccess,
+                onRestart: () => report(engine.relaunch()),
+                onAddFolder: addAccessFolder,
+                onRemoveFolder: removeAccessFolder,
+              }
+            : undefined
+        }
         onResetOnboarding={import.meta.env.DEV ? resetOnboarding : undefined}
         onClose={closeSettings}
       />

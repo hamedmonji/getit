@@ -4,6 +4,7 @@
 //! in one of them as getit's root, so the system's prompt never shows on its own.
 //!
 //! On first launch the user picks one of the two; the choice is remembered.
+//! Later, in Settings, they can add more folders getit may open.
 
 use std::fs;
 use std::io;
@@ -42,12 +43,38 @@ pub fn root_allows(home: &Path, root: Option<&Path>, path: &Path) -> bool {
     root.is_some_and(|root| protected_root(home, root).is_some() && path.starts_with(root))
 }
 
-/// What the user chose on first launch.
+/// The folders directly in `path` on the way to the `allowed` folders below it,
+/// by name, sorted and without repeats. Lets a protected folder getit can't
+/// read show the chosen folders inside it.
+pub fn names_toward(path: &Path, allowed: &[PathBuf]) -> Vec<String> {
+    let mut names: Vec<String> = allowed
+        .iter()
+        .filter_map(|folder| match folder.strip_prefix(path).ok()?.components().next()? {
+            Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect();
+    names.sort_by_key(|name| name.to_lowercase());
+    names.dedup();
+    names
+}
+
+/// What the user chose on first launch, and the folders added since.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Setup {
     /// The folder getit opens at and treats as the top, or None when the user
     /// gave Full Disk Access instead.
     pub root: Option<PathBuf>,
+    /// More folders the user chose in Settings, which getit may also open.
+    #[serde(default)]
+    pub folders: Vec<PathBuf>,
+}
+
+impl Setup {
+    /// Every folder the user chose: the root, then the ones added later.
+    pub fn chosen(&self) -> Vec<PathBuf> {
+        self.root.iter().chain(&self.folders).cloned().collect()
+    }
 }
 
 pub struct Access {
@@ -81,6 +108,18 @@ impl Access {
         Ok(())
     }
 
+    /// Replaces the folders added in Settings, keeping the first-launch choice.
+    pub fn set_folders(&self, folders: Vec<PathBuf>) -> io::Result<()> {
+        let root = self.setup().and_then(|setup| setup.root);
+        self.set_setup(Setup { root, folders })
+    }
+
+    /// The chosen folders below `path`, which getit may open though `path` is blocked.
+    pub fn chosen_below(&self, path: &Path) -> Vec<PathBuf> {
+        let chosen = self.setup().map(|setup| setup.chosen()).unwrap_or_default();
+        chosen.into_iter().filter(|folder| folder != path && folder.starts_with(path)).collect()
+    }
+
     /// Forgets the first-launch choice, so onboarding shows again.
     pub fn reset(&self) -> io::Result<()> {
         match fs::remove_file(&self.file) {
@@ -98,13 +137,13 @@ impl Access {
     }
 
     /// Whether reading `path` could make macOS ask for access: it's in a
-    /// protected folder outside the chosen root, and getit doesn't have Full
-    /// Disk Access.
+    /// protected folder outside every chosen folder, and getit doesn't have
+    /// Full Disk Access.
     pub fn blocked(&self, path: &Path) -> bool {
-        let root = self.setup().and_then(|setup| setup.root);
+        let chosen = self.setup().map(|setup| setup.chosen()).unwrap_or_default();
         cfg!(target_os = "macos")
             && protected_root(&self.home, path).is_some()
-            && !root_allows(&self.home, root.as_deref(), path)
+            && !chosen.iter().any(|folder| root_allows(&self.home, Some(folder), path))
             && !self.full_disk()
     }
 }
@@ -147,6 +186,24 @@ mod tests {
     }
 
     #[test]
+    fn names_the_folders_on_the_way_to_chosen_ones() {
+        let allowed: Vec<PathBuf> = ["/h/Documents/b/x", "/h/Documents/a", "/h/Documents/b/y", "/h/Desktop/c"]
+            .iter()
+            .map(PathBuf::from)
+            .collect();
+        assert_eq!(names_toward(Path::new("/h/Documents"), &allowed), ["a", "b"]);
+        assert_eq!(names_toward(Path::new("/h/Documents/b"), &allowed), ["x", "y"]);
+        assert!(names_toward(Path::new("/h/Documents/a"), &allowed).is_empty());
+        assert!(names_toward(Path::new("/h/Music"), &allowed).is_empty());
+    }
+
+    #[test]
+    fn a_setup_saved_before_folders_could_be_added_still_loads() {
+        let setup: Setup = serde_json::from_str(r#"{"root":"/h/Downloads"}"#).unwrap();
+        assert_eq!(setup.chosen(), [PathBuf::from("/h/Downloads")]);
+    }
+
+    #[test]
     fn only_protected_folders_outside_the_root_are_blocked_without_full_disk_access() {
         // A home without the probe files, as when getit lacks Full Disk Access.
         let dir = std::env::temp_dir().join(format!("getit-access-{}", std::process::id()));
@@ -158,11 +215,20 @@ mod tests {
         assert!(!access.blocked(&home.join("Music")));
         assert_eq!(access.blocked(&home.join("Documents/dl/a")), cfg!(target_os = "macos"));
 
-        access.set_setup(Setup { root: Some(home.join("Documents/dl")) }).unwrap();
+        access.set_setup(Setup { root: Some(home.join("Documents/dl")), folders: vec![] }).unwrap();
         assert!(!access.blocked(&home.join("Documents/dl/a")));
         assert_eq!(access.blocked(&home.join("Desktop")), cfg!(target_os = "macos"));
         // Remembered for the next launch.
         assert!(!Access::load(home.clone(), file.clone()).blocked(&home.join("Documents/dl")));
+
+        // Folders added later open too, and the root stays.
+        access.set_folders(vec![home.join("Desktop/more")]).unwrap();
+        assert!(!access.blocked(&home.join("Desktop/more/a")));
+        assert!(!access.blocked(&home.join("Documents/dl")));
+        assert_eq!(access.blocked(&home.join("Desktop")), cfg!(target_os = "macos"));
+        assert_eq!(access.chosen_below(&home.join("Desktop")), vec![home.join("Desktop/more")]);
+        assert!(access.chosen_below(&home.join("Desktop/more")).is_empty());
+        assert!(!Access::load(home.clone(), file.clone()).blocked(&home.join("Desktop/more")));
 
         // Forgotten on reset, here and on the next launch; resetting twice is fine.
         access.reset().unwrap();

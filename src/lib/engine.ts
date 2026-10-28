@@ -119,10 +119,12 @@ export const engine = {
   /** Where the browser opens: the chosen root, else a test folder in development, Documents on macOS, home elsewhere. */
   initialDir: () => invoke<string>("initial_dir"),
   listDir: (path: string) => invoke<DirListing>("list_dir", { path }),
-  /** The first-launch choice: a root folder, or null for Full Disk Access; null overall before the user chose. */
-  accessSetup: () => invoke<{ root: string | null } | null>("access_setup"),
+  /** The first-launch choice: a root folder, or null for Full Disk Access, plus folders added in Settings; null overall before the user chose. */
+  accessSetup: () => invoke<{ root: string | null; folders: string[] } | null>("access_setup"),
   /** Remembers the first-launch choice: `root` as the top folder, or null for Full Disk Access. */
   setAccessSetup: (root: string | null) => invoke<void>("set_access_setup", { root }),
+  /** Replaces the folders added in Settings that getit may open, besides the root. */
+  setAccessFolders: (folders: string[]) => invoke<void>("set_access_folders", { folders }),
   /** Forgets the first-launch choice so onboarding shows again; development builds only. */
   resetAccessSetup: () => invoke<void>("reset_access_setup"),
   /** Whether getit has Full Disk Access; macOS may apply a new grant only after a restart. */

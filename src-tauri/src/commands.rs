@@ -98,7 +98,16 @@ pub fn full_disk_access(access: State<'_, Access>) -> bool {
 /// for Full Disk Access.
 #[tauri::command]
 pub fn set_access_setup(access: State<'_, Access>, root: Option<String>) -> CommandResult<()> {
-    access.set_setup(Setup { root: root.map(PathBuf::from) }).map_err(err)
+    access
+        .set_setup(Setup { root: root.map(PathBuf::from), folders: vec![] })
+        .map_err(err)
+}
+
+/// Replaces the folders added in Settings that getit may open, besides the
+/// first-launch choice.
+#[tauri::command]
+pub fn set_access_folders(access: State<'_, Access>, folders: Vec<String>) -> CommandResult<()> {
+    access.set_folders(folders.into_iter().map(PathBuf::from).collect()).map_err(err)
 }
 
 #[derive(Serialize)]
@@ -138,7 +147,24 @@ const NO_ACCESS: &str = "no access";
 #[tauri::command]
 pub async fn list_dir(access: State<'_, Access>, path: String) -> CommandResult<DirListing> {
     if access.blocked(Path::new(&path)) {
-        return Err(NO_ACCESS.to_string());
+        // A protected folder getit can't read shows only the chosen folders
+        // inside it, by name, so they can be reached without macOS asking.
+        let chosen = access.chosen_below(Path::new(&path));
+        let names = crate::access::names_toward(Path::new(&path), &chosen);
+        if names.is_empty() {
+            return Err(NO_ACCESS.to_string());
+        }
+        let folders = names
+            .into_iter()
+            .map(|name| {
+                let inside = Path::new(&path).join(&name);
+                Folder {
+                    items: if access.blocked(&inside) { 0 } else { count_visible(&inside) },
+                    name,
+                }
+            })
+            .collect();
+        return Ok(DirListing { folders, files: Vec::new() });
     }
     let mut folders = Vec::new();
     let mut files = Vec::new();
