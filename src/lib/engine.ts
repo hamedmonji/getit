@@ -196,6 +196,8 @@ export const engine = {
     openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"),
   /** getit's `.app` bundle, to drag into the Full Disk Access list; null when not run from one, as in development. */
   appBundle: () => invoke<string | null>("app_bundle"),
+  /** A PNG thumbnail of the image or video at `path`, at most `size` px on its longer side; rejects if none can be made. */
+  thumbnail: (path: string, size: number) => invoke<ArrayBuffer>("thumbnail", { path, size }),
   /** Quits and opens getit again, which macOS may need before Full Disk Access applies. */
   relaunch: () => invoke<void>("relaunch"),
   /** The clipboard's text; rejects when it holds no text. */

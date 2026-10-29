@@ -50,6 +50,16 @@ jobs:
         with:
           workspaces: '. -> target'
 
+      # Bundled as a sidecar for thumbnails; built from source, so cached by version.
+      - name: Cache ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries
+          key: ffmpeg-${{ matrix.rust_target }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
+
+      - name: Build ffmpeg
+        run: scripts/build-ffmpeg.sh ${{ matrix.rust_target }}
+
       - name: Install frontend dependencies
         run: pnpm install
 

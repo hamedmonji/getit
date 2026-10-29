@@ -4,6 +4,7 @@ mod commands;
 mod dock;
 pub mod native_host;
 mod relaunch;
+mod thumbnail;
 
 use std::sync::Mutex;
 
@@ -79,6 +80,7 @@ pub fn run() {
             browser::take_browser_links,
             dock::set_dock_overlay,
             relaunch::relaunch,
+            thumbnail::thumbnail,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

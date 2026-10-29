@@ -2,16 +2,20 @@ import type { MouseEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isMediaKind } from "../lib/fileKind";
+import { thumbnailPath } from "../lib/thumbnails";
 import type { FileVm, FolderVm } from "../lib/viewModels";
+import { useThumbnail } from "../hooks/useThumbnail";
 import { FileIcon } from "./FileIcon";
 import { PauseIcon, PlayIcon, RetryIcon } from "./icons";
 
 type Size = "large" | "small";
 
-/** File-type icon. Images and videos fill in as they download; other kinds
- * are dimmed until done. The label is dropped in the list, too small to read. */
+/** File-type icon. Images and videos fill in as they download, then show a
+ * thumbnail; other kinds are dimmed until done. The label is dropped in the
+ * list, too small to read. */
 export function FileGlyph({ vm, size }: { vm: FileVm; size: Size }) {
   const media = isMediaKind(vm.kind);
+  const thumb = useThumbnail(thumbnailPath(vm));
   const opacity = vm.missing ? 0.4 : vm.done || media ? 1 : 0.6;
   return (
     <div className={`file-glyph ${size}`} style={{ opacity }}>
@@ -21,6 +25,7 @@ export function FileGlyph({ vm, size }: { vm: FileVm; size: Size }) {
         reveal={vm.done ? 100 : vm.pct}
         edge={vm.active}
         hue={vm.hue}
+        thumb={thumb}
         hideLabel={size === "small"}
       />
     </div>

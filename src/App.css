@@ -1714,3 +1714,20 @@ body {
 [data-density="compact"] .row {
   scroll-margin: 30px 0 4px;
 }
+
+/* A file icon's thumbnail fades in over its placeholder once made. */
+.file-thumb {
+  animation: file-thumb-in 0.25s ease-out;
+}
+
+@keyframes file-thumb-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-thumb {
+    animation: none;
+  }
+}

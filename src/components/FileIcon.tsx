@@ -45,10 +45,20 @@ export interface FileIconProps {
   hue?: number;
   /** Hide the extension label, for sizes too small to read it. */
   hideLabel?: boolean;
+  /** Media only: a picture of the file, shown in place of the placeholder once fully revealed. */
+  thumb?: string | null;
 }
 
 /** A file-type icon that fills its box. Images and videos fill in top-down as they download. */
-export function FileIcon({ kind, ext, reveal = 100, edge = false, hue = 240, hideLabel = false }: FileIconProps) {
+export function FileIcon({
+  kind,
+  ext,
+  reveal = 100,
+  edge = false,
+  hue = 240,
+  hideLabel = false,
+  thumb = null,
+}: FileIconProps) {
   // Gradient ids must be unique per icon; the same file can show in two places.
   const uid = useId().replace(/[^\w-]/g, "");
   const t = typeColors(kind, ext);
@@ -57,6 +67,7 @@ export function FileIcon({ kind, ext, reveal = 100, edge = false, hue = 240, hid
   const labelW = Math.max(22, ext.length * 6 + 10);
   const pillW = Math.max(20, ext.length * 5.5 + 9);
   const thumbId = `tg${uid}`;
+  const clipId = `tc${uid}`;
 
   const thumbGradient = (
     <linearGradient id={thumbId} gradientUnits="userSpaceOnUse" x1="0" y1="8" x2="40" y2="60">
@@ -65,10 +76,28 @@ export function FileIcon({ kind, ext, reveal = 100, edge = false, hue = 240, hid
       ))}
     </linearGradient>
   );
-  // The preview fills `h` from the top of the window at (x, y, w, h).
+  // The preview fills `h` from the top of the window at (x, y, w, h). Once
+  // fully revealed, the thumbnail covers the window, cropped to fill it.
   const preview = (x: number, y: number, w: number, h: number, edgeOpacity: number) => (
     <>
       <rect x={x} y={y} width={w} fill={`url(#${thumbId})`} style={{ height: h * r, transition: REVEAL_TRANSITION }} />
+      {thumb && r >= 1 && (
+        <>
+          <clipPath id={clipId}>
+            <rect x={x} y={y} width={w} height={h} />
+          </clipPath>
+          <image
+            href={thumb}
+            x={x}
+            y={y}
+            width={w}
+            height={h}
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#${clipId})`}
+            className="file-thumb"
+          />
+        </>
+      )}
       {edge && r < 1 && (
         <rect x={x} width={w} height={0.8} fill="#fff" opacity={edgeOpacity} style={{ y: y + h * r, transition: REVEAL_TRANSITION }} />
       )}
@@ -178,7 +207,14 @@ export function FileIcon({ kind, ext, reveal = 100, edge = false, hue = 240, hid
               <rect x={56} y={y} width={3.5} height={4} rx={0.8} />
             </g>
           ))}
-          {r >= 1 && <path d="M28 25.5v13l11-6.5z" fill="#fff" opacity={0.9} />}
+          {r >= 1 && (
+            <path
+              d="M28 25.5v13l11-6.5z"
+              fill="#fff"
+              opacity={0.9}
+              style={thumb ? { filter: "drop-shadow(0 0 1.5px rgba(0,0,0,.6))" } : undefined}
+            />
+          )}
         </>
       );
       break;
