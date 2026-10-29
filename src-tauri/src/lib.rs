@@ -1,6 +1,7 @@
 mod access;
 mod browser;
 mod commands;
+mod dock;
 pub mod native_host;
 mod relaunch;
 
@@ -76,6 +77,7 @@ pub fn run() {
             commands::reorder_queue,
             commands::clear_completed,
             browser::take_browser_links,
+            dock::set_dock_overlay,
             relaunch::relaunch,
         ])
         .run(tauri::generate_context!())

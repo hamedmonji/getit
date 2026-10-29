@@ -32,6 +32,7 @@ import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
 import { canStart, useAddLinks } from "./hooks/useAddLinks";
 import { useClipboardItems } from "./hooks/useClipboardItems";
 import { useDirListing } from "./hooks/useDirListing";
+import { useDockProgress } from "./hooks/useDockProgress";
 import { useEngine } from "./hooks/useEngine";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
@@ -104,6 +105,7 @@ const NOTICE_MS = 6000;
 
 export default function App() {
   const state = useEngine();
+  useDockProgress(state);
   const [home, setHome] = useState<string | null>(null);
   /** The folder chosen on first launch as the top, instead of home; null when none was. */
   const [root, setRoot] = useState<string | null>(null);
