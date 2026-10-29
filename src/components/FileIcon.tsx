@@ -45,7 +45,7 @@ export interface FileIconProps {
   hue?: number;
   /** Hide the extension label, for sizes too small to read it. */
   hideLabel?: boolean;
-  /** Media only: a picture of the file, shown in place of the placeholder once fully revealed. */
+  /** Media only: a picture of the file, shown over the placeholder as far as revealed. */
   thumb?: string | null;
 }
 
@@ -76,15 +76,15 @@ export function FileIcon({
       ))}
     </linearGradient>
   );
-  // The preview fills `h` from the top of the window at (x, y, w, h). Once
-  // fully revealed, the thumbnail covers the window, cropped to fill it.
+  // The preview fills `h` from the top of the window at (x, y, w, h). The
+  // thumbnail, cropped to fill the window, shows over it as far as revealed.
   const preview = (x: number, y: number, w: number, h: number, edgeOpacity: number) => (
     <>
       <rect x={x} y={y} width={w} fill={`url(#${thumbId})`} style={{ height: h * r, transition: REVEAL_TRANSITION }} />
-      {thumb && r >= 1 && (
+      {thumb && (
         <>
           <clipPath id={clipId}>
-            <rect x={x} y={y} width={w} height={h} />
+            <rect x={x} y={y} width={w} style={{ height: h * r, transition: REVEAL_TRANSITION }} />
           </clipPath>
           <image
             href={thumb}

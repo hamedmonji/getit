@@ -630,6 +630,13 @@ pub fn set_queue_settings(
     engine.set_queue_settings(queue_id, settings).map_err(err)
 }
 
+/// Limits how fast all downloads together receive data, in bytes per second,
+/// or lifts the limit with None.
+#[tauri::command]
+pub fn set_speed_limit(engine: State<'_, Engine>, limit: Option<u64>) {
+    engine.set_speed_limit(limit);
+}
+
 #[tauri::command]
 pub fn clear_completed(engine: State<'_, Engine>, queue_id: QueueId) -> CommandResult<usize> {
     engine.clear_completed(queue_id).map_err(err)

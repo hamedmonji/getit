@@ -1,16 +1,25 @@
 import { useEffect, useState } from "react";
-import { loadThumbnail } from "../lib/thumbnails";
+import { loadThumbnail, type ThumbnailSource } from "../lib/thumbnails";
 
-/** An object URL for the thumbnail of the file at `path`, once made; null before then, when it has none, or with no path. */
-export function useThumbnail(path: string | null): string | null {
-  const [thumb, setThumb] = useState<{ path: string; url: string | null } | null>(null);
+/**
+ * An object URL for the thumbnail from `source`, once made. While a newer one
+ * is made, as a video downloads further, the last one stays. Null before the
+ * first, when there's none, or with no source.
+ */
+export function useThumbnail(source: ThumbnailSource | null): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  const key = source?.key ?? null;
   useEffect(() => {
-    if (!path) return;
+    if (!source) {
+      setUrl(null);
+      return;
+    }
     let live = true;
-    loadThumbnail(path).then((url) => live && setThumb({ path, url }));
+    loadThumbnail(source).then((made) => live && made && setUrl(made));
     return () => {
       live = false;
     };
-  }, [path]);
-  return thumb && thumb.path === path ? thumb.url : null;
+    // The source is the same while its key is.
+  }, [key]);
+  return url;
 }

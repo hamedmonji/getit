@@ -10,6 +10,7 @@ import {
   overviewList,
   pendingVm,
   queueForDir,
+  readableBytes,
   searchResults,
   stats,
   type ViewMode,
@@ -155,6 +156,21 @@ describe("fileVm", () => {
       sizeLabel: "—",
       path: null,
     });
+  });
+});
+
+describe("readableBytes", () => {
+  it("is everything downloaded over one connection", () => {
+    expect(readableBytes({ downloaded: 30 })).toBe(30);
+  });
+
+  it("follows segments from the start until the first gap", () => {
+    const segments = [
+      { start: 50, end: 100, downloaded: 20 },
+      { start: 0, end: 50, downloaded: 50 },
+    ];
+    expect(readableBytes({ downloaded: 70, segments })).toBe(70);
+    expect(readableBytes({ downloaded: 30, segments: [{ start: 0, end: 50, downloaded: 10 }, ...segments.slice(0, 1)] })).toBe(10);
   });
 });
 

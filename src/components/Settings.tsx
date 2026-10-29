@@ -22,7 +22,16 @@ import {
 import { displayPath } from "../lib/paths";
 import { SETTINGS_PAGE_LABELS, settingsPages } from "../lib/settingsPages";
 import { SORT_LABELS, type SortKey } from "../lib/sort";
+import { SPEED_LIMIT_LABELS, SPEED_LIMITS, type SpeedLimit } from "../lib/speedLimit";
 import { GripIcon } from "./icons";
+
+/** Settings for development only. */
+export interface DevelopmentSettings {
+  /** Forgets the first-launch choice and restarts getit. */
+  onResetOnboarding: () => void;
+  speedLimit: SpeedLimit;
+  onSpeedLimit: (limit: SpeedLimit) => void;
+}
 
 /** What the Folder access section shows and does, on macOS. */
 export interface AccessSettings {
@@ -60,7 +69,7 @@ const DRAG_THRESHOLD = 4;
  * everywhere, on pages picked in a sidebar: the sort order, where files are sorted by the top
  * key, then the next for ties; and whether pasted links are added without
  * asking; how getit looks; on macOS, Full Disk Access and the folders getit may open without
- * it. In development, a way to see onboarding again. Closes on a click
+ * it. In development, a way to see onboarding again and a download speed limit. Closes on a click
  * outside it or Escape.
  */
 export function Settings({
@@ -71,7 +80,7 @@ export function Settings({
   onPasteMode,
   appearance,
   access,
-  onResetOnboarding,
+  development,
   onClose,
 }: {
   open: boolean;
@@ -82,12 +91,12 @@ export function Settings({
   appearance: AppearanceSettings;
   /** The Folder access section shows only when given. */
   access?: AccessSettings;
-  /** Forgets the first-launch choice and restarts getit; the section shows only when given. */
-  onResetOnboarding?: () => void;
+  /** The Development page shows only when given. */
+  development?: DevelopmentSettings;
   onClose: () => void;
 }) {
   const askId = useId();
-  const pages = settingsPages({ access: !!access, development: !!onResetOnboarding });
+  const pages = settingsPages({ access: !!access, development: !!development });
   return (
     <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
       {/* The pages describe themselves; there's no one description for the dialog. */}
@@ -138,12 +147,32 @@ export function Settings({
               <FolderAccess {...access} />
             </TabsContent>
           )}
-          {onResetOnboarding && (
+          {development && (
             <TabsContent value="development" className="min-h-0 overflow-y-auto p-5 pt-12">
+              <section className="settings-section">
+                <h3 className="settings-heading">Max download speed</h3>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  spacing={0}
+                  value={development.speedLimit}
+                  onValueChange={(v) => v && development.onSpeedLimit(v as SpeedLimit)}
+                >
+                  {SPEED_LIMITS.map((limit) => (
+                    <ToggleGroupItem key={limit} value={limit} className="px-3">
+                      {SPEED_LIMIT_LABELS[limit]}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+                <p className="settings-note">
+                  For all downloads together. Running downloads slow down or speed up right away.
+                </p>
+              </section>
               <section className="settings-section">
                 <h3 className="settings-heading">Onboarding</h3>
                 <div>
-                  <Button variant="outline" size="sm" onClick={onResetOnboarding}>
+                  <Button variant="outline" size="sm" onClick={development.onResetOnboarding}>
                     Reset onboarding and restart
                   </Button>
                 </div>

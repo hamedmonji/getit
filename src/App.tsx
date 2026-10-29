@@ -64,6 +64,7 @@ import { accessTop, addFolder } from "./lib/access";
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
 import { sortFiles } from "./lib/sort";
+import { SPEED_LIMITS, speedLimitBytes, type SpeedLimit } from "./lib/speedLimit";
 import { isTyping, matchByName, typeAhead, type Typed } from "./lib/typeSelect";
 import {
   displayName,
@@ -635,6 +636,12 @@ export default function App() {
     return () => clearInterval(timer);
   }, [settingsOpen]);
   useEffect(() => setListNonce((n) => n + 1), [fullDisk]);
+
+  // Development only: a limit on download speed, kept across restarts.
+  const [speedLimit, setSpeedLimit] = useStoredState<SpeedLimit>("getit.speedLimit", SPEED_LIMITS, () => "off");
+  useEffect(() => {
+    if (import.meta.env.DEV) report(engine.setSpeedLimit(speedLimitBytes(speedLimit)));
+  }, [speedLimit]);
 
   // Development only: shows onboarding again from step 1, after a restart.
   const resetOnboarding = () => {
@@ -1248,7 +1255,9 @@ export default function App() {
               }
             : undefined
         }
-        onResetOnboarding={import.meta.env.DEV ? resetOnboarding : undefined}
+        development={
+          import.meta.env.DEV ? { onResetOnboarding: resetOnboarding, speedLimit, onSpeedLimit: setSpeedLimit } : undefined
+        }
         onClose={closeSettings}
       />
       {drag && (

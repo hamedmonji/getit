@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 use crate::queue::Queue;
 use crate::rename::apply_rules;
 use crate::store::{QueueSnapshot, QueueStore};
+use crate::throttle::Throttle;
 use crate::types::{
     DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, LinkInfo, QueueId,
     QueueInfo, QueueSettings, Result,
@@ -47,6 +48,7 @@ struct Inner {
     client: Client,
     worker_tx: mpsc::UnboundedSender<WorkerMsg>,
     runtime: Handle,
+    throttle: Throttle,
 }
 
 #[derive(Default)]
@@ -114,6 +116,7 @@ impl Engine {
             client,
             worker_tx,
             runtime: runtime.clone(),
+            throttle: Throttle::default(),
         });
         runtime.spawn(drive(Arc::downgrade(&inner), worker_rx));
 
@@ -140,6 +143,12 @@ impl Engine {
             }
         }
         Ok(Self { inner })
+    }
+
+    /// Limits how fast all downloads together receive data, in bytes per
+    /// second, or lifts the limit with None. Running downloads follow it at once.
+    pub fn set_speed_limit(&self, bytes_per_sec: Option<u64>) {
+        self.inner.throttle.set_limit(bytes_per_sec);
     }
 
     /// Receives every change from now on. A receiver that falls more than 1024
@@ -967,6 +976,7 @@ impl Inner {
                 queue.names_except(id),
                 queue.settings.rename.clone(),
                 queue.settings.retries,
+                self.throttle.clone(),
             ),
             token,
             self.worker_tx.clone(),

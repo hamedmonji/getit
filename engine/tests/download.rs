@@ -1848,3 +1848,40 @@ async fn removed_queues_can_be_restored() {
     assert_eq!(ctx.engine.queue_for_dir(ctx.folder("a")), Some(queue));
     assert!(ctx.engine.restore_queue(snapshot).is_err());
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_speed_limit_slows_a_download() {
+    let ctx = Ctx::new().await;
+    // 4 MiB at 2 MiB/s takes 2 s; unlimited, about 0.6 s.
+    ctx.engine.set_speed_limit(Some(2 * 1024 * 1024));
+    let start = Instant::now();
+    let id = ctx.engine.enqueue(ctx.folder("a"), &ctx.url("/file.bin")).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert!(start.elapsed() >= Duration::from_millis(1500), "took {:?}", start.elapsed());
+    ctx.assert_file_matches(id);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_speed_limit_covers_every_segment_together() {
+    let ctx = Ctx::new().await;
+    // 16 MiB at 8 MiB/s takes 2 s; unlimited over four connections, well under 1 s.
+    ctx.engine.set_speed_limit(Some(8 * 1024 * 1024));
+    let start = Instant::now();
+    let id = ctx.engine.enqueue(ctx.folder("a"), &ctx.url("/big.bin")).unwrap();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert!(start.elapsed() >= Duration::from_millis(1500), "took {:?}", start.elapsed());
+    assert_file_is(&ctx.engine, id, &ctx.server.big);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn lifting_the_speed_limit_lets_a_download_speed_up() {
+    let ctx = Ctx::new().await;
+    ctx.engine.set_speed_limit(Some(256 * 1024));
+    let id = ctx.engine.enqueue(ctx.folder("a"), &ctx.url("/file.bin")).unwrap();
+    wait_until(&ctx.engine, id, "some progress", |item| item.downloaded > 0).await;
+    ctx.engine.set_speed_limit(None);
+    // At the limit it would take 16 s.
+    let start = Instant::now();
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert!(start.elapsed() < Duration::from_secs(5), "took {:?}", start.elapsed());
+}

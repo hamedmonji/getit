@@ -28,6 +28,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 use crate::rename::apply_rules;
+use crate::throttle::Throttle;
 use crate::types::{DownloadId, DownloadItem, LinkInfo, RenameRule, Segment, part_path};
 
 const RETRY_BASE_DELAY: Duration = Duration::from_secs(1);
@@ -96,6 +97,8 @@ pub(crate) struct Job {
     etag: Option<String>,
     last_modified: Option<String>,
     segments: Vec<Segment>,
+    /// The speed limit shared by every download.
+    throttle: Throttle,
 }
 
 impl Job {
@@ -105,6 +108,7 @@ impl Job {
         taken: HashSet<String>,
         rename: Vec<RenameRule>,
         retries: u32,
+        throttle: Throttle,
     ) -> Self {
         Self {
             id: item.id,
@@ -119,6 +123,7 @@ impl Job {
             etag: item.etag.clone(),
             last_modified: item.last_modified.clone(),
             segments: item.segments.clone(),
+            throttle,
         }
     }
 
@@ -350,6 +355,10 @@ async fn attempt(
                     send_progress(tx, job, downloaded, meter.sample(downloaded));
                     last_emit = Instant::now();
                 }
+                tokio::select! {
+                    _ = cancel.cancelled() => {}
+                    _ = job.throttle.wait(bytes.len() as u64) => {}
+                }
             }
             Some(Err(e)) => {
                 // Keep what we have so the retry can resume from it.
@@ -453,6 +462,7 @@ struct SegmentCtx<'a> {
     validator: Option<&'a str>,
     /// Fires when the download stops, or when one segment's failure ends the rest.
     stop: &'a CancellationToken,
+    throttle: &'a Throttle,
 }
 
 /// Fetches the job's unfinished segments in parallel into its preallocated
@@ -473,6 +483,7 @@ async fn download_segments(
     let url = job.url.clone();
     let validator = job.if_range_validator().map(str::to_owned);
     let stop = cancel.child_token();
+    let throttle = job.throttle.clone();
     let ctx = SegmentCtx {
         client,
         retries: job.retries,
@@ -481,6 +492,7 @@ async fn download_segments(
         total: job.total_bytes.expect("segmented downloads have a size"),
         validator: validator.as_deref(),
         stop: &stop,
+        throttle: &throttle,
     };
     let written: Vec<AtomicU64> = job
         .segments
@@ -685,6 +697,10 @@ async fn fetch_segment_once(
                 if last_flush.elapsed() >= PROGRESS_INTERVAL {
                     flush_segment(&mut writer, ctx.part, written, pos - segment.start).await?;
                     last_flush = Instant::now();
+                }
+                tokio::select! {
+                    _ = ctx.stop.cancelled() => {}
+                    _ = ctx.throttle.wait(len) => {}
                 }
             }
             Some(Err(e)) => {

@@ -13,6 +13,7 @@ mod engine;
 mod queue;
 mod rename;
 mod store;
+mod throttle;
 mod types;
 mod worker;
 

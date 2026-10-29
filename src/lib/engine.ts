@@ -196,8 +196,14 @@ export const engine = {
     openUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"),
   /** getit's `.app` bundle, to drag into the Full Disk Access list; null when not run from one, as in development. */
   appBundle: () => invoke<string | null>("app_bundle"),
-  /** A PNG thumbnail of the image or video at `path`, at most `size` px on its longer side; rejects if none can be made. */
-  thumbnail: (path: string, size: number) => invoke<ArrayBuffer>("thumbnail", { path, size }),
+  /**
+   * A PNG thumbnail of the image or video at `path`, at most `size` px on its longer side;
+   * rejects if none can be made. `available` is how much of a partial file has arrived from its start (0–1).
+   */
+  thumbnail: (path: string, size: number, available: number | null = null) =>
+    invoke<ArrayBuffer>("thumbnail", { path, size, available }),
+  /** Limits how fast all downloads together receive data, in bytes per second; null lifts the limit. */
+  setSpeedLimit: (limit: number | null) => invoke<void>("set_speed_limit", { limit }),
   /** Quits and opens getit again, which macOS may need before Full Disk Access applies. */
   relaunch: () => invoke<void>("relaunch"),
   /** The clipboard's text; rejects when it holds no text. */

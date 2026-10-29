@@ -77,6 +77,7 @@ pub fn run() {
             commands::set_queue_settings,
             commands::reorder_queue,
             commands::clear_completed,
+            commands::set_speed_limit,
             browser::take_browser_links,
             dock::set_dock_overlay,
             relaunch::relaunch,

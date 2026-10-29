@@ -1,7 +1,8 @@
 //! Thumbnails of finished images and videos, for their file icons. Made by the
 //! ffmpeg bundled beside getit (see scripts/build-ffmpeg.sh), with Quick Look
 //! as a fallback on macOS for what it can't read, such as HEIC. Cached on disk
-//! by path, size and modification time so each is made once.
+//! by path, size and modification time so each is made once. Unfinished videos
+//! get one too, from the part downloaded so far, made afresh each time.
 
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
@@ -24,9 +25,16 @@ static PERMITS: Semaphore = Semaphore::const_new(2);
 const TIMEOUT: Duration = Duration::from_secs(20);
 
 /// The PNG thumbnail of the file at `path`, at most `size` pixels on its
-/// longer side, as raw bytes.
+/// longer side, as raw bytes. For a file still downloading, `available` is how
+/// much of it, from the start, has arrived (0–1), to take the frame from there.
 #[tauri::command]
-pub async fn thumbnail(app: AppHandle, access: State<'_, Access>, path: String, size: u32) -> Result<Response, String> {
+pub async fn thumbnail(
+    app: AppHandle,
+    access: State<'_, Access>,
+    path: String,
+    size: u32,
+    available: Option<f64>,
+) -> Result<Response, String> {
     let file = PathBuf::from(&path);
     if access.blocked(&file) {
         return Err("no access".into());
@@ -35,16 +43,25 @@ pub async fn thumbnail(app: AppHandle, access: State<'_, Access>, path: String, 
     let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos());
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?.join("thumbnails");
     let cached = dir.join(format!("{:016x}.png", cache_key(&path, meta.len(), modified, size)));
-    if let Ok(bytes) = fs::read(&cached) {
+    if available.is_none()
+        && let Ok(bytes) = fs::read(&cached)
+    {
         return Ok(Response::new(bytes));
     }
     let _permit = PERMITS.acquire().await.map_err(|e| e.to_string())?;
     let bytes = tauri::async_runtime::spawn_blocking(move || {
         fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        if !with_ffmpeg(&file, &cached, size) && !with_quick_look(&file, &dir, &cached, size) {
-            return Err("no thumbnail".to_string());
-        }
-        fs::read(&cached).map_err(|e| e.to_string())
+        let Some(available) = available else {
+            if !with_ffmpeg(&file, &cached, size, None) && !with_quick_look(&file, &dir, &cached, size) {
+                return Err("no thumbnail".to_string());
+            }
+            return fs::read(&cached).map_err(|e| e.to_string());
+        };
+        // A partial file changes as it downloads, so its thumbnail isn't kept.
+        let made = with_ffmpeg(&file, &cached, size, Some(available));
+        let bytes = if made { fs::read(&cached).map_err(|e| e.to_string()) } else { Err("no thumbnail".to_string()) };
+        let _ = fs::remove_file(&cached);
+        bytes
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -64,9 +81,9 @@ fn ffmpeg() -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
-/// Makes the thumbnail into `cached` with ffmpeg, from the keyframe a tenth of
-/// the way into a video, past any black opening, or from an image. Whether it did.
-fn with_ffmpeg(file: &Path, cached: &Path, size: u32) -> bool {
+/// Makes the thumbnail into `cached` with ffmpeg, from a keyframe of a video
+/// (see `seek_seconds`), or from an image. Whether it did.
+fn with_ffmpeg(file: &Path, cached: &Path, size: u32, available: Option<f64>) -> bool {
     let Some(ffmpeg) = ffmpeg() else { return false };
     // With no output, ffmpeg only describes the input, its duration included.
     let probe = Command::new(&ffmpeg)
@@ -78,7 +95,7 @@ fn with_ffmpeg(file: &Path, cached: &Path, size: u32) -> bool {
     let seek = probe
         .ok()
         .and_then(|out| parse_duration(&String::from_utf8_lossy(&out.stderr)))
-        .map_or(0.0, seek_seconds);
+        .map_or(0.0, |duration| seek_seconds(duration, available));
     let part = cached.with_extension("part");
     let mut cmd = Command::new(&ffmpeg);
     cmd.args(["-hide_banner", "-nostdin", "-loglevel", "error", "-skip_frame", "nokey"])
@@ -104,9 +121,12 @@ fn parse_duration(description: &str) -> Option<f64> {
     (seconds > 0.0).then_some(seconds)
 }
 
-/// Where to take a video's frame from: a tenth of the way in.
-fn seek_seconds(duration: f64) -> f64 {
-    duration / 10.0
+/// Where to take a video's frame from: a tenth of the way in, past any black
+/// opening, or for one still downloading, no further than most of the way
+/// through the part that has arrived, so the frame is there to read.
+fn seek_seconds(duration: f64, available: Option<f64>) -> f64 {
+    let within = available.map_or(1.0, |a| a.clamp(0.0, 1.0) * 0.8);
+    duration * within.min(0.1)
 }
 
 /// Shrinks the frame to fit `size` on its longer side, never enlarging it, in
@@ -182,7 +202,14 @@ mod tests {
 
     #[test]
     fn seeks_a_tenth_of_the_way_in() {
-        assert_eq!(seek_seconds(600.0), 60.0);
+        assert_eq!(seek_seconds(600.0, None), 60.0);
+        assert_eq!(seek_seconds(600.0, Some(0.5)), 60.0);
+    }
+
+    #[test]
+    fn seeks_within_what_has_downloaded() {
+        assert!((seek_seconds(600.0, Some(0.05)) - 24.0).abs() < 1e-9);
+        assert_eq!(seek_seconds(600.0, Some(0.0)), 0.0);
     }
 
     #[test]

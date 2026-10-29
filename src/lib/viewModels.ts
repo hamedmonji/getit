@@ -38,6 +38,8 @@ export interface FileVm {
   info: string;
   /** Final path, once known. */
   path: string | null;
+  /** Bytes readable from the file's start: all of a finished one, else what arrived before the first gap. */
+  readable: number;
 }
 
 export interface FolderVm {
@@ -136,6 +138,7 @@ export function pendingVm(key: string, url: string, name: string | null, status:
     actionLabel: "",
     info: url,
     path: null,
+    readable: 0,
   };
 }
 
@@ -205,7 +208,24 @@ export function fileVm(
     actionLabel: action === "retry" ? "Retry" : action === "resume" ? "Resume" : "Pause",
     info,
     path: item.file_name ? joinPath(queue.dir, item.file_name) : null,
+    readable: done ? (total ?? item.downloaded) : readableBytes(item),
   };
+}
+
+/**
+ * How many bytes of an unfinished download's file can be read from its start.
+ * Over one connection that's all it has; a segmented one is only as far as
+ * its segments, in order, have joined up.
+ */
+export function readableBytes(item: Pick<DownloadItem, "downloaded" | "segments">): number {
+  if (!item.segments?.length) return item.downloaded;
+  let end = 0;
+  for (const s of [...item.segments].sort((a, b) => a.start - b.start)) {
+    if (s.start > end) break;
+    end = Math.max(end, s.start + s.downloaded);
+    if (s.start + s.downloaded < s.end) break;
+  }
+  return end;
 }
 
 /** Download totals for the queue at `dir`, or for every queue under it when `deep`. */
