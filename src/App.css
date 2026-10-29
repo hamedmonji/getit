@@ -940,6 +940,40 @@ body {
   color: var(--ink-muted);
 }
 
+/* Accent colour swatches on the Appearance page. */
+.accent-swatch {
+  position: relative;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+}
+
+.accent-swatch[data-state="on"] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* A rainbow until a custom colour is picked. */
+.accent-custom {
+  background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
+}
+
+.accent-custom input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.accent-custom:has(input:focus-visible) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .queue-settings-folder {
   flex: none;
   display: flex;
@@ -1650,4 +1684,33 @@ body {
   bottom: 0;
   border-radius: 2.5px;
   background: #7cc0f7;
+}
+
+/* Compact density: tighter rows and icon grid. Arrow keys read the laid-out
+   grid, so nothing else needs to know. */
+[data-density="compact"] .icon-grid {
+  gap: 12px 14px;
+  padding: 16px;
+}
+
+[data-density="compact"] .tile {
+  padding: 8px 6px 8px;
+  gap: 6px;
+}
+
+[data-density="compact"] .folder-row {
+  height: 28px;
+}
+
+[data-density="compact"] .file-row {
+  height: 30px;
+}
+
+[data-density="compact"] .list-header {
+  height: 26px;
+  line-height: 26px;
+}
+
+[data-density="compact"] .row {
+  scroll-margin: 30px 0 4px;
 }

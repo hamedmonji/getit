@@ -26,7 +26,6 @@ import {
   Toolbar,
   UpdateBar,
   type SearchKind,
-  type Theme,
 } from "./components/Bars";
 import { ContextMenuItems } from "./components/ContextMenu";
 import { IconView, ListView, type ItemViewProps } from "./components/ItemViews";
@@ -39,8 +38,19 @@ import { useMarquee } from "./hooks/useMarquee";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useSortOrder } from "./hooks/useSortOrder";
 import { useStoredState } from "./hooks/useStoredState";
+import { useSystemDark } from "./hooks/useSystemDark";
 import { useUndo } from "./hooks/useUndo";
 import { useUpdate } from "./hooks/useUpdate";
+import {
+  accentTokens,
+  DENSITIES,
+  isAccent,
+  resolveTheme,
+  THEME_PREFERENCES,
+  type Accent,
+  type Density,
+  type ThemePreference,
+} from "./lib/appearance";
 import { engine, onBrowserLinks, type Captured, type DownloadStatus } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
 import { isFolderKey, splitKeys } from "./lib/keys";
@@ -142,16 +152,19 @@ export default function App() {
    * the folder's empty space. Counts the times it opened, to make a new one each time.
    */
   const [menu, setMenu] = useState<{ target: string | null; opened: number }>({ target: null, opened: 0 });
-  const [theme, setTheme] = useStoredState<Theme>("getit.theme", ["Light", "Dark"], () =>
-    window.matchMedia("(prefers-color-scheme: dark)").matches ? "Dark" : "Light",
-  );
+  const [themePref, setThemePref] = useStoredState<ThemePreference>("getit.theme", THEME_PREFERENCES, () => "System");
+  const theme = resolveTheme(themePref, useSystemDark());
+  const [accent, setAccent] = useStoredState<Accent>("getit.accent", isAccent, () => "blue");
+  const [density, setDensity] = useStoredState<Density>("getit.density", DENSITIES, () => "comfortable");
   // On the document rather than the app: menus and dialogs show outside it, and
   // shadcn's components take dark mode from a `dark` class above them.
   useLayoutEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = theme;
+    root.dataset.density = density;
     root.classList.toggle("dark", theme === "Dark");
-  }, [theme]);
+    for (const [name, value] of Object.entries(accentTokens(accent, theme))) root.style.setProperty(name, value);
+  }, [theme, accent, density]);
   const [mode, setMode] = useStoredState<ViewMode>("getit.view", ["Icons", "List"], () => "Icons");
   const [folderFilter, setFolderFilter] = useStoredState<"all" | "queues">(
     "getit.folders",
@@ -954,7 +967,7 @@ export default function App() {
           setAdding((a) => !a);
         }}
         theme={theme}
-        onToggleTheme={() => setTheme(theme === "Dark" ? "Light" : "Dark")}
+        onToggleTheme={() => setThemePref(theme === "Dark" ? "Light" : "Dark")}
         overviewOpen={overviewOpen}
         activeCount={global.active}
         onToggleOverview={toggleOverview}
@@ -1209,6 +1222,15 @@ export default function App() {
         onSortOrder={setSortOrder}
         pasteMode={pasteMode}
         onPasteMode={setPasteMode}
+        appearance={{
+          theme: themePref,
+          onTheme: setThemePref,
+          resolvedTheme: theme,
+          accent,
+          onAccent: setAccent,
+          density,
+          onDensity: setDensity,
+        }}
         access={
           IS_MAC && home
             ? {
