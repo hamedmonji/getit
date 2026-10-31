@@ -47,9 +47,11 @@ import {
   DENSITIES,
   isAccent,
   resolveTheme,
+  STRIPES,
   THEME_PREFERENCES,
   type Accent,
   type Density,
+  type Stripes,
   type ThemePreference,
 } from "./lib/appearance";
 import { engine, onBrowserLinks, type Captured, type DownloadStatus } from "./lib/engine";
@@ -60,7 +62,7 @@ import { bestQueueFor } from "./lib/match";
 import type { MenuContext } from "./lib/menus";
 import { baseName, canGoUp, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import { FILE_MANAGER, IS_MAC } from "./lib/platform";
-import { accessTop, addFolder } from "./lib/access";
+import { accessShortcuts, accessTop, addFolder } from "./lib/access";
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
 import { sortFiles } from "./lib/sort";
@@ -159,15 +161,17 @@ export default function App() {
   const theme = resolveTheme(themePref, useSystemDark());
   const [accent, setAccent] = useStoredState<Accent>("getit.accent", isAccent, () => "blue");
   const [density, setDensity] = useStoredState<Density>("getit.density", DENSITIES, () => "comfortable");
+  const [stripes, setStripes] = useStoredState<Stripes>("getit.stripes", STRIPES, () => "off");
   // On the document rather than the app: menus and dialogs show outside it, and
   // shadcn's components take dark mode from a `dark` class above them.
   useLayoutEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = theme;
     root.dataset.density = density;
+    root.dataset.stripes = stripes;
     root.classList.toggle("dark", theme === "Dark");
     for (const [name, value] of Object.entries(accentTokens(accent, theme))) root.style.setProperty(name, value);
-  }, [theme, accent, density]);
+  }, [theme, accent, density, stripes]);
   const [mode, setMode] = useStoredState<ViewMode>("getit.view", ["Icons", "List"], () => "Icons");
   const [folderFilter, setFolderFilter] = useStoredState<"all" | "queues">(
     "getit.folders",
@@ -308,11 +312,19 @@ export default function App() {
   };
 
   const queue = shown ? queueForDir(state, shown) : undefined;
-  const allFolders = useMemo(
-    () => (shown ? listing.folders.map((f) => folderVm(state, joinPath(shown, f.name))) : []),
-    [state, shown, listing],
+  /** The chosen folders, which show at the top even without downloads. */
+  const shortcuts = useMemo(
+    () => (shown && home ? accessShortcuts(shown, home, root, accessFolders, fullDisk) : []),
+    [shown, home, root, accessFolders, fullDisk],
   );
-  const shownFolders = (list: FolderVm[]) => (showAllFolders ? list : list.filter((g) => g.hasQueue));
+  const allFolders = useMemo(() => {
+    if (!shown) return [];
+    const listed = listing.folders.map((f) => joinPath(shown, f.name));
+    const deeper = shortcuts.filter((p) => !listed.includes(p));
+    return [...listed, ...deeper].map((p) => folderVm(state, p));
+  }, [state, shown, listing, shortcuts]);
+  const shownFolders = (list: FolderVm[]) =>
+    showAllFolders ? list : list.filter((g) => g.hasQueue || shortcuts.includes(g.path));
   const hiddenFolders = allFolders.length - shownFolders(allFolders).length;
   // Follows the listing, so subfolders and downloads appear together instead of
   // the downloads shifting when the subfolders arrive.
@@ -441,7 +453,9 @@ export default function App() {
 
   const onAction = (vm: FileVm) => {
     if (vm.action === "pause") pauseDownloads([vm.id]);
-    else report(engine.resume(vm.id));
+    else if (vm.action === "reveal") {
+      if (vm.path) report(engine.reveal([vm.path]));
+    } else report(engine.resume(vm.id));
   };
   // Finished files open; unfinished downloads show or hide their details instead.
   const onOpenFile = (vm: FileVm) => {
@@ -1239,6 +1253,8 @@ export default function App() {
           onAccent: setAccent,
           density,
           onDensity: setDensity,
+          stripes,
+          onStripes: setStripes,
         }}
         access={
           IS_MAC && home

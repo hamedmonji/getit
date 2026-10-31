@@ -10,6 +10,7 @@
   --ink: #1c1c1a;
   --ink-muted: #6f6d66;
   --hover: rgba(22, 22, 16, 0.045);
+  --stripe: rgba(22, 22, 16, 0.035);
   --tint: oklch(0.58 0.15 235);
   --tintSoft: oklch(0.58 0.15 235 / 0.12);
   --danger: oklch(0.58 0.2 25);
@@ -47,6 +48,7 @@
   --ink: #ecebe5;
   --ink-muted: #8f8d86;
   --hover: rgba(255, 255, 255, 0.05);
+  --stripe: rgba(255, 255, 255, 0.035);
   --tint: oklch(0.72 0.13 235);
   --tintSoft: oklch(0.72 0.13 235 / 0.16);
   --danger: oklch(0.7 0.17 25);
@@ -797,6 +799,11 @@ body {
 .row.selected + .row.selected {
   border-top-left-radius: 0;
   border-top-right-radius: 0;
+}
+
+/* Alternate row colors, like Finder's. Selection and drop targets show over them. */
+[data-stripes="on"] .list-rows > .row:nth-child(even):not(.selected, .drop-target) {
+  background: var(--stripe);
 }
 
 /* Keeps rows reached with the arrow keys clear of the sticky header. */

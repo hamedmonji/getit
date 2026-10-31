@@ -76,9 +76,14 @@ describe("fileVm", () => {
       missing: false,
       pct: 100,
       showBar: false,
-      action: null,
+      action: "reveal",
       path: "/home/q/a.zip",
     });
+  });
+
+  it("offers to show a finished download in the file manager", () => {
+    expect(vmOf({ status: "completed" }).actionLabel).toMatch(/^Show in /);
+    expect(vmOf({ status: "completed", file_name: null }).action).toBeNull();
   });
 
   it("shows a finished download's size in icon view", () => {
@@ -87,15 +92,15 @@ describe("fileVm", () => {
 
   it("marks a finished file missing when the listing doesn't have it", () => {
     const vm = vmOf({ status: "completed" }, { present: new Set(["other.zip"]) });
-    expect(vm).toMatchObject({ status: "Missing", missing: true, nameColor: "var(--ink-muted)" });
+    expect(vm).toMatchObject({ status: "Missing", missing: true, nameColor: "var(--ink-muted)", action: null });
     expect(vmOf({ status: "completed" }, { present: new Set(["a.zip"]) }).missing).toBe(false);
     expect(vmOf({ status: "completed" }, { present: null }).missing).toBe(false);
   });
 
-  it("shows progress, speed and time left while running", () => {
+  it("shows time left, then speed, while running", () => {
     const running = { status: "downloading" as const, total_bytes: 100 * MB, downloaded: 50 * MB };
     expect(vmOf(running, { speed: MB })).toMatchObject({
-      status: "50% · 1.0 MB/s · 50s",
+      status: "50s · 1.0 MB/s",
       active: true,
       action: "pause",
       actionLabel: "Pause",
@@ -104,9 +109,9 @@ describe("fileVm", () => {
     expect(vmOf(running, { speed: MB, mode: "Icons" }).status).toBe("50% · 50s left");
   });
 
-  it("shows what's downloaded when the size is unknown", () => {
+  it("shows only the speed when the size is unknown", () => {
     const vm = vmOf({ status: "downloading", total_bytes: null, downloaded: 2 * MB }, { speed: MB });
-    expect(vm.status).toBe("2.0 MB · 1.0 MB/s");
+    expect(vm.status).toBe("1.0 MB/s");
     expect(vm.size).toBe(2 * MB);
     expect(vm.sizeLabel).toBe("2.0 MB");
   });

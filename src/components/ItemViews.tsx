@@ -184,7 +184,10 @@ export function IconView(props: ItemViewProps) {
           className={"tile" + stateClass(props, f.id)}
           {...handlers(props, f.id, () => props.onOpenFile(f))}
         >
-          <ActionButton className="absolute top-1.5 right-1.5" vm={f} onAction={props.onAction} />
+          {/* Finished files open on a double-click; the tile stays clear of a reveal button. */}
+          {f.action !== "reveal" && (
+            <ActionButton className="absolute top-1.5 right-1.5" vm={f} onAction={props.onAction} />
+          )}
           <FileGlyph vm={f} size="large" />
           <FileName props={props} vm={f} className="tile-name clamp" />
           {f.showBar && <ProgressBar className="tile-bar" pct={f.pct} color={f.color} />}

@@ -17,6 +17,7 @@ import {
   type Accent,
   type Density,
   type ResolvedTheme,
+  type Stripes,
   type ThemePreference,
 } from "../lib/appearance";
 import { displayPath } from "../lib/paths";
@@ -59,6 +60,8 @@ export interface AppearanceSettings {
   onAccent: (accent: Accent) => void;
   density: Density;
   onDensity: (density: Density) => void;
+  stripes: Stripes;
+  onStripes: (stripes: Stripes) => void;
 }
 
 /** How far the pointer moves before a press on a row becomes a drag. */
@@ -186,8 +189,9 @@ export function Settings({
   );
 }
 
-/** The theme, accent colour and density. */
+/** The theme, accent colour, density and list stripes. */
 function Appearance(a: AppearanceSettings) {
+  const stripesId = useId();
   const custom = isPreset(a.accent) ? null : a.accent;
   return (
     <>
@@ -265,6 +269,18 @@ function Appearance(a: AppearanceSettings) {
           ))}
         </ToggleGroup>
         <p className="settings-note">Compact fits more files on screen, in both icon and list views.</p>
+      </section>
+      <section className="settings-section">
+        <h3 className="settings-heading">List view</h3>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id={stripesId}
+            checked={a.stripes === "on"}
+            onCheckedChange={(checked) => a.onStripes(checked === true ? "on" : "off")}
+          />
+          <Label htmlFor={stripesId}>Alternate row colors</Label>
+        </div>
+        <p className="settings-note">Shades every other row, like Finder, to make long lists easier to follow.</p>
       </section>
     </>
   );

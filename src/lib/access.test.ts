@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessTop, addFolder, commonFolder } from "./access";
+import { accessShortcuts, accessTop, addFolder, commonFolder } from "./access";
 
 describe("addFolder", () => {
   it("adds a folder", () => {
@@ -40,5 +40,33 @@ describe("accessTop", () => {
     expect(accessTop("/h", "/h/Downloads/g", [], false)).toBe("/h/Downloads/g");
     expect(accessTop("/h", "/h/Downloads/g", ["/h/Desktop/a"], false)).toBe("/h");
     expect(accessTop("/h", "/h/Downloads/g", ["/h/Downloads/k"], false)).toBe("/h/Downloads");
+  });
+});
+
+describe("accessShortcuts", () => {
+  const folders = ["/h/Documents/a", "/h/Desktop"];
+
+  it("lists every chosen folder at the top", () => {
+    expect(accessShortcuts("/h", "/h", "/h/Downloads", folders, false)).toEqual([
+      "/h/Downloads",
+      "/h/Documents/a",
+      "/h/Desktop",
+    ]);
+  });
+
+  it("leaves out the top itself", () => {
+    expect(accessShortcuts("/h/Downloads", "/h", "/h/Downloads", [], false)).toEqual([]);
+    expect(accessShortcuts("/h/Documents", "/h", "/h/Documents", ["/h/Documents/a"], false)).toEqual([
+      "/h/Documents/a",
+    ]);
+  });
+
+  it("lists nothing below the top", () => {
+    expect(accessShortcuts("/h/Documents", "/h", "/h/Downloads", folders, false)).toEqual([]);
+  });
+
+  it("lists nothing with Full Disk Access or without a root", () => {
+    expect(accessShortcuts("/h", "/h", "/h/Downloads", folders, true)).toEqual([]);
+    expect(accessShortcuts("/h", "/h", null, folders, false)).toEqual([]);
   });
 });

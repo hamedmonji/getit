@@ -67,7 +67,8 @@ export function Details({
         <div className="spacer" />
         <ActionButton variant="secondary" vm={vm} onAction={onAction} />
       </div>
-      {!vm.done && <ProgressBar className="details-bar" pct={pct} color={vm.color} />}
+      {/* Keyed by download, so switching downloads shows the new progress at once instead of animating to it. */}
+      {!vm.done && <ProgressBar key={vm.id} className="details-bar" pct={pct} color={vm.color} />}
       <dl className="details-grid">
         {originalName(item) && <Row label="Original name">{originalName(item)}</Row>}
         <Row label="Size">{total || vm.done ? progress : `${progress} · size not reported`}</Row>

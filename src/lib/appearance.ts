@@ -1,4 +1,4 @@
-// How getit looks: the theme, accent colour and density chosen in Settings.
+// How getit looks: the theme, accent colour, density and list stripes chosen in Settings.
 
 export type ThemePreference = "Light" | "Dark" | "System";
 export type ResolvedTheme = "Light" | "Dark";
@@ -7,6 +7,9 @@ export type Density = "comfortable" | "compact";
 export const THEME_PREFERENCES: readonly ThemePreference[] = ["Light", "Dark", "System"];
 export const DENSITIES: readonly Density[] = ["comfortable", "compact"];
 export const DENSITY_LABELS: Record<Density, string> = { comfortable: "Comfortable", compact: "Compact" };
+/** Whether the list view's rows alternate background colours, like Finder's. */
+export type Stripes = "on" | "off";
+export const STRIPES: readonly Stripes[] = ["on", "off"];
 
 /** A colour in OKLCh: lightness 0–1, chroma, hue in degrees. */
 export interface Oklch {

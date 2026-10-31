@@ -78,9 +78,12 @@ export function FileIcon({
   );
   // The preview fills `h` from the top of the window at (x, y, w, h). The
   // thumbnail, cropped to fill the window, shows over it as far as revealed.
-  const preview = (x: number, y: number, w: number, h: number, edgeOpacity: number) => (
+  // Alone, the thumbnail fits the window uncropped, with no placeholder behind it.
+  const preview = (x: number, y: number, w: number, h: number, edgeOpacity: number, alone = false) => (
     <>
-      <rect x={x} y={y} width={w} fill={`url(#${thumbId})`} style={{ height: h * r, transition: REVEAL_TRANSITION }} />
+      {!alone && (
+        <rect x={x} y={y} width={w} fill={`url(#${thumbId})`} style={{ height: h * r, transition: REVEAL_TRANSITION }} />
+      )}
       {thumb && (
         <>
           <clipPath id={clipId}>
@@ -92,7 +95,7 @@ export function FileIcon({
             y={y}
             width={w}
             height={h}
-            preserveAspectRatio="xMidYMid slice"
+            preserveAspectRatio={alone ? "xMidYMid meet" : "xMidYMid slice"}
             clipPath={`url(#${clipId})`}
             className="file-thumb"
           />
@@ -252,6 +255,9 @@ export function FileIcon({
       );
       break;
   }
+
+  // With a thumbnail, images and videos show it alone, without their frames.
+  if (thumb && (kind === "image" || kind === "video")) body = preview(0, 0, 64, 64, 1, true);
 
   return (
     <svg viewBox="0 0 64 64" width="100%" height="100%" style={{ display: "block", overflow: "visible" }} aria-hidden>

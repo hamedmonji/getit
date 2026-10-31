@@ -6,9 +6,17 @@ import type { DownloadItem, LinkInfo, QueueInfo } from "./engine";
 import { type FileKind, resolveKind } from "./fileKind";
 import { formatEta, formatSize, formatSpeed } from "./format";
 import { baseName, isWithin, joinPath, parentPath } from "./paths";
+import { FILE_MANAGER } from "./platform";
 
 export type ViewMode = "Icons" | "List";
-export type FileAction = "pause" | "resume" | "retry";
+export type FileAction = "pause" | "resume" | "retry" | "reveal";
+
+const ACTION_LABELS: Record<FileAction, string> = {
+  pause: "Pause",
+  resume: "Resume",
+  retry: "Retry",
+  reveal: `Show in ${FILE_MANAGER}`,
+};
 
 export interface FileVm {
   id: string;
@@ -164,9 +172,8 @@ export function fileVm(
 
   let status = missing ? "Missing" : "Done";
   if (active) {
-    status = total
-      ? `${pct}% · ${formatSpeed(speed)} · ${formatEta(etaS)}`
-      : `${formatSize(item.downloaded)} · ${formatSpeed(speed)}`;
+    // Time left can't be known without a size, so only the speed shows then.
+    status = total ? `${formatEta(etaS)} · ${formatSpeed(speed)}` : formatSpeed(speed);
   } else if (waiting) status = `${pct}%`;
   else if (item.status === "queued") status = `Queued #${queuedIds.indexOf(item.id) + 1}`;
   else if (item.status === "paused") status = `Paused`;
@@ -177,8 +184,11 @@ export function fileVm(
   }
 
   const failed = item.status === "failed";
+  const path = item.file_name ? joinPath(queue.dir, item.file_name) : null;
   const action: FileAction | null = done
-    ? null
+    ? !missing && path
+      ? "reveal"
+      : null
     : failed
       ? "retry"
       : item.status === "paused" || waiting
@@ -205,9 +215,9 @@ export function fileVm(
     hue: hueOf(item.id),
     showBar: !done,
     action,
-    actionLabel: action === "retry" ? "Retry" : action === "resume" ? "Resume" : "Pause",
+    actionLabel: ACTION_LABELS[action ?? "pause"],
     info,
-    path: item.file_name ? joinPath(queue.dir, item.file_name) : null,
+    path,
     readable: done ? (total ?? item.downloaded) : readableBytes(item),
   };
 }

@@ -27,3 +27,19 @@ export function accessTop(home: string, root: string | null, folders: string[], 
   if (fullDisk || !root) return home;
   return commonFolder([root, ...folders]);
 }
+
+/**
+ * The chosen folders to show in `cwd` whatever the folder filter: all of them
+ * other than `cwd` itself, when `cwd` is the folder Up stops at without Full
+ * Disk Access. Ones deeper down show there too, so each is a click away.
+ */
+export function accessShortcuts(
+  cwd: string,
+  home: string,
+  root: string | null,
+  folders: string[],
+  fullDisk: boolean,
+): string[] {
+  if (fullDisk || !root || cwd !== accessTop(home, root, folders, fullDisk)) return [];
+  return [root, ...folders].filter((f) => f !== cwd);
+}

@@ -6,7 +6,7 @@ import { thumbnailSource } from "../lib/thumbnails";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { useThumbnail } from "../hooks/useThumbnail";
 import { FileIcon } from "./FileIcon";
-import { PauseIcon, PlayIcon, RetryIcon } from "./icons";
+import { FolderIcon, PauseIcon, PlayIcon, RetryIcon } from "./icons";
 
 type Size = "large" | "small";
 
@@ -79,6 +79,7 @@ export function ActionButton({
       {vm.action === "pause" && <PauseIcon />}
       {vm.action === "resume" && <PlayIcon />}
       {vm.action === "retry" && <RetryIcon />}
+      {vm.action === "reveal" && <FolderIcon size={12} />}
     </Button>
   );
 }
