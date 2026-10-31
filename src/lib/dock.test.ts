@@ -37,6 +37,24 @@ describe("dockStatus", () => {
     expect(dockStatus(idle, { b: 5 * MB })).toBeNull();
   });
 
+  it("shows nothing once every download has finished, even with speeds left over", () => {
+    const finished = byId(item("a", "completed", 100 * MB, 100 * MB), item("b", "completed", 5 * MB, null));
+    expect(dockStatus(finished, { a: 3 * MB, b: 1 * MB })).toBeNull();
+  });
+
+  it("leaves finished, paused and failed downloads out of speed and progress", () => {
+    const downloads = byId(
+      item("a", "downloading", 10, 100),
+      item("b", "completed", 1000, 1000),
+      item("c", "paused", 0, 1000),
+      item("d", "failed", 500, 1000),
+    );
+    expect(dockStatus(downloads, { a: 2048, b: 9 * MB, c: 9 * MB, d: 9 * MB })).toEqual({
+      progress: 10,
+      label: "2 KB/s",
+    });
+  });
+
   it("combines progress by bytes and sums speeds of running downloads", () => {
     const downloads = byId(
       item("a", "downloading", 10 * MB, 100 * MB),

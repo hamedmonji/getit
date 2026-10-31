@@ -8,7 +8,7 @@ mod thumbnail;
 
 use std::sync::Mutex;
 
-use getit_engine::{Engine, JsonDirStore};
+use getit_engine::{Engine, EngineEvent, JsonDirStore};
 use tauri::async_runtime;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
@@ -89,14 +89,21 @@ pub fn run() {
 
 fn forward_events(app: AppHandle, engine: &Engine) {
     let mut events = engine.subscribe();
+    let engine = engine.clone();
     async_runtime::spawn(async move {
         loop {
             match events.recv().await {
                 Ok(event) => {
+                    // Progress never stops a download; anything else might have stopped the last one.
+                    let stopping = !matches!(event, EngineEvent::Progress { .. });
                     let _ = app.emit(EVENT, event);
+                    if stopping {
+                        dock::clear_when_idle(&app, &engine);
+                    }
                 }
                 Err(RecvError::Lagged(_)) => {
                     let _ = app.emit(RESYNC, ());
+                    dock::clear_when_idle(&app, &engine);
                 }
                 Err(RecvError::Closed) => break,
             }
