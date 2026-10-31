@@ -26,7 +26,7 @@ describe("shortcutFor", () => {
     expect(action(cmd("v"))).toBe("paste");
     expect(action(cmd("["))).toBe("back");
     expect(action(cmd("]"))).toBe("forward");
-    expect(action(cmd("o"))).toBe("overview");
+    expect(action(cmd("b"))).toBe("sidebar");
     expect(action(cmd(","))).toBe("settings");
     expect(action(cmd("/"))).toBe("queuePanel");
     expect(action(cmd("1"))).toBe("icons");

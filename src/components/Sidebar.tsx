@@ -12,6 +12,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { swallowClick } from "../hooks/useItemDrag";
 import { useSectionDrag } from "../hooks/useSectionDrag";
 import {
   favoriteSlot,
@@ -47,6 +48,8 @@ export function Sidebar({
   onReveal,
   onOpenDownload,
   onPauseAll,
+  onResize,
+  onResetWidth,
   sections,
   onSections,
   collapsed,
@@ -72,6 +75,10 @@ export function Sidebar({
   onOpenDownload: (dir: string, id: string) => void;
   /** Stops everything in every queue. */
   onPauseAll: () => void;
+  /** The width the sidebar's right edge is dragged to. */
+  onResize: (width: number) => void;
+  /** Back to the default width, on a double-click on the edge. */
+  onResetWidth: () => void;
   /** The sections' order, as stored; any missing come last. */
   sections: SectionId[];
   onSections: (sections: SectionId[]) => void;
@@ -214,6 +221,41 @@ export function Sidebar({
           </Collapsible>
         ))}
       </SidebarContent>
+      <div
+        className="sidebar-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        title="Drag to resize, double-click for the default width"
+        onMouseDown={(e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          const startX = e.clientX;
+          const startWidth = e.currentTarget.parentElement!.getBoundingClientRect().width;
+          dragResize((x) => onResize(startWidth + x - startX));
+        }}
+        onDoubleClick={onResetWidth}
+      />
     </SidebarRoot>
   );
+}
+
+/** Follows the pointer across the window until the button comes up, with the resize cursor everywhere. */
+function dragResize(onMove: (x: number) => void) {
+  const root = document.documentElement;
+  root.classList.add("col-resizing");
+  const move = (e: MouseEvent) => onMove(e.clientX);
+  const up = () => {
+    swallowClick();
+    stop();
+  };
+  const stop = () => {
+    root.classList.remove("col-resizing");
+    window.removeEventListener("mousemove", move);
+    window.removeEventListener("mouseup", up);
+    window.removeEventListener("blur", stop);
+  };
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", up);
+  window.addEventListener("blur", stop);
 }

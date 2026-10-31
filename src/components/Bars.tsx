@@ -34,7 +34,6 @@ import {
   GearIcon,
   GridIcon,
   ListIcon,
-  OverviewIcon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
@@ -100,10 +99,6 @@ export interface ToolbarProps {
   onToggleAdd: () => void;
   theme: Theme;
   onToggleTheme: () => void;
-  overviewOpen: boolean;
-  /** Downloads running anywhere, shown on the overview button. */
-  activeCount: number;
-  onToggleOverview: () => void;
   onToggleSettings: () => void;
 }
 
@@ -181,16 +176,6 @@ export function Toolbar(p: ToolbarProps) {
       <Button variant="outline" size="icon" title="Add a download" onClick={p.onToggleAdd}>
         <PlusIcon />
       </Button>
-      <Toggle
-        variant="outline"
-        className={`relative ${PRESSED}`}
-        title={`${p.overviewOpen ? "Hide overview" : "Show overview"} (${MOD}O)`}
-        pressed={p.overviewOpen}
-        onPressedChange={p.onToggleOverview}
-      >
-        <OverviewIcon />
-        {p.activeCount > 0 && <Badge className="absolute -top-2 -right-2">{p.activeCount}</Badge>}
-      </Toggle>
       <Button variant="outline" size="icon" title={`Settings (${MOD},)`} onClick={p.onToggleSettings}>
         <GearIcon />
       </Button>

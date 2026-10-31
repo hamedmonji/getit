@@ -904,6 +904,26 @@ body {
   box-shadow: inset 0 0 0 2px var(--tint);
 }
 
+.sidebar {
+  position: relative;
+}
+
+/* The right edge, dragged to resize; the line darkens while hovered. */
+.sidebar-resize {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  width: 8px;
+  cursor: col-resize;
+}
+
+.sidebar-resize:hover,
+.col-resizing .sidebar-resize {
+  background: linear-gradient(to right, transparent 3px, var(--ink-muted) 3px, var(--ink-muted) 4px, transparent 4px);
+}
+
 /* A section's header: click to collapse or expand it, drag to move it. */
 .sidebar-section-chevron {
   opacity: 0;
@@ -1563,11 +1583,6 @@ body {
 
 .queue-order-note {
   margin: 10px 8px 2px;
-}
-
-/* A download's progress in the overview, between its name and status. */
-.overview-bar {
-  margin: 5px 0 4px;
 }
 
 .overview-empty {

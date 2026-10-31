@@ -14,7 +14,7 @@ export type ShortcutAction =
   | "back"
   | "forward"
   | "details"
-  | "overview"
+  | "sidebar"
   | "settings"
   | "queuePanel"
   | "icons"
@@ -53,7 +53,7 @@ export interface Shortcut {
  * Command-X and Command-C cut and copy the selection, for pasting elsewhere;
  * Command-N makes a new folder with its own queue; Command-[ and Command-]
  * go back and forward; Command-. shows or hides folders without downloads;
- * Command-1 and Command-2 switch to icons and list; Command-O shows or hides the overview,
+ * Command-1 and Command-2 switch to icons and list; Command-B shows or hides the sidebar,
  * Command-, the settings, and Command-/ the queue settings panel;
  * Command-Delete moves the selection to the Trash; Delete/Backspace alone
  * removes the selected downloads from the list (finished files stay);
@@ -85,7 +85,7 @@ export function shortcutFor(e: KeyPress, ctx: ShortcutContext): Shortcut | null 
   if (key === "v" && command) return prevent("paste");
   if ((key === "c" || key === "x") && command && ctx.selectionCount) return prevent(key === "x" ? "cut" : "copy");
   if ((e.key === "[" || e.key === "]") && command) return prevent(e.key === "[" ? "back" : "forward");
-  if (key === "o" && command) return prevent("overview");
+  if (key === "b" && command) return prevent("sidebar");
   if (e.key === "," && command) return prevent("settings");
   if ((e.key === "/" || e.code === "Slash") && command && !e.shiftKey) return prevent("queuePanel");
   if ((e.key === "1" || e.key === "2") && command) return prevent(e.key === "1" ? "icons" : "list");

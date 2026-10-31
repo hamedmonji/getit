@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampSidebarWidth,
   favoriteKey,
+  parseSidebarWidth,
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_WIDTH,
   moveSection,
   parseSections,
   SECTIONS,
@@ -173,5 +178,21 @@ describe("sections", () => {
   it("collapses and expands a section", () => {
     expect(toggleSection([], "favorites")).toEqual(["favorites"]);
     expect(toggleSection(["places", "favorites"], "places")).toEqual(["favorites"]);
+  });
+});
+
+describe("sidebar width", () => {
+  it("keeps a dragged width within the limits, in whole pixels", () => {
+    expect(clampSidebarWidth(240.6)).toBe(241);
+    expect(clampSidebarWidth(10)).toBe(SIDEBAR_MIN_WIDTH);
+    expect(clampSidebarWidth(9999)).toBe(SIDEBAR_MAX_WIDTH);
+  });
+
+  it("reads the stored width back, or the default", () => {
+    expect(parseSidebarWidth("260")).toBe(260);
+    expect(parseSidebarWidth("1000")).toBe(SIDEBAR_MAX_WIDTH);
+    expect(parseSidebarWidth(null)).toBe(SIDEBAR_WIDTH);
+    expect(parseSidebarWidth('"wide"')).toBe(SIDEBAR_WIDTH);
+    expect(parseSidebarWidth("null")).toBe(SIDEBAR_WIDTH);
   });
 });

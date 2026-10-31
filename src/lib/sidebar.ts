@@ -145,3 +145,18 @@ export function moveSection(order: SectionId[], shown: SectionId[], id: SectionI
 /** `collapsed` with section `id` collapsed, or expanded if it was. */
 export const toggleSection = (collapsed: SectionId[], id: SectionId): SectionId[] =>
   collapsed.includes(id) ? collapsed.filter((s) => s !== id) : [...collapsed, id];
+
+/** The sidebar's width at first, and how narrow and wide it may be dragged, in pixels. */
+export const SIDEBAR_WIDTH = 200;
+export const SIDEBAR_MIN_WIDTH = 150;
+export const SIDEBAR_MAX_WIDTH = 400;
+
+/** A width dragged to, kept within the sidebar's limits and to whole pixels. */
+export const clampSidebarWidth = (width: number): number =>
+  Math.round(Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, width)));
+
+/** The stored sidebar width, or the default when there's none or it isn't a number. */
+export function parseSidebarWidth(raw: string | null): number {
+  const width = Number(raw ?? NaN);
+  return Number.isFinite(width) ? clampSidebarWidth(width) : SIDEBAR_WIDTH;
+}

@@ -344,10 +344,10 @@ export function searchResults(
   return { folders, files };
 }
 
-/** Which downloads the overview lists: only the running ones, or every one. */
+/** Which downloads `overviewList` lists: only the running ones, or every one. */
 export type OverviewShow = "active" | "all";
 
-/** A download in the overview, and its queue's folder to go to it in. */
+/** A download in the sidebar's list, and its queue's folder to go to it in. */
 export interface OverviewRow {
   file: FileVm;
   dir: string;
@@ -356,7 +356,7 @@ export interface OverviewRow {
 }
 
 /**
- * The overview's downloads in one list across every queue, most recently
+ * Downloads in one list across every queue, for the sidebar, most recently
  * started first; those that never started come last, newest first. `show` is
  * "active" for running downloads only, or "all" for every download, finished
  * ones included.

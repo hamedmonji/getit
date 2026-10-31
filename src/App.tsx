@@ -13,7 +13,6 @@ import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { Details } from "./components/Details";
 import { NoAccess } from "./components/NoAccess";
 import { Onboarding } from "./components/Onboarding";
-import { Overview } from "./components/Overview";
 import { QueueSettings } from "./components/QueueSettings";
 import { RefreshLink } from "./components/RefreshLink";
 import { Settings } from "./components/Settings";
@@ -71,13 +70,16 @@ import { baseName, canGoUp, crumbsFrom, displayPath, joinPath, parentPath, resol
 import { FILE_MANAGER, IS_MAC } from "./lib/platform";
 import { accessShortcuts, accessTop, addFolder } from "./lib/access";
 import {
+  clampSidebarWidth,
   favoriteKey,
   favoriteOfKey,
   favoritePlaces,
   parseFavorites,
   parseSections,
+  parseSidebarWidth,
   pinFavorites,
   rootPlaces,
+  SIDEBAR_WIDTH,
   slotIndex,
   toFavorites,
   unpinFavorite,
@@ -101,7 +103,6 @@ import {
   stats,
   type FileVm,
   type FolderVm,
-  type OverviewShow,
   type ViewMode,
 } from "./lib/viewModels";
 
@@ -203,15 +204,7 @@ export default function App() {
   );
   const showAllFolders = folderFilter === "all";
   const toggleFolders = () => setFolderFilter(showAllFolders ? "queues" : "all");
-  const [overviewPanel, setOverviewPanel] = useStoredState<"open" | "closed">(
-    "getit.overview",
-    ["open", "closed"],
-    () => "closed",
-  );
-  /**
-   * The queue settings panel, for the selected queue folder's queue or else this
-   * folder's. It takes the overview's place while open; closing it brings it back.
-   */
+  /** The queue settings panel, for the selected queue folder's queue or else this folder's. */
   const [queuePanel, setQueuePanel] = useStoredState<"open" | "closed">(
     "getit.queuePanel",
     ["open", "closed"],
@@ -219,17 +212,6 @@ export default function App() {
   );
   const queuePanelOpen = queuePanel === "open";
   const toggleQueuePanel = () => setQueuePanel(queuePanelOpen ? "closed" : "open");
-  const overviewOpen = overviewPanel === "open" && !queuePanelOpen;
-  /** Whether the overview lists only running downloads or all of them. */
-  const [overviewShow, setOverviewShow] = useStoredState<OverviewShow>(
-    "getit.overviewShow",
-    ["active", "all"],
-    () => "active",
-  );
-  const toggleOverview = () => {
-    setQueuePanel("closed");
-    setOverviewPanel(overviewOpen ? "closed" : "open");
-  };
   /** Whether the settings popup is showing. */
   const [settingsOpen, setSettingsOpen] = useState(false);
   const toggleSettings = () => setSettingsOpen((open) => !open);
@@ -250,6 +232,7 @@ export default function App() {
   );
   const [favorites, setFavorites] = useStoredJson("getit.favorites", parseFavorites);
   const [sections, setSections] = useStoredJson("getit.sidebarSections", parseSections);
+  const [sidebarWidth, setSidebarWidth] = useStoredJson("getit.sidebarWidth", parseSidebarWidth);
   const [collapsedSections, setCollapsedSections] = useStoredJson("getit.sidebarCollapsed", parseSections);
   /** The mounted drives, listed again when the window regains focus in case one came or went. */
   const [drives, setDrives] = useState<Drive[]>([]);
@@ -833,7 +816,7 @@ export default function App() {
       back: goBack,
       forward: goForward,
       details: toggleDetails,
-      overview: toggleOverview,
+      sidebar: () => setSidebarPanel(sidebarPanel === "open" ? "closed" : "open"),
       settings: toggleSettings,
       queuePanel: toggleQueuePanel,
       icons: () => setMode("Icons"),
@@ -933,7 +916,6 @@ export default function App() {
   };
 
   const global = stats(state, "/", true);
-  const overview = overviewOpen ? overviewList(state, home, overviewShow) : [];
   // A selected folder with a queue, else the folder you're in.
   // From what's selected, not `selection`, which only holds items in the listing
   // shown and so drops the folder you came up from until the parent's listing arrives.
@@ -1049,9 +1031,6 @@ export default function App() {
         }}
         theme={theme}
         onToggleTheme={() => setThemePref(theme === "Dark" ? "Light" : "Dark")}
-        overviewOpen={overviewOpen}
-        activeCount={global.active}
-        onToggleOverview={toggleOverview}
         onToggleSettings={toggleSettings}
       />
 
@@ -1091,12 +1070,11 @@ export default function App() {
       )}
 
       <div className="main">
-        {/* Command-B shows and hides it, as the provider handles. */}
+        {/* Command-B shows and hides it, among the shortcuts. */}
         <SidebarProvider
           open={sidebarPanel === "open"}
-          onOpenChange={(open) => setSidebarPanel(open ? "open" : "closed")}
           className="min-h-0 w-auto flex-none"
-          style={{ "--sidebar-width": "200px" } as CSSProperties}
+          style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
         >
           {sidebarPanel === "open" && (
             <Sidebar
@@ -1114,6 +1092,8 @@ export default function App() {
               onReveal={(path) => report(engine.reveal([path]))}
               onOpenDownload={(dir, id) => go(dir, id)}
               onPauseAll={() => report(pauseAll(state))}
+              onResize={(width) => setSidebarWidth(clampSidebarWidth(width))}
+              onResetWidth={() => setSidebarWidth(SIDEBAR_WIDTH)}
               sections={sections}
               onSections={setSections}
               collapsed={collapsedSections}
@@ -1173,18 +1153,6 @@ export default function App() {
             <ContextMenuItems ctx={menuContext} target={menu.target} />
           </ContextMenuContent>
         </ContextMenu>
-        {overviewOpen && (
-          <Overview
-            rows={overview}
-            show={overviewShow}
-            onShow={setOverviewShow}
-            running={global.active}
-            speed={global.speed}
-            onOpenFile={(dir, id) => go(dir, id)}
-            onAction={onAction}
-            onPauseAll={() => report(pauseAll(state))}
-          />
-        )}
         {queuePanelOpen && (
           <QueueSettings
             queue={

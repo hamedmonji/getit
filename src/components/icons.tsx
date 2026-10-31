@@ -142,17 +142,6 @@ export function ExpandIcon({ size = 12, open = false }: IconProps & { open?: boo
   );
 }
 
-/** A window with a panel on its right, for the overview. */
-export function OverviewIcon({ size = 14 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16">
-      <rect x="2" y="3" width="12" height="10" rx="2" {...stroke} strokeWidth={1.5} />
-      <path d="M10 3v10" {...stroke} strokeWidth={1.5} />
-    </svg>
-  );
-}
-
-/** A gear, for settings. */
 export function GearIcon({ size = 14 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16">
