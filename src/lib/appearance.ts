@@ -1,4 +1,4 @@
-// How getit looks: the theme, accent colour, density and list stripes chosen in Settings.
+// How getit looks: the theme, accent and background colours, density and list stripes chosen in Settings.
 
 export type ThemePreference = "Light" | "Dark" | "System";
 export type ResolvedTheme = "Light" | "Dark";
@@ -137,4 +137,72 @@ export function accentTokens(accent: Accent, theme: ResolvedTheme): Record<strin
     "--tintSoft": `color-mix(in srgb, ${accent} ${softAlpha * 100}%, transparent)`,
     ...folderTokens(hexToOklch(accent)),
   };
+}
+
+/** getit's own warm greys, a preset tinted in its hue, or a custom colour's hue as #rrggbb. */
+export type Background = "default" | AccentPreset | `#${string}`;
+
+/** The background shades for each theme: the window behind, the content, and the side panels. */
+const BACKGROUND_SHADES: Record<ResolvedTheme, Record<"--bg" | "--panel" | "--panel2", number>> = {
+  Light: { "--bg": 0.935, "--panel": 0.985, "--panel2": 0.962 },
+  Dark: { "--bg": 0.165, "--panel": 0.205, "--panel2": 0.232 },
+};
+
+/** The design's own backgrounds, as in App.css. */
+const DEFAULT_BACKGROUNDS: Record<ResolvedTheme, Record<string, string>> = {
+  Light: { "--bg": "#efeee9", "--panel": "#fbfbf9", "--panel2": "#f4f3ef" },
+  Dark: { "--bg": "#121211", "--panel": "#1b1b19", "--panel2": "#232320" },
+};
+
+/** How much colour a tinted background has: enough to see, little enough to read on. */
+const BACKGROUND_CHROMA = 0.016;
+
+/** A stored background, or null when it's none of the presets nor #rrggbb. */
+export function parseBackground(stored: string): Background | null {
+  if (stored === "default") return stored;
+  const accent = parseAccent(stored);
+  return accent === null ? null : (accent as Background);
+}
+
+export function isBackground(value: string): value is Background {
+  return parseBackground(value) === value;
+}
+
+/**
+ * The background's hue and how strongly to tint: a preset's own hue, or a
+ * custom colour's, toned down so text stays readable; null for the default.
+ */
+function backgroundTint(background: Background): { c: number; h: number } | null {
+  if (background === "default") return null;
+  if (isPreset(background)) {
+    const { c, h } = ACCENT_PRESETS[background].light;
+    return { c: c === 0 ? 0 : BACKGROUND_CHROMA, h };
+  }
+  const { c, h } = hexToOklch(background);
+  return { c: Math.min(c * 0.25, BACKGROUND_CHROMA * 2), h };
+}
+
+/**
+ * The CSS variables that colour getit's backgrounds for one theme. Only the
+ * hue of the choice is used, at the theme's own lightness, so light mode stays
+ * light and dark mode dark.
+ */
+export function backgroundTokens(background: Background, theme: ResolvedTheme): Record<string, string> {
+  const tint = backgroundTint(background);
+  if (!tint) return DEFAULT_BACKGROUNDS[theme];
+  const tokens: Record<string, string> = {};
+  for (const [name, l] of Object.entries(BACKGROUND_SHADES[theme])) tokens[name] = oklchCss({ l, ...tint });
+  return tokens;
+}
+
+/**
+ * A background's colour as a swatch shows it: its hue made strong enough to
+ * tell apart, since the backgrounds themselves are all near white or black;
+ * a custom colour as it is, and the default as its light grey.
+ */
+export function backgroundColor(background: Background): string {
+  if (background === "default") return DEFAULT_BACKGROUNDS.Light["--bg"];
+  if (!isPreset(background)) return background;
+  const tint = backgroundTint(background)!;
+  return oklchCss({ l: 0.78, c: tint.c * 5, h: tint.h });
 }

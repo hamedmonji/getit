@@ -48,12 +48,15 @@ import { useUndo } from "./hooks/useUndo";
 import { useUpdate } from "./hooks/useUpdate";
 import {
   accentTokens,
+  backgroundTokens,
   DENSITIES,
   isAccent,
+  isBackground,
   resolveTheme,
   STRIPES,
   THEME_PREFERENCES,
   type Accent,
+  type Background,
   type Density,
   type Stripes,
   type ThemePreference,
@@ -178,6 +181,7 @@ export default function App() {
   const [themePref, setThemePref] = useStoredState<ThemePreference>("getit.theme", THEME_PREFERENCES, () => "System");
   const theme = resolveTheme(themePref, useSystemDark());
   const [accent, setAccent] = useStoredState<Accent>("getit.accent", isAccent, () => "blue");
+  const [background, setBackground] = useStoredState<Background>("getit.background", isBackground, () => "default");
   const [density, setDensity] = useStoredState<Density>("getit.density", DENSITIES, () => "comfortable");
   const [stripes, setStripes] = useStoredState<Stripes>("getit.stripes", STRIPES, () => "off");
   // On the document rather than the app: menus and dialogs show outside it, and
@@ -189,7 +193,8 @@ export default function App() {
     root.dataset.stripes = stripes;
     root.classList.toggle("dark", theme === "Dark");
     for (const [name, value] of Object.entries(accentTokens(accent, theme))) root.style.setProperty(name, value);
-  }, [theme, accent, density, stripes]);
+    for (const [name, value] of Object.entries(backgroundTokens(background, theme))) root.style.setProperty(name, value);
+  }, [theme, accent, background, density, stripes]);
   const [mode, setMode] = useStoredState<ViewMode>("getit.view", ["Icons", "List"], () => "Icons");
   const [folderFilter, setFolderFilter] = useStoredState<"all" | "queues">(
     "getit.folders",
@@ -1334,6 +1339,8 @@ export default function App() {
           resolvedTheme: theme,
           accent,
           onAccent: setAccent,
+          background,
+          onBackground: setBackground,
           density,
           onDensity: setDensity,
           stripes,

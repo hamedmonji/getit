@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { accentColor, accentTokens, hexToOklch, isAccent, parseAccent, resolveTheme } from "./appearance";
+import {
+  accentColor,
+  accentTokens,
+  backgroundColor,
+  backgroundTokens,
+  hexToOklch,
+  isAccent,
+  isBackground,
+  parseAccent,
+  parseBackground,
+  resolveTheme,
+} from "./appearance";
 
 describe("resolveTheme", () => {
   it("keeps an explicit choice whatever the system uses", () => {
@@ -77,5 +88,47 @@ describe("accentTokens", () => {
 
   it("makes grey folders for graphite", () => {
     expect(accentTokens("graphite", "Light")["--folder-back-top"]).toBe("oklch(0.77 0 0)");
+  });
+});
+
+describe("backgrounds", () => {
+  it("reads stored backgrounds back", () => {
+    expect(parseBackground("default")).toBe("default");
+    expect(parseBackground("green")).toBe("green");
+    expect(parseBackground("#AABBCC")).toBe("#aabbcc");
+    expect(parseBackground("nope")).toBeNull();
+    expect(isBackground("default")).toBe(true);
+    expect(isBackground("#AABBCC")).toBe(false);
+  });
+
+  it("keeps the design's own greys by default", () => {
+    expect(backgroundTokens("default", "Light")).toEqual({ "--bg": "#efeee9", "--panel": "#fbfbf9", "--panel2": "#f4f3ef" });
+    expect(backgroundTokens("default", "Dark")["--panel"]).toBe("#1b1b19");
+  });
+
+  it("tints a preset faintly in its hue, at the theme's lightness", () => {
+    expect(backgroundTokens("green", "Light")).toEqual({
+      "--bg": "oklch(0.935 0.016 150)",
+      "--panel": "oklch(0.985 0.016 150)",
+      "--panel2": "oklch(0.962 0.016 150)",
+    });
+    expect(backgroundTokens("green", "Dark")["--panel"]).toBe("oklch(0.205 0.016 150)");
+    expect(backgroundTokens("graphite", "Light")["--bg"]).toBe("oklch(0.935 0 0)");
+  });
+
+  it("takes only a custom colour's hue, toned down", () => {
+    const tokens = backgroundTokens("#ff0000", "Dark");
+    const [, l, c, h] = tokens["--panel"].match(/oklch\(([\d.]+) ([\d.]+) ([\d.]+)\)/)!.map(Number);
+    expect(l).toBe(0.205);
+    expect(c).toBeLessThanOrEqual(0.032);
+    expect(h).toBeCloseTo(29, 0);
+    expect(backgroundTokens("#808080", "Light")["--bg"]).toBe("oklch(0.935 0 0)");
+  });
+
+  it("shows a swatch in the background's hue, strong enough to tell apart", () => {
+    expect(backgroundColor("default")).toBe("#efeee9");
+    expect(backgroundColor("blue")).toBe("oklch(0.78 0.08 235)");
+    expect(backgroundColor("graphite")).toBe("oklch(0.78 0 0)");
+    expect(backgroundColor("#123456")).toBe("#123456");
   });
 });

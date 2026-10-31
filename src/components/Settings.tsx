@@ -10,11 +10,12 @@ import {
   ACCENT_PRESET_IDS,
   ACCENT_PRESETS,
   accentColor,
+  backgroundColor,
   DENSITIES,
   DENSITY_LABELS,
-  isPreset,
   THEME_PREFERENCES,
   type Accent,
+  type Background,
   type Density,
   type ResolvedTheme,
   type Stripes,
@@ -58,6 +59,8 @@ export interface AppearanceSettings {
   resolvedTheme: ResolvedTheme;
   accent: Accent;
   onAccent: (accent: Accent) => void;
+  background: Background;
+  onBackground: (background: Background) => void;
   density: Density;
   onDensity: (density: Density) => void;
   stripes: Stripes;
@@ -189,10 +192,55 @@ export function Settings({
   );
 }
 
-/** The theme, accent colour, density and list stripes. */
+/**
+ * A row of colour swatches to pick one of `options` by id, then a swatch that
+ * opens the system's colour picker for a custom #rrggbb.
+ */
+function ColorSwatches({
+  options,
+  value,
+  onChange,
+}: {
+  options: { id: string; label: string; color: string }[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const custom = options.some((o) => o.id === value) ? null : value;
+  return (
+    <div className="flex items-center gap-2">
+      <ToggleGroup type="single" spacing={2} value={custom ? "" : value} onValueChange={(v) => v && onChange(v)}>
+        {options.map((o) => (
+          <ToggleGroupItem
+            key={o.id}
+            value={o.id}
+            aria-label={o.label}
+            title={o.label}
+            className="accent-swatch"
+            style={{ background: o.color }}
+          />
+        ))}
+      </ToggleGroup>
+      {/* No shadcn colour picker; the system's opens from this swatch. */}
+      <label
+        className="accent-swatch accent-custom"
+        data-state={custom ? "on" : "off"}
+        title="Custom color"
+        style={custom ? { background: custom } : undefined}
+      >
+        <input
+          type="color"
+          aria-label="Custom color"
+          value={custom ?? "#888888"}
+          onChange={(e) => onChange(e.target.value.toLowerCase())}
+        />
+      </label>
+    </div>
+  );
+}
+
+/** The theme, accent and background colours, density and list stripes. */
 function Appearance(a: AppearanceSettings) {
   const stripesId = useId();
-  const custom = isPreset(a.accent) ? null : a.accent;
   return (
     <>
       <section className="settings-section">
@@ -215,41 +263,33 @@ function Appearance(a: AppearanceSettings) {
       </section>
       <section className="settings-section">
         <h3 className="settings-heading">Accent color</h3>
-        <div className="flex items-center gap-2">
-          <ToggleGroup
-            type="single"
-            spacing={2}
-            value={custom ? "" : a.accent}
-            onValueChange={(v) => v && a.onAccent(v as Accent)}
-          >
-            {ACCENT_PRESET_IDS.map((id) => (
-              <ToggleGroupItem
-                key={id}
-                value={id}
-                aria-label={ACCENT_PRESETS[id].label}
-                title={ACCENT_PRESETS[id].label}
-                className="accent-swatch"
-                style={{ background: accentColor(id, a.resolvedTheme) }}
-              />
-            ))}
-          </ToggleGroup>
-          {/* No shadcn colour picker; the system's opens from this swatch. */}
-          <label
-            className="accent-swatch accent-custom"
-            data-state={custom ? "on" : "off"}
-            title="Custom color"
-            style={custom ? { background: custom } : undefined}
-          >
-            <input
-              type="color"
-              aria-label="Custom color"
-              value={custom ?? "#888888"}
-              onChange={(e) => a.onAccent(e.target.value.toLowerCase() as Accent)}
-            />
-          </label>
-        </div>
+        <ColorSwatches
+          options={ACCENT_PRESET_IDS.map((id) => ({
+            id,
+            label: ACCENT_PRESETS[id].label,
+            color: accentColor(id, a.resolvedTheme),
+          }))}
+          value={a.accent}
+          onChange={(v) => a.onAccent(v as Accent)}
+        />
         <p className="settings-note">
           Colors selections, progress and folders. Custom colors are used as they are in light and dark mode.
+        </p>
+      </section>
+      <section className="settings-section">
+        <h3 className="settings-heading">Background color</h3>
+        <ColorSwatches
+          options={(["default", ...ACCENT_PRESET_IDS] as const).map((id) => ({
+            id,
+            label: id === "default" ? "Default" : ACCENT_PRESETS[id].label,
+            color: backgroundColor(id),
+          }))}
+          value={a.background}
+          onChange={(v) => a.onBackground(v as Background)}
+        />
+        <p className="settings-note">
+          Tints the window, content and side panels, apart from the accent. Only a color's hue is used, so light
+          and dark mode stay readable.
         </p>
       </section>
       <section className="settings-section">
