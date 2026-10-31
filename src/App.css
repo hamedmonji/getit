@@ -868,6 +868,170 @@ body {
   min-width: 0;
 }
 
+/* Sidebar: drives or chosen folders, then favorites, on the left */
+
+.sidebar {
+  --sidebar: var(--panel2);
+  --sidebar-foreground: var(--ink);
+  /* No background on hover; only the active folder has one, set below. */
+  --sidebar-accent: transparent;
+  --sidebar-accent-foreground: var(--ink);
+  border-right: 1px solid var(--line);
+}
+
+.sidebar [data-slot="sidebar-group-label"] {
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sidebar [data-slot="sidebar-menu-button"] {
+  height: 30px;
+  font-size: 13px;
+}
+
+.sidebar [data-slot="sidebar-menu-button"] svg {
+  color: var(--tint);
+}
+
+.sidebar [data-slot="sidebar-menu-button"][data-active] {
+  background: var(--track);
+  color: var(--tint);
+}
+
+.sidebar [data-slot="sidebar-menu-button"].drop-target {
+  background: var(--tintSoft);
+  box-shadow: inset 0 0 0 2px var(--tint);
+}
+
+/* A section's header: click to collapse or expand it, drag to move it. */
+.sidebar-section-chevron {
+  opacity: 0;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sidebar-section-head:hover .sidebar-section-chevron {
+  opacity: 1;
+}
+
+.sidebar-section-head[data-state="open"] .sidebar-section-chevron {
+  transform: rotate(90deg);
+}
+
+/* Sections sit close together; the headers' own height spaces them apart. */
+/* A button on a section's header, such as Downloading's pause, centred on it. */
+.sidebar .sidebar-section-action {
+  top: 6px;
+  right: 8px;
+  color: var(--ink-muted);
+}
+
+.sidebar .sidebar-section-action:hover {
+  color: var(--tint);
+}
+
+[data-density="compact"] .sidebar .sidebar-section-action {
+  top: 2px;
+  right: 6px;
+}
+
+.sidebar [data-section] {
+  position: relative;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.sidebar [data-slot="sidebar-content"] {
+  padding: 6px 0;
+}
+
+.section-dragging {
+  opacity: 0.5;
+}
+
+/* Where a dragged section would go: a line above or below a section. */
+.section-drop-before::before,
+.section-drop-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tint);
+}
+
+.section-drop-before::before {
+  top: 0;
+}
+
+.section-drop-after::after {
+  bottom: 0;
+}
+
+/* The gap before a favorite, where dropped items pin; a line shows where. */
+.sidebar-slot {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  top: -4px;
+  height: 8px;
+}
+
+.sidebar-slot.drop-target::after,
+.sidebar-end.drop-target::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 3px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tint);
+}
+
+/* Below the last favorite: a thin strip that still takes drops to pin at the end. */
+.sidebar-end {
+  position: relative;
+  min-height: 8px;
+}
+
+/* A running download: its name, progress and status, stacked. */
+.sidebar [data-slot="sidebar-menu-button"].sidebar-download {
+  height: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.sidebar-download .row-bar {
+  flex: none;
+}
+
+.sidebar-download-detail {
+  color: var(--ink-muted);
+  font-size: 11px;
+}
+
+.sidebar-hint {
+  margin: 4px 0;
+  padding: 10px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.sidebar-hint.drop-target {
+  border-color: var(--tint);
+  background: var(--tintSoft);
+  color: var(--tint);
+}
+
 .overview {
   flex: none;
   width: 300px;
@@ -1720,6 +1884,36 @@ body {
 
 [data-density="compact"] .row {
   scroll-margin: 30px 0 4px;
+}
+
+[data-density="compact"] .sidebar [data-slot="sidebar-group"] {
+  padding: 0 6px;
+}
+
+[data-density="compact"] .sidebar [data-slot="sidebar-group-label"] {
+  height: 24px;
+  font-size: 12px;
+}
+
+[data-density="compact"] .sidebar [data-slot="sidebar-menu"] {
+  gap: 0;
+}
+
+[data-density="compact"] .sidebar [data-slot="sidebar-menu-button"] {
+  height: 24px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+[data-density="compact"] .sidebar [data-slot="sidebar-menu-button"].sidebar-download {
+  height: auto;
+  padding: 4px 6px;
+  gap: 3px;
+}
+
+[data-density="compact"] .sidebar [data-slot="sidebar-menu-button"] svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* A file icon's thumbnail fades in over its placeholder once made. */

@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -16,6 +17,8 @@ import { Overview } from "./components/Overview";
 import { QueueSettings } from "./components/QueueSettings";
 import { RefreshLink } from "./components/RefreshLink";
 import { Settings } from "./components/Settings";
+import { Sidebar } from "./components/Sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import {
   CapturedBar,
   DuplicatePanel,
@@ -34,6 +37,7 @@ import { useClipboardItems } from "./hooks/useClipboardItems";
 import { useDirListing } from "./hooks/useDirListing";
 import { useDockProgress } from "./hooks/useDockProgress";
 import { useEngine } from "./hooks/useEngine";
+import { useStoredJson } from "./hooks/useStoredJson";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
 import { useShortcuts } from "./hooks/useShortcuts";
@@ -63,6 +67,20 @@ import type { MenuContext } from "./lib/menus";
 import { baseName, canGoUp, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
 import { FILE_MANAGER, IS_MAC } from "./lib/platform";
 import { accessShortcuts, accessTop, addFolder } from "./lib/access";
+import {
+  favoriteKey,
+  favoriteOfKey,
+  favoritePlaces,
+  parseFavorites,
+  parseSections,
+  pinFavorites,
+  rootPlaces,
+  slotIndex,
+  toFavorites,
+  unpinFavorite,
+  type Drive,
+  type Place,
+} from "./lib/sidebar";
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
 import { sortFiles } from "./lib/sort";
@@ -220,6 +238,22 @@ export default function App() {
   );
   const detailsOpen = detailsPanel === "open";
   const toggleDetails = () => setDetailsPanel(detailsOpen ? "closed" : "open");
+  const [sidebarPanel, setSidebarPanel] = useStoredState<"open" | "closed">(
+    "getit.sidebar",
+    ["open", "closed"],
+    () => "open",
+  );
+  const [favorites, setFavorites] = useStoredJson("getit.favorites", parseFavorites);
+  const [sections, setSections] = useStoredJson("getit.sidebarSections", parseSections);
+  const [collapsedSections, setCollapsedSections] = useStoredJson("getit.sidebarCollapsed", parseSections);
+  /** The mounted drives, listed again when the window regains focus in case one came or went. */
+  const [drives, setDrives] = useState<Drive[]>([]);
+  useEffect(() => {
+    const list = () => engine.listDrives().then(setDrives, (e) => console.error(e));
+    list();
+    window.addEventListener("focus", list);
+    return () => window.removeEventListener("focus", list);
+  }, []);
   /** Whether pasting links asks first or adds them right away. */
   const [pasteMode, setPasteMode] = useStoredState<"ask" | "always">("getit.paste", ["ask", "always"], () => "ask");
   /** Links the browser extension captured, waiting to be added to a folder. */
@@ -370,10 +404,26 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  // Dropping on a folder moves downloads to its queue and folders inside it.
+  /** A finished download's file, or null while it has none. */
+  const fileOf = (id: string) => {
+    const item = state.downloads[id];
+    const dir = item && dirOf(id);
+    return item?.status === "completed" && item.file_name && dir ? joinPath(dir, item.file_name) : null;
+  };
+  // Dropping on a folder moves downloads to its queue and folders inside it;
+  // dropping in the sidebar's favorites pins them there. Favorites dragged
+  // in the sidebar only reorder.
   const { drag, start: startDrag } = useItemDrag(
-    (keys, target) => target !== shown && !keys.includes(target),
+    (keys, target) =>
+      slotIndex(target) !== null
+        ? toFavorites(keys, favorites, fileOf).length > 0
+        : !keys.some((key) => favoriteOfKey(key) !== null) && target !== shown && !keys.includes(target),
     (keys, target) => {
+      const slot = slotIndex(target);
+      if (slot !== null) {
+        setFavorites(pinFavorites(favorites, toFavorites(keys, favorites, fileOf), slot));
+        return;
+      }
       const { ids, paths } = splitKeys(keys);
       Promise.allSettled([
         ids.length ? engine.moveDownloads(ids, target) : null,
@@ -901,6 +951,7 @@ export default function App() {
   const selFile = files.find((f) => f.id === single);
   const selFolder = folders.find((g) => g.path === single);
   const nameOf = (key: string) =>
+    (favoriteOfKey(key) !== null ? baseName(favoriteOfKey(key)!) : null) ??
     folders.find((g) => g.path === key)?.name ?? files.find((f) => f.id === key)?.name ?? key;
   // Temporary items for links being added here: while checked, and while the
   // user decides about the duplicates among them.
@@ -912,6 +963,8 @@ export default function App() {
         .map((p) => pendingVm(p.key, p.url, p.name, p.name === null ? "Checking…" : "Already downloaded"));
   const isEmpty = count === 0 && !pending.length && shown === cwd && state.loaded;
   const noAccess = !query && listing.error === NO_ACCESS;
+  const sidebarRoots = rootPlaces(drives, root, accessFolders, fullDisk);
+  const openPlace = (place: Place) => (place.file ? report(engine.openPath(place.path)) : go(place.path));
   const viewProps: ItemViewProps = {
     folders,
     files,
@@ -1033,6 +1086,36 @@ export default function App() {
       )}
 
       <div className="main">
+        {/* Command-B shows and hides it, as the provider handles. */}
+        <SidebarProvider
+          open={sidebarPanel === "open"}
+          onOpenChange={(open) => setSidebarPanel(open ? "open" : "closed")}
+          className="min-h-0 w-auto flex-none"
+          style={{ "--sidebar-width": "200px" } as CSSProperties}
+        >
+          {sidebarPanel === "open" && (
+            <Sidebar
+              roots={sidebarRoots}
+              drives={fullDisk || !root}
+              favorites={favoritePlaces(favorites)}
+              downloads={overviewList(state, home, "active")}
+              active={cwd}
+              dropTarget={drag?.target ?? null}
+              dragging={!!drag}
+              fileManager={FILE_MANAGER}
+              onOpen={openPlace}
+              onFavoriteMouseDown={(path, e) => startDrag(e, [favoriteKey(path)])}
+              onUnpin={(path) => setFavorites(unpinFavorite(favorites, path))}
+              onReveal={(path) => report(engine.reveal([path]))}
+              onOpenDownload={(dir, id) => go(dir, id)}
+              onPauseAll={() => report(pauseAll(state))}
+              sections={sections}
+              onSections={setSections}
+              collapsed={collapsedSections}
+              onCollapsed={setCollapsedSections}
+            />
+          )}
+        </SidebarProvider>
         {/* Not modal, so a click outside still lands and a right-click elsewhere moves the menu there. */}
         <ContextMenu modal={false}>
           <ContextMenuTrigger asChild>

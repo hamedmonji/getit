@@ -2,6 +2,7 @@ mod access;
 mod browser;
 mod commands;
 mod dock;
+mod drives;
 pub mod native_host;
 mod relaunch;
 mod thumbnail;
@@ -80,6 +81,7 @@ pub fn run() {
             commands::set_speed_limit,
             browser::take_browser_links,
             dock::set_dock_overlay,
+            drives::list_drives,
             relaunch::relaunch,
             thumbnail::thumbnail,
         ])

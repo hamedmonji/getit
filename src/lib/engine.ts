@@ -119,6 +119,8 @@ export const engine = {
   /** Where the browser opens: the chosen root, else a test folder in development, Documents on macOS, home elsewhere. */
   initialDir: () => invoke<string>("initial_dir"),
   listDir: (path: string) => invoke<DirListing>("list_dir", { path }),
+  /** The mounted drives: the startup drive first, then the rest by name. */
+  listDrives: () => invoke<{ name: string; path: string }[]>("list_drives"),
   /** The first-launch choice: a root folder, or null for Full Disk Access, plus folders added in Settings; null overall before the user chose. */
   accessSetup: () => invoke<{ root: string | null; folders: string[] } | null>("access_setup"),
   /** Remembers the first-launch choice: `root` as the top folder, or null for Full Disk Access. */
