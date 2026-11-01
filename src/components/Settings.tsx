@@ -117,7 +117,7 @@ export function Settings({
       {/* The pages describe themselves; there's no one description for the dialog. */}
       <DialogContent
         aria-describedby={undefined}
-        className="flex h-[min(520px,calc(100vh-4rem))] gap-0 overflow-hidden p-0 sm:max-w-2xl [&_[data-slot=dialog-close]]:text-ink-muted"
+        className="settings-dialog flex h-[min(520px,calc(100vh-4rem))] gap-0 overflow-hidden p-0 sm:max-w-2xl [&_[data-slot=dialog-close]]:text-ink-muted"
       >
         <Tabs defaultValue="general" orientation="vertical" className="min-h-0 flex-1 gap-0">
           <div className="flex w-44 flex-none flex-col gap-3 border-r border-line bg-panel2 p-3">

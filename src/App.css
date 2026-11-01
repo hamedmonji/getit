@@ -2275,3 +2275,20 @@ body {
   font-size: 12px;
   color: var(--ink-muted);
 }
+
+/* Settings take the accent: checkboxes, focus rings, the chosen options and page. */
+.settings-dialog {
+  --primary: var(--tint);
+  --primary-foreground: #fff;
+  --ring: var(--tint);
+}
+
+.settings-dialog [data-slot="toggle-group-item"][data-state="on"]:not(.accent-swatch) {
+  background: var(--tintSoft);
+  color: var(--tint);
+  border-color: var(--tint);
+}
+
+.settings-dialog [data-slot="tabs-trigger"][data-state="active"] {
+  color: var(--tint);
+}
