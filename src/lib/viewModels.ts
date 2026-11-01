@@ -7,6 +7,7 @@ import { type FileKind, resolveKind } from "./fileKind";
 import { formatEta, formatSize, formatSpeed } from "./format";
 import { baseName, isWithin, joinPath, parentPath } from "./paths";
 import { FILE_MANAGER } from "./platform";
+import { scheduleAllows } from "./schedule";
 
 export type ViewMode = "Icons" | "List";
 export type FileAction = "pause" | "resume" | "retry" | "reveal";
@@ -57,6 +58,8 @@ export interface FolderVm {
   sizeLabel: string;
   active: number;
   paused: boolean;
+  /** Its own queue has downloads waiting for its schedule's next window. */
+  scheduled: boolean;
   showBar: boolean;
   pct: number;
   barColor: string;
@@ -279,11 +282,13 @@ export function queueForDir(state: EngineState, dir: string): QueueInfo | undefi
   return Object.values(state.queues).find((q) => q.dir === dir);
 }
 
-export function folderVm(state: EngineState, path: string): FolderVm {
+/** The folder at `path` as its tile shows it at `minute` (since local midnight). */
+export function folderVm(state: EngineState, path: string, minute: number): FolderVm {
   const st = stats(state, path, true);
   const hasQueue = Object.values(state.queues).some((q) => isWithin(q.dir, path));
-  const ownPaused = queueForDir(state, path)?.settings.paused ?? false;
-  const paused = ownPaused && st.pending > 0;
+  const own = queueForDir(state, path)?.settings;
+  const paused = !!own?.paused && st.pending > 0;
+  const scheduled = !!own && !own.paused && !scheduleAllows(own.schedule, minute) && st.pending > 0;
 
   let sub = "";
   if (st.active) sub = `${st.active} ↓ · ${formatSpeed(st.speed)}`;
@@ -293,8 +298,9 @@ export function folderVm(state: EngineState, path: string): FolderVm {
     path,
     sub,
     sizeLabel: st.total ? formatSize(st.total) : "—",
-    active: paused ? 0 : st.active,
+    active: paused || scheduled ? 0 : st.active,
     paused,
+    scheduled,
     showBar: st.pending > 0,
     pct: st.pct,
     barColor: st.active ? "var(--tint)" : "var(--ink-muted)",
@@ -322,6 +328,8 @@ export function searchResults(
   home: string,
   query: string,
   mode: ViewMode,
+  /** Minutes since local midnight, for the folders' schedules. */
+  minute: number,
 ): { folders: FolderVm[]; files: FileVm[] } {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const paths = new Set(listed.folders.map((name) => joinPath(listed.dir, name)));
@@ -340,7 +348,7 @@ export function searchResults(
   const folders = [...paths]
     .filter((path) => matches(baseName(path), words))
     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-    .map((path) => folderVm(state, path));
+    .map((path) => folderVm(state, path, minute));
   return { folders, files };
 }
 

@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 
+use crate::schedule::local_minute;
 use crate::store::{QueueSnapshot, QueueStore};
 use crate::types::{DownloadId, DownloadItem, DownloadStatus, QueueId, QueueInfo, QueueSettings};
 
@@ -14,6 +15,8 @@ pub(crate) struct Queue {
     pub settings: QueueSettings,
     pub order: Vec<DownloadId>,
     pub items: HashMap<DownloadId, DownloadItem>,
+    /// Outside its schedule's windows when last checked.
+    pub closed: bool,
 }
 
 impl Queue {
@@ -24,6 +27,7 @@ impl Queue {
             settings: QueueSettings::default(),
             order: Vec::new(),
             items: HashMap::new(),
+            closed: false,
         }
     }
 
@@ -31,10 +35,12 @@ impl Queue {
     /// queue or the user started them, come back `Paused`. Progress is taken from
     /// the `.part` files on disk (see [`DownloadItem::sync_progress`]).
     pub fn restore(snapshot: QueueSnapshot) -> Self {
+        let settings = sanitize(snapshot.settings);
         let mut queue = Self {
             id: snapshot.id,
             dir: snapshot.dir,
-            settings: sanitize(snapshot.settings),
+            closed: !settings.schedule.allows(local_minute()),
+            settings,
             order: Vec::with_capacity(snapshot.downloads.len()),
             items: HashMap::with_capacity(snapshot.downloads.len()),
         };
@@ -108,6 +114,12 @@ impl Queue {
 
     pub fn set_settings(&mut self, settings: QueueSettings) {
         self.settings = sanitize(settings);
+        self.closed = !self.settings.schedule.allows(local_minute());
+    }
+
+    /// Whether the queue starts nothing: it's paused, or outside its schedule.
+    pub fn held(&self) -> bool {
+        self.settings.paused || self.closed
     }
 
     /// Moves the given downloads to the front, in the given order. Unknown ids are
@@ -136,7 +148,7 @@ impl Queue {
     /// slots. Every running download takes up a slot, including ones the user
     /// started past the limit.
     pub fn next_to_start(&self, is_running: impl Fn(&DownloadId) -> bool) -> Vec<DownloadId> {
-        if self.settings.paused {
+        if self.held() {
             return Vec::new();
         }
         let running = self
@@ -165,7 +177,7 @@ impl Queue {
     /// slots; the rest are filled from the top by downloads that are running or
     /// waiting.
     pub fn to_make_room(&self, is_running: impl Fn(&DownloadId) -> bool) -> Vec<DownloadId> {
-        if self.settings.paused {
+        if self.held() {
             return Vec::new();
         }
         let running: Vec<&DownloadItem> = self
@@ -201,6 +213,7 @@ fn sanitize(settings: QueueSettings) -> QueueSettings {
     QueueSettings {
         max_concurrent: settings.max_concurrent.map(|n| n.max(1)),
         retries: settings.retries.min(MAX_RETRIES),
+        schedule: settings.schedule.sanitized(),
         ..settings
     }
 }
@@ -247,6 +260,15 @@ mod tests {
     #[test]
     fn starts_everything_without_a_limit() {
         assert_eq!(queue_with(None, 5).next_to_start(|_| false).len(), 5);
+    }
+
+    #[test]
+    fn starts_nothing_outside_its_schedule() {
+        let mut queue = queue_with(None, 3);
+        queue.closed = true;
+        assert!(queue.next_to_start(|_| false).is_empty());
+        queue.closed = false;
+        assert_eq!(queue.next_to_start(|_| false).len(), 3);
     }
 
     #[test]

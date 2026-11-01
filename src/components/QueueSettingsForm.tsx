@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { engine, type DownloadItem, type QueueSettings, type RenameRule } from "../lib/engine";
+import { useNowMinute } from "../hooks/useNowMinute";
+import { engine, type DownloadItem, type QueueSettings, type RenameRule, type ScheduleMode, type TimeWindow } from "../lib/engine";
 import {
   EXAMPLE_NAME,
   PREVIEW_ROWS,
@@ -31,14 +32,29 @@ import {
   type PreviewRow,
   type RenameOp,
 } from "../lib/queueSettings";
+import {
+  AXIS_LABELS,
+  DAY,
+  addWindow,
+  durationLabel,
+  formatMinute,
+  hoverLabel,
+  minuteAt,
+  removeWindow,
+  replaceWindow,
+  segments,
+  setWindowTime,
+  withScheduleMode,
+  withWindows,
+} from "../lib/schedule";
 import { CloseIcon, PlusIcon } from "./icons";
 
 /** How long typing in a rule waits before the rules are saved. */
 const SAVE_DELAY = 400;
 
 /**
- * A queue's settings, in sections: how many downloads run at once, how many
- * times they retry, and the auto rename rules for new downloads' names, with
+ * A queue's settings, in sections: how many downloads run at once, when the
+ * queue may run, how many times they retry, and the auto rename rules for new downloads' names, with
  * a preview on the queue's unfinished files and a button to rename them too.
  * Each change is saved as it's made; rules once typing pauses.
  */
@@ -92,6 +108,8 @@ export function QueueSettingsForm({
         <p className="qs-hint">{limitSummary(limit)}</p>
       </section>
 
+      <ScheduleSection settings={settings} onChange={onChange} />
+
       <section className="qs-section qs-row">
         <div className="flex-1">
           <div className="qs-label">Retries</div>
@@ -143,6 +161,115 @@ function Segmented({
         </ToggleGroupItem>
       ))}
     </ToggleGroup>
+  );
+}
+
+/**
+ * When the queue may run: any time, or inside daily windows, drawn on a
+ * timeline of the day with a marker at the current time.
+ */
+function ScheduleSection({
+  settings,
+  onChange,
+}: {
+  settings: QueueSettings;
+  onChange: (settings: QueueSettings) => void;
+}) {
+  const now = useNowMinute();
+  const { mode, windows } = settings.schedule;
+  const setWindows = (next: TimeWindow[]) => onChange(withWindows(settings, next));
+  return (
+    <section className="qs-section">
+      <div className="qs-row">
+        <span className="qs-label">Schedule</span>
+        <Segmented
+          value={mode}
+          options={[
+            ["any", "Any time"],
+            ["hours", "Set hours"],
+          ]}
+          onChange={(m) => onChange(withScheduleMode(settings, m as ScheduleMode))}
+        />
+      </div>
+      {mode === "hours" && (
+        <>
+          <ScheduleTimeline windows={windows} now={now} />
+          <div className="qs-windows">
+            {windows.map((window, i) => (
+              <div key={i} className="qs-window">
+                <Input
+                  type="time"
+                  step={300}
+                  className="qs-time"
+                  aria-label="Start time"
+                  value={formatMinute(window.start)}
+                  onChange={(e) => setWindows(replaceWindow(windows, i, setWindowTime(window, "start", e.target.value)))}
+                />
+                <span className="qs-window-to">to</span>
+                <Input
+                  type="time"
+                  step={300}
+                  className="qs-time"
+                  aria-label="End time"
+                  value={formatMinute(window.end)}
+                  onChange={(e) => setWindows(replaceWindow(windows, i, setWindowTime(window, "end", e.target.value)))}
+                />
+                <span className="qs-window-length">{durationLabel(window)}</span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="qs-icon-button"
+                  title="Remove window"
+                  onClick={() => setWindows(removeWindow(windows, i))}
+                >
+                  <CloseIcon />
+                </Button>
+              </div>
+            ))}
+            <Button variant="outline" className="qs-add-window" onClick={() => setWindows(addWindow(windows))}>
+              + Add window
+            </Button>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** The day as a bar, with the windows filled in, the time now marked, and the time under the pointer. */
+function ScheduleTimeline({ windows, now }: { windows: TimeWindow[]; now: number }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const percent = (fraction: number) => `${fraction * 100}%`;
+  const fromDay = (minute: number) => percent(minute / DAY);
+  return (
+    <>
+      <div
+        className="qs-timeline"
+        onMouseMove={(e) => {
+          const box = e.currentTarget.getBoundingClientRect();
+          setHover(minuteAt((e.clientX - box.left) / box.width));
+        }}
+        onMouseLeave={() => setHover(null)}
+      >
+        {segments(windows).map((segment, i) => (
+          <div key={i} className="qs-timeline-window" style={{ left: percent(segment.left), width: percent(segment.width) }} />
+        ))}
+        <div className="qs-timeline-now" style={{ left: fromDay(now) }} />
+        {hover !== null && (
+          <>
+            <div className="qs-timeline-guide" style={{ left: fromDay(hover) }} />
+            <div className="qs-timeline-tip" style={{ left: fromDay(hover) }}>
+              {hoverLabel(windows, hover)}
+            </div>
+          </>
+        )}
+      </div>
+      <div className="qs-timeline-axis">
+        {AXIS_LABELS.map((label) => (
+          <span key={label}>{label}</span>
+        ))}
+      </div>
+    </>
   );
 }
 

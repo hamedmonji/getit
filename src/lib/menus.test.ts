@@ -28,7 +28,7 @@ const SUB = "/home/q/sub";
 function contextFor(items: DownloadItem[], overrides: Partial<MenuContext> = {}, paused = false): MenuContext {
   const state: EngineState = stateOf(
     [
-      queue({ id: "q", dir: CWD, settings: { max_concurrent: 2, paused, retries: 3, rename: [] } }),
+      queue({ id: "q", dir: CWD, settings: { max_concurrent: 2, paused, retries: 3, rename: [], schedule: { mode: "any", windows: [{ start: 60, end: 405 }] } } }),
       queue({ id: "sub", dir: SUB }),
     ],
     items,
@@ -44,7 +44,7 @@ function contextFor(items: DownloadItem[], overrides: Partial<MenuContext> = {},
     query: "",
     selection: [],
     selected: new Set(),
-    folders: [folderVm(state, SUB)],
+    folders: [folderVm(state, SUB, 0)],
     files,
     selectedFiles: [],
     select: vi.fn(),
@@ -133,19 +133,19 @@ describe("backgroundMenu", () => {
     const busy = find(backgroundMenu(contextFor([item({ id: "a", queue_id: "q" })])), "Pause queue");
     expect(busy.disabled).toBe(false);
     busy.onSelect();
-    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: true, retries: 3, rename: [] });
+    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: true, retries: 3, rename: [], schedule: { mode: "any", windows: [{ start: 60, end: 405 }] } });
   });
 
   it("resumes a paused queue", () => {
     find(backgroundMenu(contextFor([item({ id: "a", queue_id: "q" })], {}, true)), "Resume queue").onSelect();
-    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: false, retries: 3, rename: [] });
+    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 2, paused: false, retries: 3, rename: [], schedule: { mode: "any", windows: [{ start: 60, end: 405 }] } });
   });
 
   it("sets how many downloads run at a time", () => {
     const stepper = backgroundMenu(contextFor([])).find((i) => i.kind === "stepper");
     expect(stepper).toMatchObject({ value: 2, min: 1, max: 16 });
     if (stepper?.kind === "stepper") stepper.onChange(4);
-    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 4, paused: false, retries: 3, rename: [] });
+    expect(engine.setQueueSettings).toHaveBeenCalledWith("q", { max_concurrent: 4, paused: false, retries: 3, rename: [], schedule: { mode: "any", windows: [{ start: 60, end: 405 }] } });
   });
 
   it("has no stepper for a queue without a limit", () => {
@@ -345,7 +345,7 @@ describe("folderMenu", () => {
   it("leaves out queue items for a folder without a queue", () => {
     const ctx = contextFor([]);
     const plain = "/home/q/plain";
-    expect(labels(folderMenu({ ...ctx, folders: [folderVm(ctx.state, plain)] }, plain))).not.toContain(
+    expect(labels(folderMenu({ ...ctx, folders: [folderVm(ctx.state, plain, 0)] }, plain))).not.toContain(
       "Queue Settings…",
     );
   });

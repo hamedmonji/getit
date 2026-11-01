@@ -38,6 +38,7 @@ import { useEngine } from "./hooks/useEngine";
 import { useStoredJson } from "./hooks/useStoredJson";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
+import { useNowMinute } from "./hooks/useNowMinute";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useSortOrder } from "./hooks/useSortOrder";
 import { useStoredState } from "./hooks/useStoredState";
@@ -129,6 +130,7 @@ const NOTICE_MS = 6000;
 
 export default function App() {
   const state = useEngine();
+  const minute = useNowMinute();
   useDockProgress(state);
   const [home, setHome] = useState<string | null>(null);
   /** The folder chosen on first launch as the top, instead of home; null when none was. */
@@ -342,8 +344,8 @@ export default function App() {
     if (!shown) return [];
     const listed = listing.folders.map((f) => joinPath(shown, f.name));
     const deeper = shortcuts.filter((p) => !listed.includes(p));
-    return [...listed, ...deeper].map((p) => folderVm(state, p));
-  }, [state, shown, listing, shortcuts]);
+    return [...listed, ...deeper].map((p) => folderVm(state, p, minute));
+  }, [state, shown, listing, shortcuts, minute]);
   const shownFolders = (list: FolderVm[]) =>
     showAllFolders ? list : list.filter((g) => g.hasQueue || shortcuts.includes(g.path));
   const hiddenFolders = allFolders.length - shownFolders(allFolders).length;
@@ -369,9 +371,10 @@ export default function App() {
             home,
             query,
             mode,
+            minute,
           )
         : null,
-    [state, shown, listing, home, query, searchAll, mode],
+    [state, shown, listing, home, query, searchAll, mode, minute],
   );
   /** Whether the search results include this kind; browsing shows everything. */
   const showsKind = (kind: SearchKind) => !results || !searchKinds.length || searchKinds.includes(kind);

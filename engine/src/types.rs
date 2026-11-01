@@ -228,6 +228,8 @@ pub struct QueueSettings {
     pub retries: u32,
     /// Applied in order to the name of each new download, without its extension.
     pub rename: Vec<RenameRule>,
+    /// When the queue may start downloads.
+    pub schedule: Schedule,
 }
 
 impl Default for QueueSettings {
@@ -237,8 +239,46 @@ impl Default for QueueSettings {
             paused: false,
             retries: 3,
             rename: Vec::new(),
+            schedule: Schedule::default(),
         }
     }
+}
+
+/// When a queue may run: any time, or only inside its daily time windows.
+/// Outside them it starts nothing, and downloads it was running go back to
+/// `Queued` until the next window opens.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Schedule {
+    pub mode: ScheduleMode,
+    /// Kept while the mode is `Any`, for when the queue goes back to hours.
+    pub windows: Vec<TimeWindow>,
+}
+
+impl Default for Schedule {
+    fn default() -> Self {
+        Self {
+            mode: ScheduleMode::Any,
+            windows: vec![TimeWindow { start: 60, end: 405 }],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScheduleMode {
+    #[default]
+    Any,
+    Hours,
+}
+
+/// A daily stretch of time, in minutes since local midnight (0 to 1439). One
+/// that ends before it starts runs past midnight; one that ends where it
+/// starts is empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimeWindow {
+    pub start: u16,
+    pub end: u16,
 }
 
 /// One step of a queue's auto rename.

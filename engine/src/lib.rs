@@ -1,7 +1,7 @@
 //! Download engine for getit.
 //!
 //! Downloads are organised in queues. Each queue belongs to one folder, has its
-//! own settings (how many downloads run at once, paused or not) and its own
+//! own settings (how many downloads run at once, paused or not, when it may run) and its own
 //! ordered downloads, and saves itself through a [`QueueStore`] whenever it
 //! changes. The [`Engine`] routes commands to queues and runs their downloads:
 //! one HTTP connection per file, or several for large files on servers that
@@ -12,6 +12,7 @@
 mod engine;
 mod queue;
 mod rename;
+mod schedule;
 mod store;
 mod throttle;
 mod types;
@@ -22,5 +23,5 @@ pub use rename::{apply_rules, rule_errors};
 pub use store::{JsonDirStore, MemoryStore, QueueSnapshot, QueueStore};
 pub use types::{
     DownloadId, DownloadItem, DownloadStatus, EngineError, EngineEvent, LinkInfo, Pattern, QueueId,
-    QueueInfo, QueueSettings, RenameRule, Result, Segment,
+    QueueInfo, QueueSettings, RenameRule, Result, Schedule, ScheduleMode, Segment, TimeWindow,
 };

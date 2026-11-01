@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::queue::Queue;
 use crate::rename::apply_rules;
+use crate::schedule::{local_minute, until_next_minute};
 use crate::store::{QueueSnapshot, QueueStore};
 use crate::throttle::Throttle;
 use crate::types::{
@@ -119,6 +120,7 @@ impl Engine {
             throttle: Throttle::default(),
         });
         runtime.spawn(drive(Arc::downgrade(&inner), worker_rx));
+        runtime.spawn(keep_schedules(Arc::downgrade(&inner)));
 
         {
             let mut guard = inner.lock();
@@ -292,10 +294,11 @@ impl Engine {
         Ok(moves.len())
     }
 
-    /// Replaces a queue's settings. Pausing a running queue stops every running
-    /// download in it and puts it back to `Queued`; saving the settings of a queue
-    /// that's already paused (to change its limit, say) stops nothing, so
-    /// downloads started in it on their own keep going. Unpausing or adding slots
+    /// Replaces a queue's settings. Pausing a running queue, or giving it a
+    /// schedule that's closed now, stops every running download in it and puts
+    /// it back to `Queued`; saving the settings of a queue that's already held
+    /// (to change its limit, say) stops nothing, so downloads started in it on
+    /// their own keep going. Unpausing, opening its schedule or adding slots
     /// lets the queue start more.
     pub fn set_queue_settings(&self, id: QueueId, settings: QueueSettings) -> Result<()> {
         let mut guard = self.inner.lock();
@@ -304,25 +307,21 @@ impl Engine {
             .queues
             .get_mut(&id)
             .ok_or(EngineError::QueueNotFound(id))?;
-        let was_paused = queue.settings.paused;
+        let was_held = queue.held();
         queue.set_settings(settings);
-        if queue.settings.paused && !was_paused {
-            for download_id in &queue.order {
-                if let (Some(active), Some(item)) = (
-                    st.active.get_mut(download_id),
-                    queue.items.get_mut(download_id),
-                ) && item.status == DownloadStatus::Downloading
-                {
-                    item.status = DownloadStatus::Queued;
-                    active.stop(Stop::Pause);
-                    self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
-                }
-            }
+        if queue.held() && !was_held {
+            self.inner.stop_running(&mut st.active, queue);
         }
         self.inner.save(queue);
         self.inner.emit(EngineEvent::QueueChanged(queue.info()));
         self.inner.schedule(st, id);
         Ok(())
+    }
+
+    /// Opens or closes queues by their schedules as of `minute` (since local
+    /// midnight). The engine does this on its own at the start of every minute.
+    pub fn check_schedules(&self, minute: u16) {
+        self.inner.check_schedules(minute);
     }
 
     /// Moves the given downloads to the front of their queue, in the given order.
@@ -554,7 +553,7 @@ impl Engine {
         for (id, dir) in &copies {
             let source = &st.queues[id];
             let mut queue = Queue::new(dir.clone());
-            queue.settings = source.settings.clone();
+            queue.set_settings(source.settings.clone());
             for item in source.downloads() {
                 let mut copy = copy_of(&item);
                 copy.queue_id = queue.id;
@@ -938,6 +937,43 @@ impl Inner {
         id
     }
 
+    /// Sends a queue's running downloads back to `Queued`, keeping their partial
+    /// files, for when the queue is held.
+    fn stop_running(&self, active: &mut HashMap<DownloadId, Active>, queue: &mut Queue) {
+        for download_id in &queue.order {
+            if let (Some(active), Some(item)) = (active.get_mut(download_id), queue.items.get_mut(download_id))
+                && item.status == DownloadStatus::Downloading
+            {
+                item.status = DownloadStatus::Queued;
+                active.stop(Stop::Pause);
+                self.emit(EngineEvent::DownloadChanged(item.clone()));
+            }
+        }
+    }
+
+    /// Opens or closes each queue whose schedule changed at `minute` (since
+    /// local midnight): one that closes stops its running downloads, and one
+    /// that opens starts its waiting ones.
+    fn check_schedules(&self, minute: u16) {
+        let mut guard = self.lock();
+        let st = &mut *guard;
+        let ids: Vec<QueueId> = st.queues.keys().copied().collect();
+        for id in ids {
+            let queue = st.queues.get_mut(&id).expect("queue exists");
+            let closed = !queue.settings.schedule.allows(minute);
+            if closed == queue.closed {
+                continue;
+            }
+            let was_held = queue.held();
+            queue.closed = closed;
+            if queue.held() && !was_held {
+                self.stop_running(&mut st.active, queue);
+                self.save(queue);
+            }
+            self.schedule(st, id);
+        }
+    }
+
     /// Lets the queue start its next downloads if it has free slots. Called
     /// whenever that could change: the queue was resumed or given more slots, a
     /// download was added, or one of its downloads stopped.
@@ -1129,6 +1165,18 @@ async fn drive(inner: Weak<Inner>, mut rx: mpsc::UnboundedReceiver<WorkerMsg>) {
             break;
         };
         inner.handle(msg);
+    }
+}
+
+/// Checks the queues' schedules at the start of every minute. Holds only a
+/// weak reference so the engine can be dropped.
+async fn keep_schedules(inner: Weak<Inner>) {
+    loop {
+        tokio::time::sleep(until_next_minute()).await;
+        let Some(inner) = inner.upgrade() else {
+            break;
+        };
+        inner.check_schedules(local_minute());
     }
 }
 

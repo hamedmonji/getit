@@ -31,6 +31,7 @@ const settings = (max_concurrent: number | null): QueueSettings => ({
   paused: false,
   retries: 3,
   rename: [],
+  schedule: { mode: "any", windows: [{ start: 60, end: 405 }] },
 });
 
 const prefix = (text: string): RenameRule => ({ op: "prefix", text });

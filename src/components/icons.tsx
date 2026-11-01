@@ -91,6 +91,16 @@ export function PauseIcon({ size = 10, weight = 2.2 }: IconProps & { weight?: nu
   );
 }
 
+/** A clock face, for a queue waiting for its schedule. */
+export function ClockIcon({ size = 10 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="6" {...stroke} strokeWidth={2} />
+      <path d="M8 4.5V8l2.5 1.5" {...stroke} strokeWidth={2} />
+    </svg>
+  );
+}
+
 export function PlayIcon({ size = 10 }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16">

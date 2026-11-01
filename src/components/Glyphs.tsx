@@ -6,7 +6,7 @@ import { thumbnailSource } from "../lib/thumbnails";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { useThumbnail } from "../hooks/useThumbnail";
 import { FileIcon } from "./FileIcon";
-import { FolderIcon, PauseIcon, PlayIcon, RetryIcon } from "./icons";
+import { ClockIcon, FolderIcon, PauseIcon, PlayIcon, RetryIcon } from "./icons";
 
 type Size = "large" | "small";
 
@@ -32,7 +32,7 @@ export function FileGlyph({ vm, size }: { vm: FileVm; size: Size }) {
   );
 }
 
-/** Folder icon in Finder's colours; grey while its queue is paused. */
+/** Folder icon in Finder's colours; grey while its queue is paused, with a clock while it waits for its schedule. */
 export function FolderGlyph({ vm, size }: { vm: FolderVm; size: Size }) {
   return (
     <div className={`folder-glyph ${size}` + (vm.paused ? " paused" : "")}>
@@ -43,6 +43,11 @@ export function FolderGlyph({ vm, size }: { vm: FolderVm; size: Size }) {
       {size === "large" && vm.paused && (
         <span className="folder-paused">
           <PauseIcon size={8} weight={3} />
+        </span>
+      )}
+      {size === "large" && vm.scheduled && (
+        <span className="folder-scheduled" title="Waiting for its schedule">
+          <ClockIcon size={10} />
         </span>
       )}
     </div>

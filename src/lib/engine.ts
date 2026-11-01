@@ -51,6 +51,30 @@ export interface QueueSettings {
   retries: number;
   /** Applied in order to new downloads' names, without the extension. */
   rename: RenameRule[];
+  /** When the queue may start downloads. */
+  schedule: Schedule;
+}
+
+export type ScheduleMode = "any" | "hours";
+
+/**
+ * When a queue may run: any time, or only inside its daily windows. Outside
+ * them it starts nothing, and its running downloads wait for the next one.
+ */
+export interface Schedule {
+  mode: ScheduleMode;
+  /** Kept while the mode is "any", for going back to hours. */
+  windows: TimeWindow[];
+}
+
+/**
+ * A daily stretch of time in minutes since local midnight (0 to 1439). One
+ * that ends before it starts runs past midnight; one that ends where it
+ * starts is empty.
+ */
+export interface TimeWindow {
+  start: number;
+  end: number;
 }
 
 /** Text to find in a name: as it is, or as a regular expression. */

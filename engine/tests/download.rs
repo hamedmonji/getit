@@ -15,7 +15,7 @@ use axum::routing::get;
 use futures_util::Stream;
 use getit_engine::{
     DownloadId, DownloadItem, DownloadStatus, Engine, EngineError, EngineEvent, JsonDirStore, LinkInfo,
-    MemoryStore, Pattern, QueueId, QueueSettings, RenameRule,
+    MemoryStore, Pattern, QueueId, QueueSettings, RenameRule, Schedule, ScheduleMode, TimeWindow,
 };
 use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
@@ -721,6 +721,50 @@ async fn pausing_a_queue_requeues_and_later_resumes() {
     assert_eq!(requests.len(), 3, "{requests:?}");
     assert_eq!(requests[1].range, None, "second download starts fresh");
     assert_eq!(requests[2].status, 206, "first download resumes");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_scheduled_queue_runs_only_inside_its_window() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.engine.ensure_queue(ctx.folder("a")).unwrap();
+    // A one-minute window half a day from now, so the queue starts closed.
+    let now = {
+        use chrono::Timelike;
+        let now = chrono::Local::now();
+        (now.hour() * 60 + now.minute()) as u16
+    };
+    let start = (now + 720) % 1440;
+    let end = (start + 1) % 1440;
+    ctx.engine
+        .set_queue_settings(
+            queue,
+            QueueSettings {
+                max_concurrent: Some(1),
+                schedule: Schedule {
+                    mode: ScheduleMode::Hours,
+                    windows: vec![TimeWindow { start, end }],
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let id = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    settle().await;
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
+    assert!(ctx.server.requests().is_empty());
+
+    ctx.engine.check_schedules(start);
+    wait_for_progress(&ctx.engine, id).await;
+
+    ctx.engine.check_schedules(end);
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
+    settle().await;
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
+
+    ctx.engine.check_schedules(start);
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
+    assert_eq!(ctx.server.requests().last().unwrap().status, 206, "resumes the partial file");
 }
 
 #[tokio::test(flavor = "multi_thread")]
