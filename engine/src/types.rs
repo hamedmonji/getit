@@ -312,6 +312,9 @@ pub struct QueueInfo {
     pub settings: QueueSettings,
     /// The queue's downloads, in queue order.
     pub downloads: Vec<DownloadId>,
+    /// Its schedule holds it until the next window starts.
+    #[serde(default)]
+    pub schedule_closed: bool,
 }
 
 /// Change notifications sent to every [`subscriber`](crate::Engine::subscribe).

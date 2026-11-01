@@ -723,37 +723,42 @@ async fn pausing_a_queue_requeues_and_later_resumes() {
     assert_eq!(requests[2].status, 206, "first download resumes");
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn a_scheduled_queue_runs_only_inside_its_window() {
-    let ctx = Ctx::new().await;
-    let queue = ctx.engine.ensure_queue(ctx.folder("a")).unwrap();
-    // A one-minute window half a day from now, so the queue starts closed.
+/// A queue in `ctx` with its own engine that moves schedules on only when
+/// told, already checked at the minute it returns (since local midnight).
+fn scheduled(ctx: &mut Ctx) -> (QueueId, u16) {
+    ctx.engine = Engine::without_schedule_clock(MemoryStore::new()).unwrap();
     let now = {
         use chrono::Timelike;
         let now = chrono::Local::now();
         (now.hour() * 60 + now.minute()) as u16
     };
-    let start = (now + 720) % 1440;
-    let end = (start + 1) % 1440;
-    ctx.engine
-        .set_queue_settings(
-            queue,
-            QueueSettings {
-                max_concurrent: Some(1),
-                schedule: Schedule {
-                    mode: ScheduleMode::Hours,
-                    windows: vec![TimeWindow { start, end }],
-                },
-                ..Default::default()
-            },
-        )
-        .unwrap();
+    ctx.engine.check_schedules(now);
+    (ctx.engine.ensure_queue(ctx.folder("a")).unwrap(), now)
+}
+
+fn set_hours(ctx: &Ctx, queue: QueueId, start: u16, end: u16) {
+    let mut settings = ctx.engine.queue(queue).unwrap().settings;
+    settings.schedule = Schedule {
+        mode: ScheduleMode::Hours,
+        windows: vec![TimeWindow { start: start % 1440, end: end % 1440 }],
+    };
+    ctx.engine.set_queue_settings(queue, settings).unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_scheduled_queue_runs_only_inside_its_window() {
+    let mut ctx = Ctx::new().await;
+    let (queue, now) = scheduled(&mut ctx);
+    let (start, end) = ((now + 720) % 1440, (now + 721) % 1440);
+    set_hours(&ctx, queue, start, end);
     let id = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
     settle().await;
     assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
     assert!(ctx.server.requests().is_empty());
+    assert!(ctx.engine.queue(queue).unwrap().schedule_closed);
 
     ctx.engine.check_schedules(start);
+    assert!(!ctx.engine.queue(queue).unwrap().schedule_closed);
     wait_for_progress(&ctx.engine, id).await;
 
     ctx.engine.check_schedules(end);
@@ -765,6 +770,73 @@ async fn a_scheduled_queue_runs_only_inside_its_window() {
     wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
     ctx.assert_file_matches(id);
     assert_eq!(ctx.server.requests().last().unwrap().status, 206, "resumes the partial file");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn setting_a_window_already_under_way_waits_for_its_next_start() {
+    let mut ctx = Ctx::new().await;
+    let (queue, now) = scheduled(&mut ctx);
+    // Started ten minutes ago, ends in ten.
+    let (start, end) = ((now + 1430) % 1440, (now + 10) % 1440);
+    let id = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.pause(id).unwrap();
+    set_hours(&ctx, queue, start, end);
+    ctx.engine.requeue(&[id]).unwrap();
+    ctx.engine.check_schedules((now + 1) % 1440);
+    settle().await;
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
+
+    // Editing the open-looking window doesn't start it either.
+    set_hours(&ctx, queue, start, end + 5);
+    settle().await;
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
+
+    ctx.engine.check_schedules((end + 5) % 1440);
+    ctx.engine.check_schedules(start);
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn switching_to_hours_inside_a_window_stops_until_it_next_starts() {
+    let mut ctx = Ctx::new().await;
+    let (queue, now) = scheduled(&mut ctx);
+    let id = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+    set_hours(&ctx, queue, now + 1430, now + 10);
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_download_started_by_hand_stops_when_the_window_ends() {
+    let mut ctx = Ctx::new().await;
+    let (queue, now) = scheduled(&mut ctx);
+    let (start, end) = ((now + 720) % 1440, (now + 721) % 1440);
+    set_hours(&ctx, queue, start, end);
+    let id = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.resume(id).unwrap();
+    wait_for_progress(&ctx.engine, id).await;
+
+    ctx.engine.check_schedules((now + 1) % 1440);
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Downloading);
+    // Straight past the whole window, as after the computer slept.
+    ctx.engine.check_schedules((end + 5) % 1440);
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
+    settle().await;
+    assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn opening_a_window_starts_paused_downloads_too() {
+    let mut ctx = Ctx::new().await;
+    let (queue, now) = scheduled(&mut ctx);
+    let start = (now + 720) % 1440;
+    set_hours(&ctx, queue, start, start + 1);
+    let id = ctx.engine.add(queue, &ctx.url("/file.bin")).unwrap();
+    ctx.engine.pause(id).unwrap();
+
+    ctx.engine.check_schedules(start);
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    ctx.assert_file_matches(id);
 }
 
 #[tokio::test(flavor = "multi_thread")]

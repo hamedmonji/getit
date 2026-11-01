@@ -59,6 +59,7 @@ pub fn run() {
             commands::probe_link,
             commands::auto_names,
             commands::preview_rename,
+            commands::existing_folders,
             commands::file_exists,
             commands::add_download,
             commands::set_download_url,

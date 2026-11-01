@@ -18,6 +18,9 @@ import {
   favoriteSlot,
   parseFavorites,
   pinFavorites,
+  relocateFavorites,
+  repin,
+  unpinRemoved,
   rootPlaces,
   slotIndex,
   toFavorites,
@@ -194,5 +197,43 @@ describe("sidebar width", () => {
     expect(parseSidebarWidth(null)).toBe(SIDEBAR_WIDTH);
     expect(parseSidebarWidth('"wide"')).toBe(SIDEBAR_WIDTH);
     expect(parseSidebarWidth("null")).toBe(SIDEBAR_WIDTH);
+  });
+});
+
+describe("relocateFavorites", () => {
+  it("points pinned folders, and items inside moved folders, at their new paths", () => {
+    const favorites = [folder("/a/b"), { path: "/a/b/f.zip", file: true }, folder("/z")];
+    expect(relocateFavorites(favorites, [["/a/b", "/c/b"]])).toEqual([
+      folder("/c/b"),
+      { path: "/c/b/f.zip", file: true },
+      folder("/z"),
+    ]);
+  });
+});
+
+describe("unpinRemoved", () => {
+  it("unpins removed folders and what's inside them, remembering where they were", () => {
+    const favorites = [folder("/a"), folder("/t"), { path: "/t/f.zip", file: true }, folder("/tb")];
+    expect(unpinRemoved(favorites, ["/t"])).toEqual({
+      kept: [folder("/a"), folder("/tb")],
+      unpinned: [
+        { index: 1, favorite: folder("/t") },
+        { index: 2, favorite: { path: "/t/f.zip", file: true } },
+      ],
+    });
+  });
+});
+
+describe("repin", () => {
+  const favorites = [folder("/a"), folder("/t"), folder("/b"), folder("/u")];
+
+  it("puts unpinned favorites back where they were", () => {
+    const { kept, unpinned } = unpinRemoved(favorites, ["/t", "/u"]);
+    expect(repin(kept, unpinned)).toEqual(favorites);
+  });
+
+  it("keeps ones pinned again since, and puts others at the end when the list got shorter", () => {
+    const { unpinned } = unpinRemoved(favorites, ["/t", "/u"]);
+    expect(paths(repin([folder("/t")], unpinned))).toEqual(["/t", "/u"]);
   });
 });

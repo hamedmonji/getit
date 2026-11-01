@@ -95,6 +95,8 @@ export interface QueueInfo {
   dir: string;
   settings: QueueSettings;
   downloads: DownloadId[];
+  /** Its schedule holds it until the next window starts. */
+  schedule_closed: boolean;
 }
 
 export type EngineEvent =
@@ -112,7 +114,8 @@ export type EngineEvent =
 /** What `moveToTrash` moved; `restoreFromTrash` puts it back. */
 export interface Trashed {
   downloads: unknown[];
-  folders: unknown[];
+  /** The folders trashed, by the path they had. */
+  folders: { path: string }[];
   /** Why trashing stopped early, if it did. What's listed was trashed all the same. */
   error: string | null;
 }
@@ -151,6 +154,8 @@ export const engine = {
   setAccessSetup: (root: string | null) => invoke<void>("set_access_setup", { root }),
   /** Replaces the folders added in Settings that getit may open, besides the root. */
   setAccessFolders: (folders: string[]) => invoke<void>("set_access_folders", { folders }),
+  /** Which of `paths` are folders that exist. */
+  existingFolders: (paths: string[]) => invoke<string[]>("existing_folders", { paths }),
   /** Forgets the first-launch choice so onboarding shows again; development builds only. */
   resetAccessSetup: () => invoke<void>("reset_access_setup"),
   /** Whether getit has Full Disk Access; macOS may apply a new grant only after a restart. */

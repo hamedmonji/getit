@@ -5,9 +5,12 @@ import {
   crumbsFrom,
   displayPath,
   isPathLike,
+  folderMoves,
   isWithin,
   joinPath,
   parentPath,
+  relocateAll,
+  relocatePath,
   resolvePath,
   splitName,
 } from "./paths";
@@ -165,5 +168,30 @@ describe("canGoUp", () => {
     expect(canGoUp(top, home, top)).toBe(false);
     expect(canGoUp(`${top}/a`, home, top)).toBe(true);
     expect(canGoUp("/Users/me/Music", home, top)).toBe(true);
+  });
+});
+
+describe("relocatePath", () => {
+  it("follows the moved folder and anything inside it", () => {
+    expect(relocatePath("/a/b", ["/a/b", "/c/b"])).toBe("/c/b");
+    expect(relocatePath("/a/b/x/y", ["/a/b", "/a/renamed"])).toBe("/a/renamed/x/y");
+  });
+
+  it("leaves other paths alone, including ones that only share a prefix", () => {
+    expect(relocatePath("/a/bc", ["/a/b", "/c/b"])).toBe("/a/bc");
+    expect(relocatePath("/a", ["/a/b", "/c/b"])).toBe("/a");
+  });
+});
+
+describe("relocateAll", () => {
+  it("applies each move in turn", () => {
+    expect(relocateAll("/a/b/c", [["/a/b", "/x/b"], ["/x", "/y"]])).toBe("/y/b/c");
+    expect(relocateAll("/a/b", [])).toBe("/a/b");
+  });
+});
+
+describe("folderMoves", () => {
+  it("pairs each folder with where it lands, leaving out ones already there", () => {
+    expect(folderMoves(["/a/x", "/b/y"], "/b")).toEqual([["/a/x", "/b/x"]]);
   });
 });

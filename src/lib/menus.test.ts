@@ -44,7 +44,7 @@ function contextFor(items: DownloadItem[], overrides: Partial<MenuContext> = {},
     query: "",
     selection: [],
     selected: new Set(),
-    folders: [folderVm(state, SUB, 0)],
+    folders: [folderVm(state, SUB)],
     files,
     selectedFiles: [],
     select: vi.fn(),
@@ -345,7 +345,7 @@ describe("folderMenu", () => {
   it("leaves out queue items for a folder without a queue", () => {
     const ctx = contextFor([]);
     const plain = "/home/q/plain";
-    expect(labels(folderMenu({ ...ctx, folders: [folderVm(ctx.state, plain, 0)] }, plain))).not.toContain(
+    expect(labels(folderMenu({ ...ctx, folders: [folderVm(ctx.state, plain)] }, plain))).not.toContain(
       "Queue Settings…",
     );
   });

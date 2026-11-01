@@ -226,7 +226,7 @@ describe("folderVm", () => {
       [item({ id: "x", queue_id: "q", status: "downloading", total_bytes: 2 * MB, downloaded: MB })],
     );
     state.speeds.x = MB;
-    expect(folderVm(state, "/h/a", 0)).toMatchObject({
+    expect(folderVm(state, "/h/a")).toMatchObject({
       name: "a",
       path: "/h/a",
       sub: "1 ↓ · 1.0 MB/s",
@@ -245,7 +245,7 @@ describe("folderVm", () => {
       [queue({ id: "q", dir: "/h/q", settings: { max_concurrent: 2, paused: true, retries: 3, rename: [], schedule: { mode: "any", windows: [{ start: 60, end: 405 }] } } })],
       [item({ id: "x", queue_id: "q", status: "downloading" })],
     );
-    expect(folderVm(state, "/h/q", 0)).toMatchObject({ paused: true, active: 0 });
+    expect(folderVm(state, "/h/q")).toMatchObject({ paused: true, active: 0 });
   });
 
   it("isn't paused when its paused queue has nothing left", () => {
@@ -253,26 +253,26 @@ describe("folderVm", () => {
       [queue({ id: "q", dir: "/h/q", settings: { max_concurrent: 2, paused: true, retries: 3, rename: [], schedule: { mode: "any", windows: [{ start: 60, end: 405 }] } } })],
       [item({ id: "x", queue_id: "q", status: "completed" })],
     );
-    expect(folderVm(state, "/h/q", 0)).toMatchObject({ paused: false, showBar: false });
+    expect(folderVm(state, "/h/q")).toMatchObject({ paused: false, showBar: false });
   });
 
   it("shows a clock in place of the count while its schedule holds it", () => {
-    const hours = (paused: boolean) =>
+    const held = (paused: boolean) =>
       queue({
         id: "q",
         dir: "/h/q",
+        schedule_closed: true,
         settings: { max_concurrent: 2, paused, retries: 3, rename: [], schedule: { mode: "hours", windows: [{ start: 60, end: 405 }] } },
       });
     const waiting = item({ id: "x", queue_id: "q", status: "queued" });
-    expect(folderVm(stateOf([hours(false)], [waiting]), "/h/q", 0)).toMatchObject({ scheduled: true, active: 0 });
-    expect(folderVm(stateOf([hours(false)], [waiting]), "/h/q", 60)).toMatchObject({ scheduled: false });
-    expect(folderVm(stateOf([hours(true)], [waiting]), "/h/q", 0)).toMatchObject({ scheduled: false, paused: true });
+    expect(folderVm(stateOf([held(false)], [waiting]), "/h/q")).toMatchObject({ scheduled: true, active: 0 });
+    expect(folderVm(stateOf([held(true)], [waiting]), "/h/q")).toMatchObject({ scheduled: false, paused: true });
     const done = item({ id: "x", queue_id: "q", status: "completed" });
-    expect(folderVm(stateOf([hours(false)], [done]), "/h/q", 0)).toMatchObject({ scheduled: false });
+    expect(folderVm(stateOf([held(false)], [done]), "/h/q")).toMatchObject({ scheduled: false });
   });
 
   it("has no queue or size for a plain folder", () => {
-    expect(folderVm(stateOf([]), "/h/plain", 0)).toMatchObject({ hasQueue: false, sizeLabel: "—", sub: "" });
+    expect(folderVm(stateOf([]), "/h/plain")).toMatchObject({ hasQueue: false, sizeLabel: "—", sub: "" });
   });
 });
 
@@ -293,22 +293,22 @@ describe("searchResults", () => {
   });
 
   it("finds downloads and folders whose names have every word, ignoring case", () => {
-    expect(names(searchResults(state, null, listed, home, "UBUNTU", "List", 0))).toEqual({
+    expect(names(searchResults(state, null, listed, home, "UBUNTU", "List"))).toEqual({
       folders: ["/h/Linux/Ubuntu", "/h/Ubuntu Notes"],
       files: ["ubuntu-desktop.iso", "ubuntu-server.iso"],
     });
-    expect(names(searchResults(state, null, listed, home, "ubuntu server", "List", 0)).files).toEqual([
+    expect(names(searchResults(state, null, listed, home, "ubuntu server", "List")).files).toEqual([
       "ubuntu-server.iso",
     ]);
   });
 
   it("searches folders on the way to queues", () => {
-    expect(names(searchResults(state, null, listed, home, "linux", "List", 0)).folders).toEqual(["/h/Linux"]);
+    expect(names(searchResults(state, null, listed, home, "linux", "List")).folders).toEqual(["/h/Linux"]);
   });
 
   it("limits the search to queues under the root", () => {
-    expect(names(searchResults(state, "/h/Music", listed, home, "u", "List", 0)).files).toEqual([]);
-    expect(names(searchResults(state, "/h/Music", listed, home, "song", "List", 0)).files).toEqual(["song.mp3"]);
+    expect(names(searchResults(state, "/h/Music", listed, home, "u", "List")).files).toEqual([]);
+    expect(names(searchResults(state, "/h/Music", listed, home, "song", "List")).files).toEqual(["song.mp3"]);
   });
 });
 

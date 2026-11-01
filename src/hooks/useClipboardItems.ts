@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { engine } from "../lib/engine";
 import { isFolderKey } from "../lib/keys";
-import { baseName, joinPath, parentPath } from "../lib/paths";
+import { baseName, folderMoves, joinPath, parentPath, type Move } from "../lib/paths";
 import type { FileVm } from "../lib/viewModels";
 import type { EngineState } from "./useEngine";
 import type { Undo } from "./useUndo";
@@ -25,10 +25,12 @@ interface Options {
   pushUndo: (undo: Undo) => void;
   /** Adds the links in text pasted from another app. */
   pasteLinks: (text: string) => void;
+  /** Called with the folders that moved, so what points at them can follow. */
+  followMoves: (moves: Move[]) => void;
 }
 
 /** Cutting, copying and pasting downloads and folders. */
-export function useClipboardItems({ state, files, cwd, select, setNotice, refresh, pushUndo, pasteLinks }: Options) {
+export function useClipboardItems({ state, files, cwd, select, setNotice, refresh, pushUndo, pasteLinks, followMoves }: Options) {
   const [clip, setClip] = useState<Clip | null>(null);
   /** What cutting or copying last put on the system clipboard; null if that failed. */
   const clipText = useRef<string | null>(null);
@@ -62,7 +64,7 @@ export function useClipboardItems({ state, files, cwd, select, setNotice, refres
     const pasted = cut
       ? Promise.all([
           ids.length ? engine.moveDownloads(ids, dest) : null,
-          paths.length ? engine.moveFolders(paths, dest) : null,
+          paths.length ? engine.moveFolders(paths, dest).then(() => followMoves(folderMoves(paths, dest))) : null,
         ]).then(() => [...paths.map((path) => joinPath(dest, baseName(path))), ...ids])
       : Promise.all([
           paths.length ? engine.copyFolders(paths, dest) : [],
@@ -83,7 +85,10 @@ export function useClipboardItems({ state, files, cwd, select, setNotice, refres
             run: () =>
               Promise.all([
                 ...[...back].map(([dir, ids]) => engine.moveDownloads(ids, dir)),
-                ...movedPaths.map((path) => engine.moveFolders([joinPath(dest, baseName(path))], parentPath(path))),
+                ...movedPaths.map((path) => {
+                  const moved = joinPath(dest, baseName(path));
+                  return engine.moveFolders([moved], parentPath(path)).then(() => followMoves([[moved, path]]));
+                }),
               ]),
           });
         } else if (keys.length) {

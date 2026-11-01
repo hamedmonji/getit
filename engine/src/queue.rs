@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use crate::schedule::local_minute;
 use crate::store::{QueueSnapshot, QueueStore};
-use crate::types::{DownloadId, DownloadItem, DownloadStatus, QueueId, QueueInfo, QueueSettings};
+use crate::types::{DownloadId, DownloadItem, DownloadStatus, QueueId, QueueInfo, QueueSettings, ScheduleMode};
 
 pub(crate) struct Queue {
     pub id: QueueId,
@@ -78,6 +78,7 @@ impl Queue {
             dir: self.dir.clone(),
             settings: self.settings.clone(),
             downloads: self.order.clone(),
+            schedule_closed: self.closed,
         }
     }
 
@@ -112,9 +113,19 @@ impl Queue {
             .collect()
     }
 
+    /// Replaces the settings. Setting hours closes the queue, and a changed
+    /// schedule closes it when it's outside the new windows now, but neither
+    /// opens it, even inside a window: that waits for the next window to
+    /// start. An open window that's only edited stays open. Going back to any
+    /// time opens it.
     pub fn set_settings(&mut self, settings: QueueSettings) {
-        self.settings = sanitize(settings);
-        self.closed = !self.settings.schedule.allows(local_minute());
+        let settings = sanitize(settings);
+        let (old, new) = (&self.settings.schedule, &settings.schedule);
+        if new != old {
+            self.closed = new.mode == ScheduleMode::Hours
+                && (old.mode == ScheduleMode::Any || self.closed || !new.allows(local_minute()));
+        }
+        self.settings = settings;
     }
 
     /// Whether the queue starts nothing: it's paused, or outside its schedule.

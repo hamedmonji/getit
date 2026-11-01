@@ -43,6 +43,7 @@ function setup(cwd = HERE) {
     refresh: vi.fn(),
     pushUndo: vi.fn<(undo: Undo) => void>(),
     pasteLinks: vi.fn(),
+    followMoves: vi.fn(),
   };
   const hook = renderHook(() => useClipboardItems(options));
   return { ...hook, ...options };
@@ -69,7 +70,7 @@ describe("clipItems", () => {
 
 describe("pasteItems", () => {
   it("moves cut items, selects them here, and can move them back", async () => {
-    const { result, select, pushUndo, refresh } = setup(THERE);
+    const { result, select, pushUndo, refresh, followMoves } = setup(THERE);
     act(() => result.current.clipItems(["done", "/home/here/sub"], true));
     act(() => result.current.pasteItems(THERE));
     // Cut items paste once.
@@ -78,6 +79,7 @@ describe("pasteItems", () => {
     expect(engine.moveDownloads).toHaveBeenCalledWith(["done"], THERE);
     expect(engine.moveFolders).toHaveBeenCalledWith(["/home/here/sub"], THERE);
     expect(select).toHaveBeenCalledWith(["/home/there/sub", "done"]);
+    expect(followMoves).toHaveBeenCalledWith([["/home/here/sub", "/home/there/sub"]]);
 
     const undo = pushed(pushUndo);
     vi.clearAllMocks();
@@ -85,6 +87,7 @@ describe("pasteItems", () => {
     await undo.run();
     expect(engine.moveDownloads).toHaveBeenCalledWith(["done"], HERE);
     expect(engine.moveFolders).toHaveBeenCalledWith(["/home/there/sub"], HERE);
+    expect(followMoves).toHaveBeenCalledWith([["/home/there/sub", "/home/here/sub"]]);
   });
 
   it("doesn't select pasted items in another folder", async () => {
@@ -119,11 +122,12 @@ describe("pasteItems", () => {
 
   it("reports a failed paste", async () => {
     vi.mocked(engine.moveFolders).mockRejectedValueOnce("already exists there");
-    const { result, setNotice, pushUndo, refresh } = setup();
+    const { result, setNotice, pushUndo, refresh, followMoves } = setup();
     act(() => result.current.clipItems(["/home/here/sub"], true));
     act(() => result.current.pasteItems(THERE));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
     expect(setNotice).toHaveBeenCalledWith("Couldn't paste: already exists there");
+    expect(followMoves).not.toHaveBeenCalled();
     expect(pushUndo).not.toHaveBeenCalled();
   });
 });

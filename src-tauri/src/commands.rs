@@ -227,6 +227,13 @@ fn count_visible(dir: &Path) -> usize {
     })
 }
 
+/// Which of `paths` are folders that exist, for forgetting chosen folders
+/// deleted outside getit.
+#[tauri::command]
+pub fn existing_folders(paths: Vec<String>) -> Vec<String> {
+    paths.into_iter().filter(|path| Path::new(path).is_dir()).collect()
+}
+
 /// Whether `name` is already taken in `dir` by a file or a partial download.
 #[tauri::command]
 pub fn file_exists(dir: String, name: String) -> bool {

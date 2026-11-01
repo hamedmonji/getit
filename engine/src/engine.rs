@@ -60,6 +60,8 @@ struct State {
     owner: HashMap<DownloadId, QueueId>,
     /// Downloads with a running worker task.
     active: HashMap<DownloadId, Active>,
+    /// The minute (since local midnight) schedules were last checked at.
+    checked_at: u16,
 }
 
 struct Active {
@@ -100,6 +102,17 @@ impl Engine {
     ///
     /// Panics if called outside a Tokio runtime.
     pub fn new(store: impl QueueStore) -> io::Result<Self> {
+        Self::build(store, true)
+    }
+
+    /// Like [`Engine::new`], but schedules only move on when
+    /// [`Engine::check_schedules`] is called, for tests.
+    #[doc(hidden)]
+    pub fn without_schedule_clock(store: impl QueueStore) -> io::Result<Self> {
+        Self::build(store, false)
+    }
+
+    fn build(store: impl QueueStore, schedule_clock: bool) -> io::Result<Self> {
         let runtime = Handle::current();
         let client = Client::builder()
             .user_agent(USER_AGENT)
@@ -111,7 +124,10 @@ impl Engine {
         let (worker_tx, worker_rx) = mpsc::unbounded_channel();
         let (events, _) = broadcast::channel(EVENT_CAPACITY);
         let inner = Arc::new(Inner {
-            state: Mutex::new(State::default()),
+            state: Mutex::new(State {
+                checked_at: local_minute(),
+                ..State::default()
+            }),
             store: Box::new(store),
             events,
             client,
@@ -120,7 +136,9 @@ impl Engine {
             throttle: Throttle::default(),
         });
         runtime.spawn(drive(Arc::downgrade(&inner), worker_rx));
-        runtime.spawn(keep_schedules(Arc::downgrade(&inner)));
+        if schedule_clock {
+            runtime.spawn(keep_schedules(Arc::downgrade(&inner)));
+        }
 
         {
             let mut guard = inner.lock();
@@ -298,8 +316,9 @@ impl Engine {
     /// schedule that's closed now, stops every running download in it and puts
     /// it back to `Queued`; saving the settings of a queue that's already held
     /// (to change its limit, say) stops nothing, so downloads started in it on
-    /// their own keep going. Unpausing, opening its schedule or adding slots
-    /// lets the queue start more.
+    /// their own keep going. Unpausing or adding slots lets the queue start
+    /// more. A changed schedule never opens the queue (see
+    /// [`Queue::set_settings`]); it waits for the next window to start.
     pub fn set_queue_settings(&self, id: QueueId, settings: QueueSettings) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
@@ -318,8 +337,9 @@ impl Engine {
         Ok(())
     }
 
-    /// Opens or closes queues by their schedules as of `minute` (since local
-    /// midnight). The engine does this on its own at the start of every minute.
+    /// Moves the queues' schedules on from the last check to `minute` (since
+    /// local midnight). The engine does this on its own at the start of every
+    /// minute.
     pub fn check_schedules(&self, minute: u16) {
         self.inner.check_schedules(minute);
     }
@@ -939,7 +959,9 @@ impl Inner {
 
     /// Sends a queue's running downloads back to `Queued`, keeping their partial
     /// files, for when the queue is held.
-    fn stop_running(&self, active: &mut HashMap<DownloadId, Active>, queue: &mut Queue) {
+    /// Returns whether it stopped any.
+    fn stop_running(&self, active: &mut HashMap<DownloadId, Active>, queue: &mut Queue) -> bool {
+        let mut stopped = false;
         for download_id in &queue.order {
             if let (Some(active), Some(item)) = (active.get_mut(download_id), queue.items.get_mut(download_id))
                 && item.status == DownloadStatus::Downloading
@@ -947,30 +969,63 @@ impl Inner {
                 item.status = DownloadStatus::Queued;
                 active.stop(Stop::Pause);
                 self.emit(EngineEvent::DownloadChanged(item.clone()));
+                stopped = true;
+            }
+        }
+        stopped
+    }
+
+    /// Puts a queue's paused downloads back in line, for when its schedule
+    /// opens: ones paused by hand, or left paused by a quit, run in the window
+    /// too.
+    fn requeue_paused(&self, active: &mut HashMap<DownloadId, Active>, queue: &mut Queue) {
+        for download_id in &queue.order {
+            if let Some(item) = queue.items.get_mut(download_id)
+                && item.status == DownloadStatus::Paused
+            {
+                item.status = DownloadStatus::Queued;
+                // A worker still stopping after a pause stays stopped; the queue starts it again.
+                if let Some(active) = active.get_mut(download_id) {
+                    active.restart = false;
+                }
+                self.emit(EngineEvent::DownloadChanged(item.clone()));
             }
         }
     }
 
-    /// Opens or closes each queue whose schedule changed at `minute` (since
-    /// local midnight): one that closes stops its running downloads, and one
-    /// that opens starts its waiting ones.
+    /// Opens and closes queues as time moves from the last check to `minute`
+    /// (since local midnight). A queue opens only when one of its windows
+    /// starts, and then starts its waiting and paused downloads. When a window
+    /// ends with no other open, the queue closes and stops every running
+    /// download, including ones started by hand.
     fn check_schedules(&self, minute: u16) {
         let mut guard = self.lock();
         let st = &mut *guard;
+        let from = std::mem::replace(&mut st.checked_at, minute);
         let ids: Vec<QueueId> = st.queues.keys().copied().collect();
         for id in ids {
             let queue = st.queues.get_mut(&id).expect("queue exists");
-            let closed = !queue.settings.schedule.allows(minute);
-            if closed == queue.closed {
-                continue;
+            let schedule = queue.settings.schedule.clone();
+            let was_closed = queue.closed;
+            let mut stopped = false;
+            if !schedule.allows(minute) {
+                if !was_closed || schedule.ends_between(from, minute) {
+                    stopped = self.stop_running(&mut st.active, queue);
+                }
+                queue.closed = true;
+            } else if was_closed && schedule.starts_between(from, minute) {
+                queue.closed = false;
+                if !queue.settings.paused {
+                    self.requeue_paused(&mut st.active, queue);
+                }
             }
-            let was_held = queue.held();
-            queue.closed = closed;
-            if queue.held() && !was_held {
-                self.stop_running(&mut st.active, queue);
+            if queue.closed != was_closed {
+                self.save(queue);
+                self.emit(EngineEvent::QueueChanged(queue.info()));
+                self.schedule(st, id);
+            } else if stopped {
                 self.save(queue);
             }
-            self.schedule(st, id);
         }
     }
 

@@ -12,6 +12,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/component
 import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { Details } from "./components/Details";
 import { NoAccess } from "./components/NoAccess";
+import { NoFolders } from "./components/NoFolders";
 import { Onboarding } from "./components/Onboarding";
 import { QueueSettings } from "./components/QueueSettings";
 import { RefreshLink } from "./components/RefreshLink";
@@ -38,7 +39,6 @@ import { useEngine } from "./hooks/useEngine";
 import { useStoredJson } from "./hooks/useStoredJson";
 import { useItemDrag } from "./hooks/useItemDrag";
 import { useMarquee } from "./hooks/useMarquee";
-import { useNowMinute } from "./hooks/useNowMinute";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useSortOrder } from "./hooks/useSortOrder";
 import { useStoredState } from "./hooks/useStoredState";
@@ -66,9 +66,29 @@ import { isFolderKey, splitKeys } from "./lib/keys";
 import { linksIn, takeForRefresh, withCaptured, withoutCaptured } from "./lib/links";
 import { bestQueueFor } from "./lib/match";
 import type { MenuContext } from "./lib/menus";
-import { baseName, canGoUp, crumbsFrom, displayPath, joinPath, parentPath, resolvePath } from "./lib/paths";
+import {
+  baseName,
+  canGoUp,
+  crumbsFrom,
+  displayPath,
+  folderMoves,
+  joinPath,
+  parentPath,
+  resolvePath,
+  type Move,
+} from "./lib/paths";
 import { FILE_MANAGER, IS_MAC } from "./lib/platform";
-import { accessShortcuts, accessTop, addFolder } from "./lib/access";
+import {
+  accessShortcuts,
+  accessTop,
+  addFolder,
+  forgetAccess,
+  goneFolders,
+  relocateAccess,
+  sameFolders,
+  volumeOf,
+  type AccessChoice,
+} from "./lib/access";
 import {
   clampSidebarWidth,
   favoriteKey,
@@ -82,6 +102,9 @@ import {
   SIDEBAR_WIDTH,
   slotIndex,
   toFavorites,
+  relocateFavorites,
+  repin,
+  unpinRemoved,
   unpinFavorite,
   type Drive,
   type Place,
@@ -130,7 +153,6 @@ const NOTICE_MS = 6000;
 
 export default function App() {
   const state = useEngine();
-  const minute = useNowMinute();
   useDockProgress(state);
   const [home, setHome] = useState<string | null>(null);
   /** The folder chosen on first launch as the top, instead of home; null when none was. */
@@ -141,6 +163,12 @@ export default function App() {
   const [fullDisk, setFullDisk] = useState(false);
   /** Whether to ask how getit gets into macOS's protected folders, on first launch. */
   const [firstLaunch, setFirstLaunch] = useState(false);
+  /**
+   * Whether every chosen folder was deleted, so the main view asks for another
+   * or for Full Disk Access. The old choice stays saved until then, so undo
+   * can bring it back and a restart asks again.
+   */
+  const [noFolders, setNoFolders] = useState(false);
   // Remembered so onboarding resumes at step 2 when macOS restarts getit to
   // apply Full Disk Access.
   const [onboardingStep, setOnboardingStep] = useStoredState("getit.onboardingStep", ["1", "2"] as const, () => "1");
@@ -344,8 +372,8 @@ export default function App() {
     if (!shown) return [];
     const listed = listing.folders.map((f) => joinPath(shown, f.name));
     const deeper = shortcuts.filter((p) => !listed.includes(p));
-    return [...listed, ...deeper].map((p) => folderVm(state, p, minute));
-  }, [state, shown, listing, shortcuts, minute]);
+    return [...listed, ...deeper].map((p) => folderVm(state, p));
+  }, [state, shown, listing, shortcuts]);
   const shownFolders = (list: FolderVm[]) =>
     showAllFolders ? list : list.filter((g) => g.hasQueue || shortcuts.includes(g.path));
   const hiddenFolders = allFolders.length - shownFolders(allFolders).length;
@@ -371,10 +399,9 @@ export default function App() {
             home,
             query,
             mode,
-            minute,
           )
         : null,
-    [state, shown, listing, home, query, searchAll, mode, minute],
+    [state, shown, listing, home, query, searchAll, mode],
   );
   /** Whether the search results include this kind; browsing shows everything. */
   const showsKind = (kind: SearchKind) => !results || !searchKinds.length || searchKinds.includes(kind);
@@ -417,7 +444,7 @@ export default function App() {
       const { ids, paths } = splitKeys(keys);
       Promise.allSettled([
         ids.length ? engine.moveDownloads(ids, target) : null,
-        paths.length ? engine.moveFolders(paths, target) : null,
+        paths.length ? engine.moveFolders(paths, target).then(() => followMoves(folderMoves(paths, target))) : null,
       ]).then((results) => {
         const failed = results.find((r) => r.status === "rejected");
         setNotice(failed ? `Couldn't move: ${failed.reason}` : null);
@@ -574,8 +601,16 @@ export default function App() {
       .moveToTrash(ids, paths)
       .then((trashed) => {
         setNotice(trashed.error);
+        const removed = trashed.folders.map((f) => f.path);
+        const { unpinned } = unpinRemoved(favorites, removed);
+        setFavorites((current) => unpinRemoved(current, removed).kept);
+        const forgotten = forgetFolders(removed);
+        const putBack = () => {
+          forgotten();
+          setFavorites((current) => repin(current, unpinned));
+        };
         if (trashed.downloads.length || trashed.folders.length) {
-          pushUndo({ label: "Move to Trash", run: () => engine.restoreFromTrash(trashed) });
+          pushUndo({ label: "Move to Trash", run: () => engine.restoreFromTrash(trashed).then(putBack) });
         }
       })
       .catch((e) => setNotice(String(e)))
@@ -642,6 +677,58 @@ export default function App() {
     report(engine.openFullDiskAccessSettings());
   };
 
+  // Folders moved or renamed in getit: favorites and the folders getit may open
+  // follow them, so they don't point at paths that no longer exist.
+  const followMoves = (moves: Move[]) => {
+    if (!moves.length) return;
+    setFavorites((current) => relocateFavorites(current, moves));
+    saveAccess(relocateAccess(root, accessFolders, moves));
+  };
+
+  /** Saves the root and added folders, when they changed from `prev`. */
+  const saveAccess = (next: AccessChoice, prev: AccessChoice = { root, folders: accessFolders }) => {
+    const rootChanged = next.root !== prev.root;
+    if (!rootChanged && sameFolders(next.folders, prev.folders)) return;
+    // Setting the root forgets the added folders, so they're saved after it.
+    (rootChanged ? engine.setAccessSetup(next.root) : Promise.resolve())
+      .then(() => engine.setAccessFolders(next.folders))
+      .then(() => {
+        setRoot(next.root);
+        setAccessFolders(next.folders);
+      })
+      .catch((e) => setNotice(`Couldn't update the chosen folders: ${e}`));
+  };
+
+  // Chosen folders that were deleted stop showing; the returned undo puts
+  // them back. With the root gone and no added folder to take its place, the
+  // user chooses a folder again, as on first launch.
+  const forgetFolders = (removed: string[]) => {
+    if (!removed.length) return () => {};
+    const before = { root, folders: accessFolders };
+    const next = forgetAccess(root, accessFolders, removed);
+    if (root && !next.root) {
+      setNoFolders(true);
+      return () => setNoFolders(false);
+    }
+    saveAccess(next, before);
+    return () => saveAccess(before, next);
+  };
+
+  // Chosen folders deleted outside getit, found at launch and whenever the
+  // window regains focus, are forgotten too.
+  useEffect(() => {
+    const chosen = [...(root ? [root] : []), ...accessFolders];
+    if (firstLaunch || noFolders || !chosen.length) return;
+    const check = () =>
+      engine
+        .existingFolders([...new Set([...chosen, ...chosen.map(volumeOf)])])
+        .then((existing) => forgetFolders(goneFolders(chosen, new Set(existing))))
+        .catch((e) => console.error(e));
+    check();
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, [root, accessFolders, firstLaunch, noFolders]);
+
   // Onboarding's one folder: the chosen folder becomes the top and is opened,
   // and getit may read it even inside a protected folder, since the user chose it.
   const chooseRoot = () => {
@@ -651,7 +738,9 @@ export default function App() {
         if (!picked) return;
         await engine.setAccessSetup(picked);
         setRoot(picked);
+        setAccessFolders([]);
         setFirstLaunch(false);
+        setNoFolders(false);
         setHistory({ cwd: picked, back: [], forward: [] });
       })
       .catch((e) => setNotice(`Couldn't choose the folder: ${e}`));
@@ -706,10 +795,11 @@ export default function App() {
       .catch((e) => setNotice(`Couldn't reset onboarding: ${e}`));
   };
 
-  // While onboarding asks where getit can save, it goes on by itself once Full
+  // While onboarding asks where getit can save, or the main view asks for a
+  // folder after the chosen ones were deleted, getit goes on by itself once Full
   // Disk Access is on, whether the user turned it on just now or before a restart.
   useEffect(() => {
-    if (!firstLaunch || onboardingStep !== "2") return;
+    if (!noFolders && (!firstLaunch || onboardingStep !== "2")) return;
     let done = false;
     const check = () =>
       engine.fullDiskAccess().then((granted) => {
@@ -719,6 +809,13 @@ export default function App() {
           .setAccessSetup(null)
           .then(() => {
             setFirstLaunch(false);
+            if (noFolders) {
+              setNoFolders(false);
+              setRoot(null);
+              setAccessFolders([]);
+              setFullDisk(true);
+              if (home) setHistory({ cwd: home, back: [], forward: [] });
+            }
             setListNonce((n) => n + 1);
           })
           .catch((e) => setNotice(`Couldn't save the choice: ${e}`));
@@ -729,7 +826,7 @@ export default function App() {
       done = true;
       clearInterval(timer);
     };
-  }, [firstLaunch, onboardingStep]);
+  }, [firstLaunch, onboardingStep, noFolders, home]);
 
   /** Adds the links in `text` to this folder's queue, after asking unless the user chose not to be asked. */
   const pasteLinks = (text: string) => {
@@ -752,6 +849,7 @@ export default function App() {
     refresh,
     pushUndo,
     pasteLinks,
+    followMoves,
   });
 
   // Links sent from the browser extension wait at the bottom, with any captured
@@ -876,6 +974,7 @@ export default function App() {
       return;
     }
     const renamed = await engine.renameFolder(key, name);
+    followMoves([[key, renamed]]);
     setEditing(null);
     select([renamed]);
     setListNonce((n) => n + 1);
@@ -950,7 +1049,7 @@ export default function App() {
         .map((p) => pendingVm(p.key, p.url, p.name, p.name === null ? "Checking…" : "Already downloaded"));
   const isEmpty = count === 0 && !pending.length && shown === cwd && state.loaded;
   const noAccess = !query && listing.error === NO_ACCESS;
-  const sidebarRoots = rootPlaces(drives, root, accessFolders, fullDisk);
+  const sidebarRoots = noFolders ? [] : rootPlaces(drives, root, accessFolders, fullDisk);
   const openPlace = (place: Place) => (place.file ? report(engine.openPath(place.path)) : go(place.path));
   const viewProps: ItemViewProps = {
     folders,
@@ -1120,9 +1219,18 @@ export default function App() {
                 setMenu((m) => ({ target: key, opened: m.opened + 1 }));
               }}
             >
-              {mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />}
+              {noFolders && (
+                <NoFolders
+                  asked={accessAsked}
+                  onChooseFolder={chooseRoot}
+                  onFullDiskAccess={askFullDiskAccess}
+                  onReveal={revealAppBundle}
+                  onRestart={() => report(engine.relaunch())}
+                />
+              )}
+              {!noFolders && (mode === "Icons" ? <IconView {...viewProps} /> : <ListView {...viewProps} />)}
               {marquee.box && <div className="marquee" style={marquee.box} />}
-              {isEmpty && noAccess && (
+              {!noFolders && isEmpty && noAccess && (
                 <NoAccess
                   name={baseName(cwd)}
                   asked={accessAsked}
@@ -1131,7 +1239,7 @@ export default function App() {
                   onRestart={() => report(engine.relaunch())}
                 />
               )}
-              {isEmpty && !noAccess && (
+              {!noFolders && isEmpty && !noAccess && (
                 <Empty className="py-20">
                   <EmptyHeader>
                     <EmptyDescription>

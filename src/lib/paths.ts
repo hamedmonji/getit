@@ -29,6 +29,21 @@ export function isWithin(path: string, dir: string): boolean {
   return path === dir || path.startsWith(dir.endsWith("/") ? dir : dir + "/");
 }
 
+/** A folder moved from one path to another. */
+export type Move = [from: string, to: string];
+
+/** Where `path` is after the folder at `from` moved to `to`: unchanged unless it's `from` or inside it. */
+export function relocatePath(path: string, [from, to]: Move): string {
+  return isWithin(path, from) ? to + path.slice(from.length) : path;
+}
+
+/** The moves of folders at `paths` into `dest`; ones already there don't move. */
+export const folderMoves = (paths: string[], dest: string): Move[] =>
+  paths.filter((path) => parentPath(path) !== dest).map((path) => [path, joinPath(dest, baseName(path))]);
+
+/** Where `path` is after each of `moves`, in turn. */
+export const relocateAll = (path: string, moves: Move[]): string => moves.reduce(relocatePath, path);
+
 /** Shows paths under the home folder as `~/…`. */
 export function displayPath(path: string, home: string): string {
   if (path === home) return "~";

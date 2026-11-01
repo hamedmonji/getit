@@ -7,7 +7,6 @@ import { type FileKind, resolveKind } from "./fileKind";
 import { formatEta, formatSize, formatSpeed } from "./format";
 import { baseName, isWithin, joinPath, parentPath } from "./paths";
 import { FILE_MANAGER } from "./platform";
-import { scheduleAllows } from "./schedule";
 
 export type ViewMode = "Icons" | "List";
 export type FileAction = "pause" | "resume" | "retry" | "reveal";
@@ -282,13 +281,12 @@ export function queueForDir(state: EngineState, dir: string): QueueInfo | undefi
   return Object.values(state.queues).find((q) => q.dir === dir);
 }
 
-/** The folder at `path` as its tile shows it at `minute` (since local midnight). */
-export function folderVm(state: EngineState, path: string, minute: number): FolderVm {
+export function folderVm(state: EngineState, path: string): FolderVm {
   const st = stats(state, path, true);
   const hasQueue = Object.values(state.queues).some((q) => isWithin(q.dir, path));
-  const own = queueForDir(state, path)?.settings;
-  const paused = !!own?.paused && st.pending > 0;
-  const scheduled = !!own && !own.paused && !scheduleAllows(own.schedule, minute) && st.pending > 0;
+  const own = queueForDir(state, path);
+  const paused = !!own?.settings.paused && st.pending > 0;
+  const scheduled = !!own?.schedule_closed && !own.settings.paused && st.pending > 0;
 
   let sub = "";
   if (st.active) sub = `${st.active} ↓ · ${formatSpeed(st.speed)}`;
@@ -328,8 +326,6 @@ export function searchResults(
   home: string,
   query: string,
   mode: ViewMode,
-  /** Minutes since local midnight, for the folders' schedules. */
-  minute: number,
 ): { folders: FolderVm[]; files: FileVm[] } {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const paths = new Set(listed.folders.map((name) => joinPath(listed.dir, name)));
@@ -348,7 +344,7 @@ export function searchResults(
   const folders = [...paths]
     .filter((path) => matches(baseName(path), words))
     .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
-    .map((path) => folderVm(state, path, minute));
+    .map((path) => folderVm(state, path));
   return { folders, files };
 }
 

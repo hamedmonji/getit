@@ -31,6 +31,25 @@ impl Schedule {
         }
     }
 
+    /// Whether a window starts after `from` and by `to` (minutes since local
+    /// midnight, going forward and wrapping past midnight).
+    pub fn starts_between(&self, from: u16, to: u16) -> bool {
+        self.mode == ScheduleMode::Hours
+            && self
+                .windows
+                .iter()
+                .any(|window| window.start != window.end && passed(window.start, from, to))
+    }
+
+    /// Whether a window ends after `from` and by `to`, as [`Schedule::starts_between`].
+    pub fn ends_between(&self, from: u16, to: u16) -> bool {
+        self.mode == ScheduleMode::Hours
+            && self
+                .windows
+                .iter()
+                .any(|window| window.start != window.end && passed(window.end, from, to))
+    }
+
     /// The schedule with every time kept within a day.
     pub(crate) fn sanitized(self) -> Self {
         let clamp = |minute: u16| minute.min(DAY - 1);
@@ -46,6 +65,14 @@ impl Schedule {
             ..self
         }
     }
+}
+
+/// Whether `minute` comes after `from` and by `to`, going forward from `from`
+/// and wrapping past midnight. Nothing passes when `from` and `to` are equal.
+fn passed(minute: u16, from: u16, to: u16) -> bool {
+    let ahead = |m: u16| (m + DAY - from) % DAY;
+    let gone = ahead(minute);
+    gone > 0 && gone <= ahead(to)
 }
 
 /// Minutes since midnight, in the local time zone as it is now.
@@ -119,6 +146,28 @@ mod tests {
         assert!(schedule.allows(150));
         assert!(!schedule.allows(200));
         assert!(!hours(Vec::new()).allows(0));
+    }
+
+    #[test]
+    fn a_start_counts_once_the_time_reaches_it() {
+        let schedule = hours(vec![window(250, 300)]);
+        assert!(schedule.starts_between(249, 250));
+        assert!(schedule.starts_between(100, 260), "after a long gap");
+        assert!(!schedule.starts_between(250, 251), "already past");
+        assert!(!schedule.starts_between(250, 250));
+        assert!(schedule.starts_between(1430, 255), "across midnight");
+        assert!(schedule.ends_between(299, 300));
+        assert!(!schedule.ends_between(300, 301));
+    }
+
+    #[test]
+    fn any_time_has_no_starts_or_ends() {
+        let schedule = Schedule {
+            mode: ScheduleMode::Any,
+            windows: vec![window(250, 300)],
+        };
+        assert!(!schedule.starts_between(0, 1000));
+        assert!(!schedule.ends_between(0, 1000));
     }
 
     #[test]

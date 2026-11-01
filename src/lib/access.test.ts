@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { accessShortcuts, accessTop, addFolder, commonFolder } from "./access";
+import {
+  accessShortcuts,
+  accessTop,
+  addFolder,
+  commonFolder,
+  forgetAccess,
+  goneFolders,
+  relocateAccess,
+  sameFolders,
+  volumeOf,
+} from "./access";
 
 describe("addFolder", () => {
   it("adds a folder", () => {
@@ -68,5 +78,71 @@ describe("accessShortcuts", () => {
   it("lists nothing with Full Disk Access or without a root", () => {
     expect(accessShortcuts("/h", "/h", "/h/Downloads", folders, true)).toEqual([]);
     expect(accessShortcuts("/h", "/h", null, folders, false)).toEqual([]);
+  });
+});
+
+describe("relocateAccess", () => {
+  it("follows a renamed root and moved added folders", () => {
+    const moves: [string, string][] = [
+      ["/h/Documents/old", "/h/Documents/new"],
+      ["/h/Desktop/a", "/h/Music/a"],
+    ];
+    expect(relocateAccess("/h/Documents/old", ["/h/Desktop/a", "/h/Music"], moves)).toEqual({
+      root: "/h/Documents/new",
+      folders: ["/h/Music/a", "/h/Music"],
+    });
+  });
+
+  it("keeps no root as none", () => {
+    expect(relocateAccess(null, [], [["/a", "/b"]])).toEqual({ root: null, folders: [] });
+  });
+});
+
+describe("forgetAccess", () => {
+  it("drops removed folders and ones inside them", () => {
+    expect(forgetAccess("/h/Downloads", ["/h/Desktop/a", "/h/Music/b", "/h/Music"], ["/h/Music"])).toEqual({
+      root: "/h/Downloads",
+      folders: ["/h/Desktop/a"],
+    });
+  });
+
+  it("puts the first added folder left in place of a removed root", () => {
+    const folders = ["/h/Documents/r/x", "/h/Desktop/a", "/h/Music"];
+    expect(forgetAccess("/h/Documents/r", folders, ["/h/Documents/r"])).toEqual({
+      root: "/h/Desktop/a",
+      folders: ["/h/Music"],
+    });
+  });
+
+  it("leaves no root when nothing else was chosen", () => {
+    expect(forgetAccess("/h/Documents/r", [], ["/h/Documents/r"])).toEqual({ root: null, folders: [] });
+  });
+
+  it("keeps no root as none", () => {
+    expect(forgetAccess(null, ["/a"], ["/a"])).toEqual({ root: null, folders: [] });
+  });
+});
+
+describe("sameFolders", () => {
+  it("compares folders in order", () => {
+    expect(sameFolders(["/a", "/b"], ["/a", "/b"])).toBe(true);
+    expect(sameFolders(["/a", "/b"], ["/b", "/a"])).toBe(false);
+    expect(sameFolders(["/a"], ["/a", "/b"])).toBe(false);
+  });
+});
+
+describe("volumeOf", () => {
+  it("is the volume for paths on another drive, else the startup drive", () => {
+    expect(volumeOf("/Volumes/Backup/a/b")).toBe("/Volumes/Backup");
+    expect(volumeOf("/Volumes/Backup")).toBe("/Volumes/Backup");
+    expect(volumeOf("/Users/me/Documents")).toBe("/");
+    expect(volumeOf("/Volumes")).toBe("/");
+  });
+});
+
+describe("goneFolders", () => {
+  it("is the missing folders whose drive is there", () => {
+    const existing = new Set(["/", "/h/a", "/Volumes/In"]);
+    expect(goneFolders(["/h/a", "/h/b", "/Volumes/In/x", "/Volumes/Out/y"], existing)).toEqual(["/h/b", "/Volumes/In/x"]);
   });
 });

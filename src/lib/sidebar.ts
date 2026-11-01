@@ -2,7 +2,7 @@
 
 import { moveTo } from "./batch";
 import { isFolderKey } from "./keys";
-import { baseName } from "./paths";
+import { baseName, isWithin, relocateAll, type Move } from "./paths";
 
 export interface Drive {
   name: string;
@@ -72,6 +72,37 @@ export function pinFavorites(favorites: Favorite[], items: Favorite[], index: nu
 
 export const unpinFavorite = (favorites: Favorite[], path: string): Favorite[] =>
   favorites.filter((f) => f.path !== path);
+
+/**
+ * `favorites` pointing where they are after folders moved or were renamed:
+ * ones that were the folder or inside it follow it.
+ */
+export const relocateFavorites = (favorites: Favorite[], moves: Move[]): Favorite[] =>
+  favorites.map((f) => ({ ...f, path: relocateAll(f.path, moves) }));
+
+/** A favorite unpinned because it went to the Trash, with where it was pinned. */
+export interface Unpinned {
+  index: number;
+  favorite: Favorite;
+}
+
+/** `favorites` without those that are, or are inside, the `removed` folders, and what was unpinned. */
+export function unpinRemoved(favorites: Favorite[], removed: string[]): { kept: Favorite[]; unpinned: Unpinned[] } {
+  const gone = (f: Favorite) => removed.some((r) => isWithin(f.path, r));
+  return {
+    kept: favorites.filter((f) => !gone(f)),
+    unpinned: favorites.flatMap((favorite, index) => (gone(favorite) ? [{ index, favorite }] : [])),
+  };
+}
+
+/** `favorites` with `unpinned` pinned again where they were; ones pinned since stay where they are. */
+export function repin(favorites: Favorite[], unpinned: Unpinned[]): Favorite[] {
+  const next = [...favorites];
+  for (const { index, favorite } of [...unpinned].sort((a, b) => a.index - b.index)) {
+    if (!next.some((f) => f.path === favorite.path)) next.splice(Math.min(index, next.length), 0, favorite);
+  }
+  return next;
+}
 
 /** Favorites read back from storage; anything unreadable is left out. */
 export function parseFavorites(raw: string | null): Favorite[] {
