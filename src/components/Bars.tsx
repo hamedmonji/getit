@@ -63,8 +63,8 @@ export interface ToolbarProps {
   onUp: () => void;
   /** The current folder as shown to the user, such as `~/Movies`. */
   cwdLabel: string;
-  /** The folders from home (or the root) down to the current one. */
-  crumbs: { label: string; path: string }[];
+  /** The folders from home (or the root) down to the current one; `drop: false` for one items can't be dropped on. */
+  crumbs: { label: string; path: string; drop?: boolean }[];
   onCrumb: (path: string) => void;
   /** Folder in the path that items being dragged would be dropped on. */
   dropTarget: string | null;
@@ -221,7 +221,7 @@ function AddressBar(p: ToolbarProps) {
                   <span key={c.path}>
                     <span
                       className={"address-segment" + (p.dropTarget === c.path ? " drop-target" : "")}
-                      data-drop={c.path}
+                      data-drop={c.drop === false ? undefined : c.path}
                       onClick={(e) => {
                         e.stopPropagation();
                         p.onCrumb(c.path);

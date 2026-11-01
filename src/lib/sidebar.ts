@@ -133,7 +133,7 @@ export function toFavorites(keys: string[], favorites: Favorite[], fileOf: (id: 
 }
 
 /** The sidebar's sections, in their first order. */
-export const SECTIONS = ["places", "favorites", "downloads"] as const;
+export const SECTIONS = ["places", "favorites", "views", "downloads"] as const;
 export type SectionId = (typeof SECTIONS)[number];
 
 const isSection = (value: unknown): value is SectionId => SECTIONS.includes(value as SectionId);
@@ -148,11 +148,21 @@ export function parseSections(raw: string | null): SectionId[] {
   }
 }
 
-/** Every section in the stored order, with any it lacks at the end. */
-export const sectionOrder = (stored: SectionId[]): SectionId[] => [
-  ...stored,
-  ...SECTIONS.filter((s) => !stored.includes(s)),
-];
+/**
+ * Every section in the stored order. Any it lacks, such as one added since,
+ * go after the section they follow at first, or first if none is there.
+ */
+export function sectionOrder(stored: SectionId[]): SectionId[] {
+  const order = [...stored];
+  SECTIONS.forEach((id, i) => {
+    if (order.includes(id)) return;
+    const before = SECTIONS.slice(0, i)
+      .reverse()
+      .find((s) => order.includes(s));
+    order.splice(before ? order.indexOf(before) + 1 : 0, 0, id);
+  });
+  return order;
+}
 
 /**
  * Where a section dragged to `y` goes among the sections showing, given each
@@ -172,6 +182,21 @@ export function moveSection(order: SectionId[], shown: SectionId[], id: SectionI
   const last = shown[shown.length - 1];
   return moveTo(order, [id], target === undefined ? order.indexOf(last) + 1 : order.indexOf(target)) as SectionId[];
 }
+
+/** What each section's header says; the places are Locations when they're drives. */
+export const sectionLabel = (id: SectionId, drives: boolean): string =>
+  ({ places: drives ? "Locations" : "Folders", favorites: "Favorites", views: "Views", downloads: "Downloading" })[id];
+
+/** `hidden` with section `id` hidden from the sidebar, or shown again. */
+export const withSectionShown = (hidden: SectionId[], id: SectionId, shown: boolean): SectionId[] =>
+  shown ? hidden.filter((s) => s !== id) : hidden.includes(id) ? hidden : [...hidden, id];
+
+/**
+ * The sections the sidebar shows, in `order`: those not hidden, and
+ * Downloading only while something is downloading.
+ */
+export const visibleSections = (order: SectionId[], hidden: SectionId[], downloading: boolean): SectionId[] =>
+  order.filter((id) => !hidden.includes(id) && (id !== "downloads" || downloading));
 
 /** `collapsed` with section `id` collapsed, or expanded if it was. */
 export const toggleSection = (collapsed: SectionId[], id: SectionId): SectionId[] =>

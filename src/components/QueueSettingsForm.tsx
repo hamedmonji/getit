@@ -138,7 +138,7 @@ export function QueueSettingsForm({
 }
 
 /** The design's small segmented control, from a shadcn toggle group. */
-function Segmented({
+export function Segmented({
   value,
   options,
   onChange,

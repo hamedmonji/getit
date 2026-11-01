@@ -8,7 +8,7 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { Details } from "./components/Details";
 import { NoAccess } from "./components/NoAccess";
@@ -18,6 +18,7 @@ import { QueueSettings } from "./components/QueueSettings";
 import { RefreshLink } from "./components/RefreshLink";
 import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
+import { ViewSettings } from "./components/ViewSettings";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import {
   CapturedBar,
@@ -99,6 +100,9 @@ import {
   parseSidebarWidth,
   pinFavorites,
   rootPlaces,
+  sectionLabel,
+  sectionOrder,
+  withSectionShown,
   SIDEBAR_WIDTH,
   slotIndex,
   toFavorites,
@@ -128,6 +132,19 @@ import {
   type FolderVm,
   type ViewMode,
 } from "./lib/viewModels";
+import {
+  newView,
+  parseViews,
+  removeView,
+  restoreView,
+  searchFiles,
+  updateView,
+  viewContents,
+  viewCrumb,
+  viewCrumbs,
+  viewName,
+  type View,
+} from "./lib/views";
 
 /** What listing a folder fails with when the system won't let getit read it. */
 const NO_ACCESS = "no access";
@@ -263,6 +280,17 @@ export default function App() {
   const [sections, setSections] = useStoredJson("getit.sidebarSections", parseSections);
   const [sidebarWidth, setSidebarWidth] = useStoredJson("getit.sidebarWidth", parseSidebarWidth);
   const [collapsedSections, setCollapsedSections] = useStoredJson("getit.sidebarCollapsed", parseSections);
+  const [hiddenSections, setHiddenSections] = useStoredJson("getit.sidebarHidden", parseSections);
+  const [views, setViews] = useStoredJson("getit.views", parseViews);
+  /**
+   * The view on screen in place of a folder, and the folder opened in it when
+   * it groups its downloads by folder; null when browsing folders.
+   */
+  const [viewAt, setViewAt] = useState<{ id: string; folder: string | null } | null>(null);
+  const activeView = viewAt ? (views.find((v) => v.id === viewAt.id) ?? null) : null;
+  const viewFolder = activeView?.layout === "grouped" ? (viewAt?.folder ?? null) : null;
+  /** The view whose name is being edited in the sidebar. */
+  const [renamingView, setRenamingView] = useState<string | null>(null);
   /** The mounted drives, listed again when the window regains focus in case one came or went. */
   const [drives, setDrives] = useState<Drive[]>([]);
   useEffect(() => {
@@ -328,6 +356,7 @@ export default function App() {
   const go = useCallback(
     (path: string, focus: string | null = null) => {
       setHistory((h) => (h && h.cwd !== path ? { cwd: path, back: [...h.back, h.cwd], forward: [] } : h));
+      setViewAt(null);
       setQuery("");
       select(focus ? [focus] : []);
     },
@@ -342,7 +371,13 @@ export default function App() {
     recapture: (urls) => setCaptured((prev) => withCaptured(prev, urls)),
   });
 
+  // In a view, Back leaves it for the folder it was opened from.
   const goBack = () => {
+    if (activeView) {
+      setViewAt(null);
+      select([]);
+      return;
+    }
     if (!history?.back.length) return;
     const back = [...history.back];
     const cwd = back.pop()!;
@@ -357,10 +392,24 @@ export default function App() {
   };
   /** Where Up stops: home, or the chosen folders' common folder without Full Disk Access. */
   const top = home ? accessTop(home, root, accessFolders, fullDisk) : null;
-  const canUp = !!home && !!cwd && canGoUp(cwd, home, top ?? home);
+  // In a view, Up leaves a folder opened in it for the view's folders.
+  const canUp = activeView ? viewFolder !== null : !!home && !!cwd && canGoUp(cwd, home, top ?? home);
   const goUp = () => {
-    if (canUp && cwd) go(parentPath(cwd), cwd);
+    if (activeView) {
+      if (viewFolder !== null) openViewFolder(null, viewFolder);
+    } else if (canUp && cwd) go(parentPath(cwd), cwd);
   };
+  /** Shows a view, at its folders or inside one of them, with `focus` selected. */
+  const openView = (id: string, folder: string | null = null, focus: string | null = null) => {
+    setViewAt({ id, folder });
+    setQuery("");
+    setAddressOpen(false);
+    select(focus ? [focus] : []);
+  };
+  const openViewFolder = (folder: string | null, focus: string | null = null) =>
+    activeView && openView(activeView.id, folder, focus);
+  /** Opens a folder: inside the view on screen, or else by going there. */
+  const openFolder = (path: string) => (activeView ? openViewFolder(path) : go(path));
 
   const queue = shown ? queueForDir(state, shown) : undefined;
   /** The chosen folders, which show at the top even without downloads. */
@@ -403,10 +452,20 @@ export default function App() {
         : null,
     [state, shown, listing, home, query, searchAll, mode],
   );
+  /** What the view on screen shows; a search in it looks through all its downloads. */
+  const viewShown = useMemo(() => {
+    if (!activeView) return null;
+    if (!query) return viewContents(state, activeView, viewFolder, mode);
+    return { folders: [], files: searchFiles(viewContents(state, { ...activeView, layout: "flat" }, null, mode).files, query) };
+  }, [state, activeView, viewFolder, mode, query]);
   /** Whether the search results include this kind; browsing shows everything. */
   const showsKind = (kind: SearchKind) => !results || !searchKinds.length || searchKinds.includes(kind);
-  const folders = showsKind("folders") ? shownFolders(results?.folders ?? allFolders) : [];
-  const unsortedFiles = showsKind("files") ? (results?.files ?? folderFiles) : null;
+  const folders = viewShown
+    ? viewShown.folders
+    : showsKind("folders")
+      ? shownFolders(results?.folders ?? allFolders)
+      : [];
+  const unsortedFiles = viewShown ? viewShown.files : showsKind("files") ? (results?.files ?? folderFiles) : null;
   const files = useMemo(() => (unsortedFiles ? sortFiles(unsortedFiles, sortOrder) : []), [unsortedFiles, sortOrder]);
 
   /** Every item in view, in display order. */
@@ -900,7 +959,7 @@ export default function App() {
         const [key] = selection;
         const file = files.find((f) => f.id === key);
         if (file) onOpenFile(file);
-        else go(key);
+        else openFolder(key);
       },
       moveSelection: (e) => moveSelection(e.key, e.shiftKey),
       trash: () => trashItems(selection),
@@ -988,11 +1047,13 @@ export default function App() {
   const menuContext: MenuContext = {
     state,
     cwd,
-    queue,
+    // A view isn't a folder: it has no queue, and its items are anywhere, as
+    // in a search, so their menus offer to show them in their folders.
+    queue: activeView ? undefined : queue,
     summary,
     doneHere: own.done,
     clip,
-    query,
+    query: activeView ? query || activeView.name : query,
     selection,
     selected,
     folders,
@@ -1042,13 +1103,13 @@ export default function App() {
   // Temporary items for links being added here: while checked, and while the
   // user decides about the duplicates among them.
   const asked = new Set(duplicates?.items.map((d) => d.pendingKey));
-  const pending = results
+  const pending = results || activeView
     ? []
     : pendingAdds
         .filter((p) => p.dir === shown && (p.name === null || asked.has(p.key)))
         .map((p) => pendingVm(p.key, p.url, p.name, p.name === null ? "Checking…" : "Already downloaded"));
-  const isEmpty = count === 0 && !pending.length && shown === cwd && state.loaded;
-  const noAccess = !query && listing.error === NO_ACCESS;
+  const isEmpty = count === 0 && !pending.length && (!!activeView || shown === cwd) && state.loaded;
+  const noAccess = !query && !activeView && listing.error === NO_ACCESS;
   const sidebarRoots = noFolders ? [] : rootPlaces(drives, root, accessFolders, fullDisk);
   const openPlace = (place: Place) => (place.file ? report(engine.openPath(place.path)) : go(place.path));
   const viewProps: ItemViewProps = {
@@ -1058,7 +1119,7 @@ export default function App() {
     selected,
     onItemMouseDown,
     onItemClick,
-    onOpenFolder: (path) => go(path),
+    onOpenFolder: openFolder,
     onOpenFile,
     onAction,
     editing,
@@ -1067,6 +1128,31 @@ export default function App() {
     dragging: new Set(drag?.keys),
     dropTarget: drag?.target ?? null,
     cut: new Set(clip?.cut ? clip.keys : []),
+  };
+
+  // A new view opens with its settings showing and its name being edited.
+  const addView = () => {
+    const view = newView(`v${Date.now()}`);
+    setViews([...views, view]);
+    openView(view.id);
+    setQueuePanel("open");
+    setRenamingView(view.id);
+  };
+  const changeView = (id: string, patch: Partial<View>) => {
+    setViews((current) => updateView(current, id, patch));
+    // The folders it was grouped into may not be there any more.
+    if (patch.layout && viewAt?.id === id) setViewAt({ id, folder: null });
+  };
+  const deleteView = (id: string) => {
+    const index = views.findIndex((v) => v.id === id);
+    if (index < 0) return;
+    const view = views[index];
+    setViews(removeView(views, id));
+    if (viewAt?.id === id) setViewAt(null);
+    pushUndo({
+      label: "Delete view",
+      run: async () => setViews((current) => restoreView(current, view, index)),
+    });
   };
 
   if (firstLaunch) {
@@ -1086,15 +1172,18 @@ export default function App() {
   return (
     <div className="app">
       <Toolbar
-        canBack={history!.back.length > 0}
+        canBack={!!activeView || history!.back.length > 0}
         canForward={history!.forward.length > 0}
         canUp={canUp}
         onBack={goBack}
         onForward={goForward}
         onUp={goUp}
-        cwdLabel={displayPath(cwd, home)}
-        crumbs={crumbsFrom(home, cwd, top ?? home)}
-        onCrumb={(path) => go(path)}
+        cwdLabel={activeView ? activeView.name : displayPath(cwd, home)}
+        crumbs={activeView ? viewCrumbs(activeView, viewFolder) : crumbsFrom(home, cwd, top ?? home)}
+        onCrumb={(path) => {
+          if (!activeView) go(path);
+          else if (path === viewCrumb(activeView.id)) openViewFolder(null, viewFolder);
+        }}
         dropTarget={drag?.target ?? null}
         addressOpen={addressOpen}
         onAddressOpen={setAddressOpen}
@@ -1122,7 +1211,7 @@ export default function App() {
         onMode={setMode}
         showAllFolders={showAllFolders}
         onToggleFolders={toggleFolders}
-        queueState={queue ? (!hasWork(state, queue) ? "empty" : queueStopped ? "stopped" : "running") : null}
+        queueState={queue && !activeView ? (!hasWork(state, queue) ? "empty" : queueStopped ? "stopped" : "running") : null}
         onToggleQueue={toggleQueue}
         onToggleAdd={() => {
           setPasting(null);
@@ -1181,7 +1270,23 @@ export default function App() {
               drives={fullDisk || !root}
               favorites={favoritePlaces(favorites)}
               downloads={overviewList(state, home, "active")}
-              active={cwd}
+              views={views}
+              activeView={activeView?.id ?? null}
+              renamingView={renamingView}
+              onOpenView={(id) => openView(id)}
+              onNewView={addView}
+              onStartRenameView={setRenamingView}
+              onRenameView={(id, name) => {
+                changeView(id, { name: viewName(name) });
+                setRenamingView(null);
+              }}
+              onCancelRenameView={() => setRenamingView(null)}
+              onEditView={(id) => {
+                openView(id);
+                setQueuePanel("open");
+              }}
+              onDeleteView={deleteView}
+              active={activeView ? "" : cwd}
               dropTarget={drag?.target ?? null}
               dragging={!!drag}
               fileManager={FILE_MANAGER}
@@ -1197,6 +1302,8 @@ export default function App() {
               onSections={setSections}
               collapsed={collapsedSections}
               onCollapsed={setCollapsedSections}
+              hidden={hiddenSections}
+              onHideSection={(id) => setHiddenSections(withSectionShown(hiddenSections, id, false))}
             />
           )}
         </SidebarProvider>
@@ -1243,7 +1350,11 @@ export default function App() {
                 <Empty className="py-20">
                   <EmptyHeader>
                     <EmptyDescription>
-                      {query
+                      {activeView
+                        ? query
+                          ? `Nothing in ${activeView.name} matches “${query}”.`
+                          : "No downloads match this view yet."
+                        : query
                         ? `${searchKinds.length === 1 ? `No ${searchKinds[0]}` : "Nothing"}${searchAll ? "" : ` in ${displayPath(cwd, home)}`} ${searchKinds.length === 1 ? "match" : "matches"} “${query}”.`
                         : listing.error
                           ? `Can't open this folder: ${listing.error}`
@@ -1258,10 +1369,23 @@ export default function App() {
           </ContextMenuTrigger>
           {/* A new menu each time, so one opened over another takes focus as the first did. */}
           <ContextMenuContent key={menu.opened}>
-            <ContextMenuItems ctx={menuContext} target={menu.target} />
+            {activeView && menu.target === null ? (
+              <ContextMenuItem onSelect={() => setQueuePanel("open")}>View settings</ContextMenuItem>
+            ) : (
+              <ContextMenuItems ctx={menuContext} target={menu.target} />
+            )}
           </ContextMenuContent>
         </ContextMenu>
-        {queuePanelOpen && (
+        {queuePanelOpen && activeView && (
+          <ViewSettings
+            view={activeView}
+            items={all}
+            onChange={(patch) => changeView(activeView.id, patch)}
+            onDelete={() => deleteView(activeView.id)}
+            onClose={() => setQueuePanel("closed")}
+          />
+        )}
+        {queuePanelOpen && !activeView && (
           <QueueSettings
             queue={
               settingsQueue
@@ -1396,6 +1520,14 @@ export default function App() {
           onDensity: setDensity,
           stripes,
           onStripes: setStripes,
+        }}
+        sidebar={{
+          sections: sectionOrder(sections).map((id) => ({
+            id,
+            label: sectionLabel(id, fullDisk || !root),
+            shown: !hiddenSections.includes(id),
+          })),
+          onShown: (id, shown) => setHiddenSections(withSectionShown(hiddenSections, id, shown)),
         }}
         access={
           IS_MAC && home

@@ -8,9 +8,11 @@ import {
   SIDEBAR_WIDTH,
   moveSection,
   parseSections,
-  SECTIONS,
   sectionDropIndex,
+  sectionLabel,
   sectionOrder,
+  visibleSections,
+  withSectionShown,
   toggleSection,
   type SectionId,
   favoriteOfKey,
@@ -149,9 +151,11 @@ describe("sections", () => {
     expect(parseSections('{"a":1}')).toEqual([]);
   });
 
-  it("puts sections missing from the stored order at the end", () => {
-    expect(sectionOrder([])).toEqual(["places", "favorites", "downloads"]);
-    expect(sectionOrder(["downloads"])).toEqual(["downloads", "places", "favorites"]);
+  it("puts sections missing from the stored order after the one they follow at first", () => {
+    expect(sectionOrder([])).toEqual(["places", "favorites", "views", "downloads"]);
+    expect(sectionOrder(["downloads"])).toEqual(["places", "favorites", "views", "downloads"]);
+    // Views, added later, goes after Favorites wherever the user put it.
+    expect(sectionOrder(["downloads", "favorites", "places"])).toEqual(["downloads", "favorites", "views", "places"]);
   });
 
   it("drops before the first section whose middle is below the pointer", () => {
@@ -162,7 +166,7 @@ describe("sections", () => {
   });
 
   it("moves a section to the gap it's dropped in", () => {
-    const order = [...SECTIONS];
+    const order: SectionId[] = ["places", "favorites", "downloads"];
     expect(moveSection(order, order, "downloads", 0)).toEqual(["downloads", "places", "favorites"]);
     expect(moveSection(order, order, "places", 3)).toEqual(["favorites", "downloads", "places"]);
     expect(moveSection(order, order, "places", 2)).toEqual(["favorites", "places", "downloads"]);
@@ -176,6 +180,24 @@ describe("sections", () => {
     const shown: SectionId[] = ["places", "favorites"];
     expect(moveSection(order, shown, "favorites", 0)).toEqual(["favorites", "places", "downloads"]);
     expect(moveSection(order, shown, "places", 2)).toEqual(["downloads", "favorites", "places"]);
+  });
+
+  it("labels the places Locations when they're drives", () => {
+    expect(sectionLabel("places", true)).toBe("Locations");
+    expect(sectionLabel("places", false)).toBe("Folders");
+    expect(sectionLabel("downloads", false)).toBe("Downloading");
+  });
+
+  it("hides a section once and shows it again", () => {
+    expect(withSectionShown([], "views", false)).toEqual(["views"]);
+    expect(withSectionShown(["views"], "views", false)).toEqual(["views"]);
+    expect(withSectionShown(["views", "favorites"], "views", true)).toEqual(["favorites"]);
+  });
+
+  it("shows sections not hidden, and Downloading only while something downloads", () => {
+    const order: SectionId[] = ["places", "favorites", "views", "downloads"];
+    expect(visibleSections(order, ["favorites"], true)).toEqual(["places", "views", "downloads"]);
+    expect(visibleSections(order, [], false)).toEqual(["places", "favorites", "views"]);
   });
 
   it("collapses and expands a section", () => {

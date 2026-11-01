@@ -23,6 +23,7 @@ import {
 } from "../lib/appearance";
 import { displayPath } from "../lib/paths";
 import { SETTINGS_PAGE_LABELS, settingsPages } from "../lib/settingsPages";
+import type { SectionId } from "../lib/sidebar";
 import { SORT_LABELS, type SortKey } from "../lib/sort";
 import { SPEED_LIMIT_LABELS, SPEED_LIMITS, type SpeedLimit } from "../lib/speedLimit";
 import { GripIcon } from "./icons";
@@ -67,6 +68,12 @@ export interface AppearanceSettings {
   onStripes: (stripes: Stripes) => void;
 }
 
+/** The sidebar's sections, to show again those hidden from it. */
+export interface SidebarSettings {
+  sections: { id: SectionId; label: string; shown: boolean }[];
+  onShown: (id: SectionId, shown: boolean) => void;
+}
+
 /** How far the pointer moves before a press on a row becomes a drag. */
 const DRAG_THRESHOLD = 4;
 
@@ -85,6 +92,7 @@ export function Settings({
   pasteMode,
   onPasteMode,
   appearance,
+  sidebar,
   access,
   development,
   onClose,
@@ -95,6 +103,7 @@ export function Settings({
   pasteMode: "ask" | "always";
   onPasteMode: (mode: "ask" | "always") => void;
   appearance: AppearanceSettings;
+  sidebar: SidebarSettings;
   /** The Folder access section shows only when given. */
   access?: AccessSettings;
   /** The Development page shows only when given. */
@@ -144,6 +153,7 @@ export function Settings({
               </div>
               <p className="settings-note">When off, pasted links go straight into the current folder's queue.</p>
             </section>
+            <SidebarSections {...sidebar} />
           </TabsContent>
           <TabsContent value="appearance" className="min-h-0 overflow-y-auto p-5 pt-12">
             <Appearance {...appearance} />
@@ -189,6 +199,29 @@ export function Settings({
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** A checkbox for each sidebar section, to hide it or show it again. */
+function SidebarSections({ sections, onShown }: SidebarSettings) {
+  const id = useId();
+  return (
+    <section className="settings-section">
+      <h3 className="settings-heading">Sidebar</h3>
+      <div className="flex flex-col gap-2.5">
+        {sections.map((s) => (
+          <div key={s.id} className="flex items-center gap-2">
+            <Checkbox
+              id={`${id}-${s.id}`}
+              checked={s.shown}
+              onCheckedChange={(checked) => onShown(s.id, checked === true)}
+            />
+            <Label htmlFor={`${id}-${s.id}`}>{s.label}</Label>
+          </div>
+        ))}
+      </div>
+      <p className="settings-note">Sections can also be hidden by right-clicking their name in the sidebar.</p>
+    </section>
   );
 }
 

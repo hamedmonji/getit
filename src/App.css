@@ -886,27 +886,27 @@ body {
   border-right: 1px solid var(--line);
 }
 
-.sidebar [data-slot="sidebar-group-label"] {
+.sidebar [data-sidebar="group-label"] {
   color: var(--ink-muted);
   font-size: 13px;
   font-weight: 600;
 }
 
-.sidebar [data-slot="sidebar-menu-button"] {
+.sidebar [data-sidebar="menu-button"] {
   height: 30px;
   font-size: 13px;
 }
 
-.sidebar [data-slot="sidebar-menu-button"] svg {
+.sidebar [data-sidebar="menu-button"] svg {
   color: var(--tint);
 }
 
-.sidebar [data-slot="sidebar-menu-button"][data-active] {
+.sidebar [data-sidebar="menu-button"][data-active] {
   background: var(--track);
   color: var(--tint);
 }
 
-.sidebar [data-slot="sidebar-menu-button"].drop-target {
+.sidebar [data-sidebar="menu-button"].drop-target {
   background: var(--tintSoft);
   box-shadow: inset 0 0 0 2px var(--tint);
 }
@@ -950,10 +950,11 @@ body {
 .sidebar .sidebar-section-action {
   top: 6px;
   right: 8px;
-  color: var(--ink-muted);
+  color: var(--tint);
 }
 
 .sidebar .sidebar-section-action:hover {
+  background: var(--tintSoft);
   color: var(--tint);
 }
 
@@ -1025,7 +1026,7 @@ body {
 }
 
 /* A running download: its name, progress and status, stacked. */
-.sidebar [data-slot="sidebar-menu-button"].sidebar-download {
+.sidebar [data-sidebar="menu-button"].sidebar-download {
   height: auto;
   flex-direction: column;
   align-items: stretch;
@@ -2010,7 +2011,7 @@ body {
   padding: 0 6px;
 }
 
-[data-density="compact"] .sidebar [data-slot="sidebar-group-label"] {
+[data-density="compact"] .sidebar [data-sidebar="group-label"] {
   height: 24px;
   font-size: 12px;
 }
@@ -2019,19 +2020,19 @@ body {
   gap: 0;
 }
 
-[data-density="compact"] .sidebar [data-slot="sidebar-menu-button"] {
+[data-density="compact"] .sidebar [data-sidebar="menu-button"] {
   height: 24px;
   padding: 0 6px;
   font-size: 12px;
 }
 
-[data-density="compact"] .sidebar [data-slot="sidebar-menu-button"].sidebar-download {
+[data-density="compact"] .sidebar [data-sidebar="menu-button"].sidebar-download {
   height: auto;
   padding: 4px 6px;
   gap: 3px;
 }
 
-[data-density="compact"] .sidebar [data-slot="sidebar-menu-button"] svg {
+[data-density="compact"] .sidebar [data-sidebar="menu-button"] svg {
   width: 14px;
   height: 14px;
 }
@@ -2051,4 +2052,226 @@ body {
   .file-thumb {
     animation: none;
   }
+}
+
+/* Views, from the v7 Views design handoff. */
+.sidebar .sidebar-rename {
+  height: 26px;
+  padding: 0 6px;
+  border-color: var(--tint);
+  font-size: 13px;
+  box-shadow: 0 0 0 3px var(--tintSoft);
+}
+
+.queue-settings-body .vs-input,
+.queue-settings-body .vs-add-site {
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  font-size: 13px;
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.queue-settings-body .vs-add-site {
+  height: 32px;
+  border-style: dashed;
+  background: transparent;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+}
+
+.queue-settings-body .vs-add-site:focus-visible {
+  border-color: var(--tint);
+}
+
+.vs-chips,
+.vs-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.vs-chips .vs-chip {
+  height: 26px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.vs-chips .vs-chip[data-state="on"] {
+  border-color: var(--tint);
+  background: var(--tintSoft);
+  color: var(--tint);
+}
+
+.vs-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+}
+
+.vs-tokens:focus-within {
+  border-color: var(--tint);
+}
+
+.vs-tokens .vs-token {
+  height: 22px;
+  gap: 4px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+  background: var(--tintSoft);
+  color: var(--tint);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.vs-token-remove {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tint);
+  cursor: pointer;
+}
+
+.vs-token-remove:hover {
+  background: var(--hover);
+}
+
+.vs-token-input {
+  flex: 1;
+  min-width: 90px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  outline: none;
+}
+
+.vs-suggest .vs-suggestion {
+  height: 22px;
+  padding: 0 7px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.vs-suggest .vs-suggestion:hover {
+  border-color: var(--tint);
+  color: var(--tint);
+}
+
+.vs-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 4px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+}
+
+.vs-source .qs-regex {
+  height: 24px;
+  min-width: 0;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.vs-source-domain {
+  flex: 1;
+  min-width: 0;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.vs-site-badge {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.vs-site-badge.small {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 9.5px;
+}
+
+.vs-options {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  max-height: 200px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.vs-option {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vs-option[aria-selected="true"] {
+  background: var(--hover);
+}
+
+.vs-options-empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--ink-muted);
 }
