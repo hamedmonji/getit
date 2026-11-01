@@ -1,14 +1,25 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import {
+  ContextMenu,
+  ContextMenuCheckboxItem,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { useColumnWidths } from "../hooks/useColumnWidths";
+import { useStoredJson } from "../hooks/useStoredJson";
 import { swallowClick } from "../hooks/useItemDrag";
 import {
   COLUMN_LABELS,
   COLUMNS,
   columnTemplate,
   columnsWidth,
+  parseHiddenColumns,
   pinName,
   resetColumn,
   resizeColumn,
+  shownColumns,
+  withColumnShown,
+  type ColumnKey,
 } from "../lib/columns";
 import { splitName } from "../lib/paths";
 import type { FileVm, FolderVm } from "../lib/viewModels";
@@ -264,29 +275,59 @@ function ColumnDivider({
   );
 }
 
+/**
+ * The list: a header of resizable columns over the rows. Right-clicking the
+ * header lists the columns to show or hide; the name column always shows.
+ */
 export function ListView(props: ItemViewProps) {
   const [widths, setWidths] = useColumnWidths();
+  const [hidden, setHidden] = useStoredJson("getit.hiddenColumns", parseHiddenColumns);
+  const shown = shownColumns(hidden);
   const nameCell = useRef<HTMLDivElement>(null);
   const columns = {
-    "--list-columns": columnTemplate(widths),
-    "--list-columns-width": `${columnsWidth(widths)}px`,
+    "--list-columns": columnTemplate(widths, shown),
+    "--list-columns-width": `${columnsWidth(widths, shown)}px`,
   } as CSSProperties;
+  /** A row's cells for the shown columns, in their order. */
+  const cells = (row: Record<ColumnKey, ReactNode>) => shown.map((key) => <Fragment key={key}>{row[key]}</Fragment>);
   return (
     <div className="list" style={columns}>
-      <div className="list-header">
-        {COLUMNS.map((key) => (
-          <div key={key} ref={key === "name" ? nameCell : undefined} className="list-column">
-            <div className="ellipsis">{COLUMN_LABELS[key]}</div>
-            <ColumnDivider
-              label={COLUMN_LABELS[key]}
-              onStart={() => setWidths((w) => pinName(w, nameCell.current!.getBoundingClientRect().width))}
-              onResize={(width) => setWidths((w) => resizeColumn(w, key, width))}
-              onReset={() => setWidths((w) => resetColumn(w, key))}
-            />
+      <ContextMenu modal={false}>
+        <ContextMenuTrigger asChild>
+          <div
+            className="list-header"
+            // Not the folder's menu, which the content area opens on a right-click.
+            onContextMenu={(e) => e.stopPropagation()}
+          >
+            {shown.map((key) => (
+              <div key={key} ref={key === "name" ? nameCell : undefined} className="list-column">
+                <div className="ellipsis">{COLUMN_LABELS[key]}</div>
+                <ColumnDivider
+                  label={COLUMN_LABELS[key]}
+                  onStart={() => setWidths((w) => pinName(w, nameCell.current!.getBoundingClientRect().width))}
+                  onResize={(width) => setWidths((w) => resizeColumn(w, key, width))}
+                  onReset={() => setWidths((w) => resetColumn(w, key))}
+                />
+              </div>
+            ))}
+            <span />
           </div>
-        ))}
-        <span />
-      </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {COLUMNS.map((key) => (
+            <ContextMenuCheckboxItem
+              key={key}
+              checked={shown.includes(key)}
+              disabled={key === "name"}
+              // Stays open, to tick more than one.
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={(checked) => setHidden((h) => withColumnShown(h, key, checked))}
+            >
+              {COLUMN_LABELS[key]}
+            </ContextMenuCheckboxItem>
+          ))}
+        </ContextMenuContent>
+      </ContextMenu>
       <div className="list-rows">
         {props.folders.map((g) => (
           <div
@@ -297,10 +338,12 @@ export function ListView(props: ItemViewProps) {
           >
             <span />
             <FolderGlyph vm={g} size="small" />
-            <FolderName props={props} path={g.path} name={g.name} className="row-name" />
-            <span className="row-sub">{g.sub}</span>
-            <ProgressBar className="row-bar" pct={g.pct} color={g.barColor} />
-            <span className="row-size">{g.sizeLabel}</span>
+            {cells({
+              name: <FolderName props={props} path={g.path} name={g.name} className="row-name" />,
+              status: <span className="row-sub">{g.sub}</span>,
+              progress: <ProgressBar className="row-bar" pct={g.pct} color={g.barColor} />,
+              size: <span className="row-size">{g.sizeLabel}</span>,
+            })}
             <span />
           </div>
         ))}
@@ -314,12 +357,16 @@ export function ListView(props: ItemViewProps) {
               <ActionButton vm={f} onAction={props.onAction} />
             </div>
             <FileGlyph vm={f} size="small" />
-            <FileName props={props} vm={f} className="row-name" />
-            <span className="row-status" title={f.status}>
-              {f.status}
-            </span>
-            <ProgressBar className="row-bar" pct={f.pct} color={f.color} />
-            <span className="row-size">{f.sizeLabel}</span>
+            {cells({
+              name: <FileName props={props} vm={f} className="row-name" />,
+              status: (
+                <span className="row-status" title={f.status}>
+                  {f.status}
+                </span>
+              ),
+              progress: <ProgressBar className="row-bar" pct={f.pct} color={f.color} />,
+              size: <span className="row-size">{f.sizeLabel}</span>,
+            })}
             <span />
           </div>
         ))}
@@ -327,12 +374,16 @@ export function ListView(props: ItemViewProps) {
           <div key={f.id} className="row file-row pending" title={f.info}>
             <span />
             <FileGlyph vm={f} size="small" />
-            <span className="row-name" style={{ color: f.nameColor }}>
-              {f.name}
-            </span>
-            <span className="row-status">{f.status}</span>
-            <span />
-            <span className="row-size">{f.sizeLabel}</span>
+            {cells({
+              name: (
+                <span className="row-name" style={{ color: f.nameColor }}>
+                  {f.name}
+                </span>
+              ),
+              status: <span className="row-status">{f.status}</span>,
+              progress: <span />,
+              size: <span className="row-size">{f.sizeLabel}</span>,
+            })}
             <span />
           </div>
         ))}

@@ -51,15 +51,44 @@ export function resetColumn(widths: ColumnWidths, key: ColumnKey): ColumnWidths 
  * front of each row. Once the name column is sized, an empty column at the end
  * takes up the slack instead, so the columns keep their widths.
  */
-export function columnTemplate(w: ColumnWidths): string {
+export function columnTemplate(w: ColumnWidths, shown: ColumnKey[] = COLUMNS): string {
   const name = w.name === null ? `minmax(${MIN_WIDTHS.name}px, 1fr)` : `${w.name}px`;
   const rest = w.name === null ? "0px" : "minmax(0px, 1fr)";
-  return [...COLUMNS.map((key) => (key === "name" ? name : `${w[key]}px`)), rest].join(" ");
+  return [...shown.map((key) => (key === "name" ? name : `${w[key]}px`)), rest].join(" ");
 }
 
-/** Total width the columns need, so the list scrolls sideways rather than squeezing them. */
-export function columnsWidth(w: ColumnWidths): number {
-  return (w.name ?? MIN_WIDTHS.name) + w.progress + w.size + w.status;
+/** The gap between the list's columns, in pixels, as in its CSS. */
+const COLUMN_GAP = 12;
+
+/**
+ * Total width the shown columns need, so the list scrolls sideways rather than
+ * squeezing them. The list's CSS allows for the gaps of every column; a hidden
+ * one gives its gap back.
+ */
+export function columnsWidth(w: ColumnWidths, shown: ColumnKey[] = COLUMNS): number {
+  const widths = shown.map((key) => (key === "name" ? (w.name ?? MIN_WIDTHS.name) : w[key]));
+  return widths.reduce((a, b) => a + b, 0) - (COLUMNS.length - shown.length) * COLUMN_GAP;
+}
+
+/** The columns shown, in their order: all but the hidden ones. The name column always shows. */
+export const shownColumns = (hidden: ColumnKey[]): ColumnKey[] =>
+  COLUMNS.filter((key) => key === "name" || !hidden.includes(key));
+
+/** `hidden` with column `key` hidden, or shown again; the name column can't be hidden. */
+export function withColumnShown(hidden: ColumnKey[], key: ColumnKey, shown: boolean): ColumnKey[] {
+  if (shown) return hidden.filter((k) => k !== key);
+  return key === "name" || hidden.includes(key) ? hidden : [...hidden, key];
+}
+
+/** Hidden columns read back from storage: known ones other than the name, each once. */
+export function parseHiddenColumns(raw: string | null): ColumnKey[] {
+  try {
+    const parsed: unknown = JSON.parse(raw ?? "[]");
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed)].filter((k): k is ColumnKey => COLUMNS.includes(k as ColumnKey) && k !== "name");
+  } catch {
+    return [];
+  }
 }
 
 /** Widths saved as JSON; anything missing, too narrow, or not a number falls back to its default. */

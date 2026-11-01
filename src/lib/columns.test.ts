@@ -4,6 +4,9 @@ import {
   MIN_WIDTHS,
   columnTemplate,
   columnsWidth,
+  parseHiddenColumns,
+  shownColumns,
+  withColumnShown,
   parseColumnWidths,
   pinName,
   resetColumn,
@@ -81,5 +84,30 @@ describe("parseColumnWidths", () => {
   it("drops widths that are missing, too narrow, or not numbers", () => {
     const raw = JSON.stringify({ name: null, progress: "wide", size: 2, status: 150 });
     expect(parseColumnWidths(raw)).toEqual({ ...DEFAULT_WIDTHS, status: 150 });
+  });
+});
+
+describe("hidden columns", () => {
+  it("shows every column but the hidden ones, and always the name", () => {
+    expect(shownColumns([])).toEqual(["name", "status", "progress", "size"]);
+    expect(shownColumns(["status", "name"])).toEqual(["name", "progress", "size"]);
+  });
+
+  it("hides a column once, shows it again, and never hides the name", () => {
+    expect(withColumnShown([], "size", false)).toEqual(["size"]);
+    expect(withColumnShown(["size"], "size", false)).toEqual(["size"]);
+    expect(withColumnShown(["size", "status"], "size", true)).toEqual(["status"]);
+    expect(withColumnShown([], "name", false)).toEqual([]);
+  });
+
+  it("lays out and measures only the shown columns, giving back hidden ones' gaps", () => {
+    expect(columnTemplate(DEFAULT_WIDTHS, ["name", "size"])).toBe("minmax(120px, 1fr) 80px 0px");
+    expect(columnsWidth(DEFAULT_WIDTHS, ["name", "size"])).toBe(120 + 80 - 2 * 12);
+  });
+
+  it("reads hidden columns back, leaving out unknown ones and the name", () => {
+    expect(parseHiddenColumns('["size","name","nope","size"]')).toEqual(["size"]);
+    expect(parseHiddenColumns(null)).toEqual([]);
+    expect(parseHiddenColumns("bad")).toEqual([]);
   });
 });
