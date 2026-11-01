@@ -24,7 +24,6 @@ import {
   InputBar,
   PasteBar,
   PauseBar,
-  StatusBar,
   Toolbar,
   UpdateBar,
   type SearchKind,
@@ -915,7 +914,6 @@ export default function App() {
     setEditing,
   };
 
-  const global = stats(state, "/", true);
   // A selected folder with a queue, else the folder you're in.
   // From what's selected, not `selection`, which only holds items in the listing
   // shown and so drops the folder you came up from until the parent's listing arrives.
@@ -936,7 +934,6 @@ export default function App() {
   const count = folders.length + files.length;
   const single = selection.length === 1 ? selection[0] : null;
   const selFile = files.find((f) => f.id === single);
-  const selFolder = folders.find((g) => g.path === single);
   const nameOf = (key: string) =>
     (favoriteOfKey(key) !== null ? baseName(favoriteOfKey(key)!) : null) ??
     folders.find((g) => g.path === key)?.name ?? files.find((f) => f.id === key)?.name ?? key;
@@ -1250,31 +1247,6 @@ export default function App() {
           }}
         />
       )}
-
-      <StatusBar
-        itemCount={
-          query
-            ? plural(count, "result")
-            : plural(count, "item") + (queue?.settings.paused ? " · Queue paused" : "")
-        }
-        selInfo={
-          selFile
-            ? query
-              ? `${displayPath(dirOf(selFile.id) ?? cwd, home)} — ${selFile.info}`
-              : selFile.info
-            : selFolder
-              ? `${displayPath(selFolder.path, home)}`
-              : selection.length > 1
-                ? `${plural(selection.length, "item")} selected — drag onto a folder to move`
-                : ""
-        }
-        left={`${global.active} downloading · ${global.queued} waiting`}
-        speed={`↓ ${formatSpeed(global.speed)}`}
-        warning={state.saveError}
-        notice={notice}
-        detailsOpen={detailsOpen}
-        onToggleDetails={toggleDetails}
-      />
 
       <RefreshLink
         download={

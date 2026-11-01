@@ -1,6 +1,8 @@
 
 2. Windows Build
-4. schedule
+3. schedule
+4. columns add/remove
+5. side bar customization
 
 ## low prio
 

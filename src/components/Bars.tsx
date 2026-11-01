@@ -27,7 +27,6 @@ import type { UpdatePhase } from "../hooks/useUpdate";
 import {
   BackIcon,
   CloseIcon,
-  ExpandIcon,
   FilterIcon,
   FolderIcon,
   ForwardIcon,
@@ -790,57 +789,6 @@ export function DuplicatePanel({
           </Item>
         ))}
       </ul>
-    </div>
-  );
-}
-
-export function StatusBar({
-  itemCount,
-  selInfo,
-  left,
-  speed,
-  warning,
-  notice,
-  detailsOpen,
-  onToggleDetails,
-}: {
-  itemCount: string;
-  selInfo: string;
-  left: string;
-  speed: string;
-  warning: string | null;
-  /** A passing message, such as why a move failed. */
-  notice: string | null;
-  detailsOpen: boolean;
-  onToggleDetails: () => void;
-}) {
-  return (
-    <div className="status-bar">
-      <span>{itemCount}</span>
-      <span className="mono ellipsis">{selInfo}</span>
-      <div className="spacer" />
-      {notice && (
-        <span className="status-warning ellipsis" title={notice}>
-          {notice}
-        </span>
-      )}
-      {warning && (
-        <span className="status-warning" title={warning}>
-          Couldn't save queues
-        </span>
-      )}
-      <span>{left}</span>
-      <span className="mono ink">{speed}</span>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        className="-mr-1.5 aria-pressed:text-ink"
-        title={`${detailsOpen ? "Hide" : "Show"} details (Space)`}
-        aria-pressed={detailsOpen}
-        onClick={onToggleDetails}
-      >
-        <ExpandIcon open={detailsOpen} />
-      </Button>
     </div>
   );
 }
