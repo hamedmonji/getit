@@ -184,7 +184,8 @@ export function downloadMenu(ctx: MenuContext, vm: FileVm): MenuItem[] {
   items.push(revealItem(ctx, [vm.id]));
   items.push({ kind: "action", label: "Rename", shortcut: RENAME_SHORTCUT, onSelect: () => ctx.setEditing(vm.id) });
   items.push({ kind: "separator" }, ...clipMenu(ctx, [vm.id]), { kind: "separator" });
-  if (vm.done) {
+  // A file that isn't a download has no list to leave.
+  if (vm.done && !vm.plain) {
     // The file stays on disk.
     items.push({
       kind: "action",

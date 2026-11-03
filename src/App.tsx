@@ -125,6 +125,7 @@ import {
   nameFromUrl,
   overviewList,
   pendingVm,
+  plainFiles,
   queueForDir,
   searchResults,
   stats,
@@ -438,6 +439,19 @@ export default function App() {
         : [],
     [state, queue, mode, listing],
   );
+  // Showing all folders shows the files that aren't downloads too, except hidden ones.
+  const looseFiles = useMemo(
+    () =>
+      showAllFolders && shown
+        ? plainFiles(
+            shown,
+            listing.visible,
+            (queue?.downloads ?? []).map((id) => state.downloads[id]).filter(Boolean),
+            mode,
+          )
+        : [],
+    [showAllFolders, shown, listing, queue, state, mode],
+  );
   const results = useMemo(
     () =>
       query && shown && home
@@ -465,14 +479,15 @@ export default function App() {
     : showsKind("folders")
       ? shownFolders(results?.folders ?? allFolders)
       : [];
-  const unsortedFiles = viewShown ? viewShown.files : showsKind("files") ? (results?.files ?? folderFiles) : null;
+  const unsortedFiles = viewShown ? viewShown.files : showsKind("files") ? (results?.files ?? [...folderFiles, ...looseFiles]) : null;
   const files = useMemo(() => (unsortedFiles ? sortFiles(unsortedFiles, sortOrder) : []), [unsortedFiles, sortOrder]);
 
   /** Every item in view, in display order. */
   const order = [...folders.map((g) => g.path), ...files.map((f) => f.id)];
   /** The selected items that are still in view, in display order. */
   const selection = order.filter((key) => selected.has(key));
-  const selectedFiles = files.filter((f) => selected.has(f.id));
+  /** The selected downloads; files that aren't downloads are left out. */
+  const selectedFiles = files.filter((f) => selected.has(f.id) && !f.plain);
 
   useEffect(() => {
     if (!notice) return;
@@ -480,6 +495,8 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [notice]);
 
+  /** Whether `path` is a file in the folder that isn't a download. */
+  const isPlainFile = (path: string) => looseFiles.some((f) => f.id === path);
   /** A finished download's file, or null while it has none. */
   const fileOf = (id: string) => {
     const item = state.downloads[id];
@@ -492,12 +509,12 @@ export default function App() {
   const { drag, start: startDrag } = useItemDrag(
     (keys, target) =>
       slotIndex(target) !== null
-        ? toFavorites(keys, favorites, fileOf).length > 0
+        ? toFavorites(keys, favorites, fileOf, isPlainFile).length > 0
         : !keys.some((key) => favoriteOfKey(key) !== null) && target !== shown && !keys.includes(target),
     (keys, target) => {
       const slot = slotIndex(target);
       if (slot !== null) {
-        setFavorites(pinFavorites(favorites, toFavorites(keys, favorites, fileOf), slot));
+        setFavorites(pinFavorites(favorites, toFavorites(keys, favorites, fileOf, isPlainFile), slot));
         return;
       }
       const { ids, paths } = splitKeys(keys);

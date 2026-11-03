@@ -137,7 +137,10 @@ export interface Snapshot {
 
 export interface DirListing {
   folders: { name: string; items: number }[];
+  /** Every file's name, hidden ones too. */
   files: string[];
+  /** The files that aren't hidden, with their size and when they last changed (ms since the epoch, 0 if unknown). */
+  visible: { name: string; size: number; modified: number }[];
 }
 
 export const engine = {

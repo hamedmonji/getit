@@ -9,7 +9,7 @@ export interface Listing extends DirListing {
   path: string | null;
 }
 
-const EMPTY: Listing = { folders: [], files: [], present: new Set(), error: null, path: null };
+const EMPTY: Listing = { folders: [], files: [], visible: [], present: new Set(), error: null, path: null };
 
 /**
  * Lists `path`'s subfolders and files. Re-lists whenever `refreshKey` changes

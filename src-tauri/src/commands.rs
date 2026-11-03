@@ -117,6 +117,15 @@ pub struct Folder {
     items: usize,
 }
 
+/// A file that isn't hidden, as the folder shows it.
+#[derive(Serialize)]
+pub struct VisibleFile {
+    name: String,
+    size: u64,
+    /// When it was last changed, in milliseconds since the Unix epoch; 0 if unknown.
+    modified: u64,
+}
+
 #[derive(Serialize)]
 pub struct DirListing {
     /// Visible subfolders, sorted by name.
@@ -124,6 +133,8 @@ pub struct DirListing {
     /// Names of the files in the folder, used to tell whether finished downloads
     /// are still there.
     files: Vec<String>,
+    /// The files that aren't hidden, to show with the folders.
+    visible: Vec<VisibleFile>,
 }
 
 /// Folder-like bundles that Finder shows as single items.
@@ -164,10 +175,11 @@ pub async fn list_dir(access: State<'_, Access>, path: String) -> CommandResult<
                 }
             })
             .collect();
-        return Ok(DirListing { folders, files: Vec::new() });
+        return Ok(DirListing { folders, files: Vec::new(), visible: Vec::new() });
     }
     let mut folders = Vec::new();
     let mut files = Vec::new();
+    let mut visible = Vec::new();
     let entries = fs::read_dir(&path).map_err(|e| match e.kind() {
         io::ErrorKind::PermissionDenied => NO_ACCESS.to_string(),
         _ => err(e),
@@ -180,6 +192,14 @@ pub async fn list_dir(access: State<'_, Access>, path: String) -> CommandResult<
             continue;
         };
         if meta.is_file() {
+            if !is_hidden(&name, &meta) {
+                let modified = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map_or(0, |d| d.as_millis() as u64);
+                visible.push(VisibleFile { name: name.clone(), size: meta.len(), modified });
+            }
             files.push(name);
         } else if meta.is_dir() && !is_hidden(&name, &meta) && !is_package(&name) {
             let path = entry.path();
@@ -191,7 +211,7 @@ pub async fn list_dir(access: State<'_, Access>, path: String) -> CommandResult<
         }
     }
     folders.sort_by_key(|f| f.name.to_lowercase());
-    Ok(DirListing { folders, files })
+    Ok(DirListing { folders, files, visible })
 }
 
 fn is_hidden(name: &str, meta: &fs::Metadata) -> bool {
@@ -423,6 +443,12 @@ pub async fn copy_folders(engine: State<'_, Engine>, paths: Vec<String>, dest: S
                 return Err(format!("can't copy \"{name}\" into itself"));
             }
             let new = free_folder_path(&dest, &name)?;
+            // A file shown among the folders is copied as it is.
+            if old.is_file() {
+                fs::copy(&old, &new).map_err(|e| format!("couldn't copy \"{name}\": {e}"))?;
+                copies.push(new.to_string_lossy().into_owned());
+                continue;
+            }
             let copied = copy_dir(&old, &new).map_err(|e| format!("couldn't copy \"{name}\": {e}"));
             if let Err(e) = copied.and_then(|()| engine.copy_queues(&old, &new).map_err(err)) {
                 let _ = fs::remove_dir_all(&new);

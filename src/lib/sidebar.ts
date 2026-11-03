@@ -118,15 +118,21 @@ export function parseFavorites(raw: string | null): Favorite[] {
 }
 
 /**
- * What dragged `keys` pin: folders as they are, downloads as their finished
+ * What dragged `keys` pin: folders as they are, files keyed by their path
+ * (`isFile` tells them from folders) as files, downloads as their finished
  * file (`fileOf` gives it, or null for one without a file yet, which is left
  * out), and favorites dragged within the sidebar as they were pinned.
  */
-export function toFavorites(keys: string[], favorites: Favorite[], fileOf: (id: string) => string | null): Favorite[] {
+export function toFavorites(
+  keys: string[],
+  favorites: Favorite[],
+  fileOf: (id: string) => string | null,
+  isFile: (path: string) => boolean = () => false,
+): Favorite[] {
   return keys.flatMap((key): Favorite[] => {
     const pinned = favoriteOfKey(key);
     if (pinned !== null) return favorites.filter((f) => f.path === pinned);
-    if (isFolderKey(key)) return [{ path: key, file: false }];
+    if (isFolderKey(key)) return [{ path: key, file: isFile(key) }];
     const file = fileOf(key);
     return file ? [{ path: file, file: true }] : [];
   });

@@ -314,11 +314,11 @@ export function ListView(props: ItemViewProps) {
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
-          {COLUMNS.map((key) => (
+          {/* The name column always shows, so it isn't offered. */}
+          {COLUMNS.filter((key) => key !== "name").map((key) => (
             <ContextMenuCheckboxItem
               key={key}
               checked={shown.includes(key)}
-              disabled={key === "name"}
               // Stays open, to tick more than one.
               onSelect={(e) => e.preventDefault()}
               onCheckedChange={(checked) => setHidden((h) => withColumnShown(h, key, checked))}
@@ -364,7 +364,8 @@ export function ListView(props: ItemViewProps) {
                   {f.status}
                 </span>
               ),
-              progress: <ProgressBar className="row-bar" pct={f.pct} color={f.color} />,
+              // A file that isn't a download has no progress to show.
+              progress: f.plain ? <span /> : <ProgressBar className="row-bar" pct={f.pct} color={f.color} />,
               size: <span className="row-size">{f.sizeLabel}</span>,
             })}
             <span />

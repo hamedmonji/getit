@@ -86,7 +86,7 @@ export interface ToolbarProps {
   onSearchResults: () => void;
   mode: ViewMode;
   onMode: (mode: ViewMode) => void;
-  /** Whether folders without a queue inside them are shown. */
+  /** Whether folders without a queue inside them, and files that aren't downloads, are shown. */
   showAllFolders: boolean;
   onToggleFolders: () => void;
   /**
@@ -126,7 +126,7 @@ export function Toolbar(p: ToolbarProps) {
       <Toggle
         variant="outline"
         className={PRESSED}
-        title={`${p.showAllFolders ? "Show only folders with downloads" : "Show all folders"} (${MOD}.)`}
+        title={`${p.showAllFolders ? "Show only downloads and folders with downloads" : "Show all folders and files"} (${MOD}.)`}
         pressed={p.showAllFolders}
         onPressedChange={p.onToggleFolders}
       >

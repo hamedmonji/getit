@@ -48,6 +48,8 @@ export interface FileVm {
   path: string | null;
   /** Bytes readable from the file's start: all of a finished one, else what arrived before the first gap. */
   readable: number;
+  /** A file in the folder that isn't a download, keyed by its path. */
+  plain?: boolean;
 }
 
 export interface FolderVm {
@@ -238,6 +240,51 @@ export function readableBytes(item: Pick<DownloadItem, "downloaded" | "segments"
     if (s.start + s.downloaded < s.end) break;
   }
   return end;
+}
+
+/**
+ * The files in `dir` that aren't downloads, as items keyed by their path:
+ * those listed as visible minus the queue's downloads' files and partial files.
+ */
+export function plainFiles(
+  dir: string,
+  visible: { name: string; size: number; modified: number }[],
+  downloads: DownloadItem[],
+  mode: ViewMode,
+): FileVm[] {
+  const taken = new Set(
+    downloads.flatMap((d) => [d.file_name, d.rename_to].filter((n): n is string => !!n).flatMap((n) => [n, `${n}.part`])),
+  );
+  return visible
+    .filter((f) => !taken.has(f.name))
+    .map((f) => {
+      const path = joinPath(dir, f.name);
+      const size = formatSize(f.size);
+      return {
+        id: path,
+        name: f.name,
+        ...resolveKind(f.name),
+        // In the icon grid the size shows under the name, as for finished downloads.
+        status: mode === "Icons" ? size : "",
+        sizeLabel: size,
+        size: f.size,
+        addedAt: f.modified,
+        pct: 100,
+        color: "var(--ink-muted)",
+        nameColor: "var(--ink)",
+        active: false,
+        done: true,
+        missing: false,
+        hue: hueOf(path),
+        showBar: false,
+        action: "reveal",
+        actionLabel: ACTION_LABELS.reveal,
+        info: f.name,
+        path,
+        readable: f.size,
+        plain: true,
+      };
+    });
 }
 
 /** Download totals for the queue at `dir`, or for every queue under it when `deep`. */

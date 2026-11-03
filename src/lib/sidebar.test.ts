@@ -124,6 +124,13 @@ describe("toFavorites", () => {
       { path: "/h/pinned.zip", file: true },
     ]);
   });
+
+  it("pins a file keyed by its path as a file", () => {
+    expect(toFavorites(["/h/notes.txt", "/h/Movies"], [], fileOf, (p) => p === "/h/notes.txt")).toEqual([
+      { path: "/h/notes.txt", file: true },
+      folder("/h/Movies"),
+    ]);
+  });
 });
 
 describe("parseFavorites", () => {

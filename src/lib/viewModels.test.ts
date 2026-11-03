@@ -9,6 +9,7 @@ import {
   nameFromUrl,
   overviewList,
   pendingVm,
+  plainFiles,
   queueForDir,
   readableBytes,
   searchResults,
@@ -375,5 +376,28 @@ describe("originalName", () => {
   it("is null when the name is still the server's, or not known", () => {
     expect(originalName({ ...base, original_name: "new a.zip" })).toBeNull();
     expect(originalName(base)).toBeNull();
+  });
+});
+
+describe("plainFiles", () => {
+  const visible = [
+    { name: "a.zip", size: 100, modified: 5 },
+    { name: "b.zip.part", size: 50, modified: 6 },
+    { name: "renamed.zip.part", size: 50, modified: 6 },
+    { name: "notes.txt", size: 2048, modified: 7 },
+  ];
+  const downloads = [
+    item({ id: "a", queue_id: "q", status: "completed" }),
+    item({ id: "b", queue_id: "q", rename_to: "renamed.zip" }),
+  ];
+
+  it("leaves out downloads' files and partial files", () => {
+    expect(plainFiles("/d", visible, downloads, "List").map((f) => f.name)).toEqual(["notes.txt"]);
+  });
+
+  it("keys a file by its path, finished, to open or reveal", () => {
+    const [f] = plainFiles("/d", visible, downloads, "List");
+    expect(f).toMatchObject({ id: "/d/notes.txt", path: "/d/notes.txt", plain: true, done: true, action: "reveal", addedAt: 7, size: 2048, status: "" });
+    expect(f.sizeLabel).toBe(plainFiles("/d", visible, downloads, "Icons")[0].status);
   });
 });

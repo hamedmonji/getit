@@ -3,7 +3,7 @@ import type { EngineState } from "../hooks/useEngine";
 import { item, queue, stateOf } from "../test/fixtures";
 import { engine, type DownloadItem } from "./engine";
 import { backgroundMenu, downloadMenu, folderMenu, menuItems, selectionMenu, type MenuContext, type MenuItem } from "./menus";
-import { fileVm, folderVm } from "./viewModels";
+import { fileVm, folderVm, plainFiles } from "./viewModels";
 
 vi.mock("./engine", () => ({
   engine: {
@@ -373,5 +373,16 @@ describe("folderMenu", () => {
     const ctx = contextFor([]);
     find(folderMenu(ctx, SUB), "Move to Trash").onSelect();
     expect(ctx.trashItems).toHaveBeenCalledWith([SUB]);
+  });
+});
+
+describe("a file that isn't a download", () => {
+  it("opens, shows in the folder and goes to the Trash, but has no list to leave", () => {
+    const ctx = contextFor([]);
+    const [vm] = plainFiles(CWD, [{ name: "notes.txt", size: 10, modified: 0 }], [], "List");
+    const items = downloadMenu(ctx, vm);
+    expect(labels(items)).toContain("Open");
+    expect(labels(items)).toContain("Move to Trash");
+    expect(labels(items)).not.toContain("Remove from list");
   });
 });
