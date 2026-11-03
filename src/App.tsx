@@ -115,6 +115,7 @@ import {
 } from "./lib/sidebar";
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
+import { parseQueueDefaults, withDefaults } from "./lib/queueSettings";
 import { sortFiles } from "./lib/sort";
 import { TEST_QUEUE_NAME, testServerUrls } from "./lib/testServer";
 import { SPEED_LIMITS, speedLimitBytes, type SpeedLimit } from "./lib/speedLimit";
@@ -284,6 +285,9 @@ export default function App() {
   const [collapsedSections, setCollapsedSections] = useStoredJson("getit.sidebarCollapsed", parseSections);
   const [hiddenSections, setHiddenSections] = useStoredJson("getit.sidebarHidden", parseSections);
   const [views, setViews] = useStoredJson("getit.views", parseViews);
+  /** What new queues start with, given to the engine at launch and whenever it changes. */
+  const [queueDefaults, setQueueDefaults] = useStoredJson("getit.queueDefaults", parseQueueDefaults);
+  useEffect(() => report(engine.setQueueDefaults(queueDefaults)), [queueDefaults]);
   /**
    * The view on screen in place of a folder, and the folder opened in it when
    * it groups its downloads by folder; null when browsing folders.
@@ -1556,6 +1560,20 @@ export default function App() {
           onDensity: setDensity,
           stripes,
           onStripes: setStripes,
+        }}
+        queues={{
+          defaults: queueDefaults,
+          onDefaults: setQueueDefaults,
+          // Every queue at once; each keeps its pause and auto rename rules.
+          onApply: () => {
+            const all = Object.values(state.queues);
+            return Promise.all(all.map((q) => engine.setQueueSettings(q.id, withDefaults(q.settings, queueDefaults))))
+              .then(() => all.length)
+              .catch((e) => {
+                setNotice(`Couldn't apply to every queue: ${e}`);
+                throw e;
+              });
+          },
         }}
         sidebar={{
           sections: sectionOrder(sections).map((id) => ({

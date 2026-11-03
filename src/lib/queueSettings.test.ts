@@ -3,6 +3,10 @@ import { item } from "../test/fixtures";
 import type { QueueSettings, RenameRule } from "./engine";
 import {
   DEFAULT_LIMIT,
+  ENGINE_DEFAULTS,
+  appliedLabel,
+  parseQueueDefaults,
+  withDefaults,
   MAX_RETRIES,
   applyLabel,
   limitSummary,
@@ -221,5 +225,35 @@ describe("withAutoNames", () => {
   it("keeps names not renamed yet", () => {
     const infos = { a: { file_name: "a.zip", total_bytes: 1 } };
     expect(withAutoNames(infos, {})).toEqual(infos);
+  });
+});
+
+describe("queue defaults", () => {
+  const custom = {
+    ...ENGINE_DEFAULTS,
+    max_concurrent: 4,
+    retries: 6,
+    schedule: { mode: "hours" as const, windows: [{ start: 120, end: 300 }] },
+  };
+
+  it("takes the defaults' limit, schedule and retries, keeping pause and rename rules", () => {
+    const own = { ...ENGINE_DEFAULTS, paused: true, rename: [{ op: "prefix" as const, text: "x" }] };
+    expect(withDefaults(own, custom)).toEqual({ ...custom, paused: true, rename: own.rename });
+  });
+
+  it("reads defaults back, with the engine's for what's missing or out of range", () => {
+    expect(parseQueueDefaults(null)).toEqual(ENGINE_DEFAULTS);
+    expect(parseQueueDefaults("bad")).toEqual(ENGINE_DEFAULTS);
+    expect(parseQueueDefaults(JSON.stringify(custom))).toEqual(custom);
+    expect(parseQueueDefaults('{"max_concurrent":null}').max_concurrent).toBeNull();
+    expect(parseQueueDefaults('{"max_concurrent":0,"retries":99}')).toEqual(ENGINE_DEFAULTS);
+    expect(
+      parseQueueDefaults('{"schedule":{"mode":"hours","windows":[{"start":60,"end":90},{"start":-1,"end":2000}]}}').schedule,
+    ).toEqual({ mode: "hours", windows: [{ start: 60, end: 90 }] });
+  });
+
+  it("says how many queues it applied to", () => {
+    expect(appliedLabel(1)).toBe("Applied to 1 queue");
+    expect(appliedLabel(5)).toBe("Applied to 5 queues");
   });
 });

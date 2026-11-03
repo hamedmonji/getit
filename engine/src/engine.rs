@@ -62,6 +62,8 @@ struct State {
     active: HashMap<DownloadId, Active>,
     /// The minute (since local midnight) schedules were last checked at.
     checked_at: u16,
+    /// What new queues start with.
+    defaults: QueueSettings,
 }
 
 struct Active {
@@ -335,6 +337,17 @@ impl Engine {
         self.inner.emit(EngineEvent::QueueChanged(queue.info()));
         self.inner.schedule(st, id);
         Ok(())
+    }
+
+    /// Sets what queues created from now on start with: how many run at once,
+    /// when they may run and how many times they retry. New queues still start
+    /// running and without rename rules; existing queues keep their settings.
+    pub fn set_queue_defaults(&self, settings: QueueSettings) {
+        self.inner.lock().defaults = QueueSettings {
+            paused: false,
+            rename: Vec::new(),
+            ..settings
+        };
     }
 
     /// Moves the queues' schedules on from the last check to `minute` (since
@@ -899,7 +912,8 @@ impl Inner {
         if let Some(id) = st.by_dir.get(&dir) {
             return *id;
         }
-        let queue = Queue::new(dir.clone());
+        let mut queue = Queue::new(dir.clone());
+        queue.set_settings(st.defaults.clone());
         let id = queue.id;
         self.save(&queue);
         self.emit(EngineEvent::QueueChanged(queue.info()));

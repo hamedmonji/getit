@@ -2292,3 +2292,38 @@ body {
 .settings-dialog [data-slot="tabs-trigger"][data-state="active"] {
   color: var(--tint);
 }
+
+/* Settings › Queues: the queue panel's controls, laid out on the page. */
+.queue-defaults .queue-settings-body {
+  flex: none;
+  overflow: visible;
+  padding: 0;
+}
+
+.queue-defaults .qs-section:last-child {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+}
+
+.queue-defaults-apply {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.queue-defaults-applied {
+  flex: none;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--tint);
+  border-radius: 7px;
+  background: var(--tintSoft);
+  color: var(--tint);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}

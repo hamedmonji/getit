@@ -670,6 +670,12 @@ pub fn set_speed_limit(engine: State<'_, Engine>, limit: Option<u64>) {
     engine.set_speed_limit(limit);
 }
 
+/// Sets what queues created from now on start with; existing queues keep theirs.
+#[tauri::command]
+pub fn set_queue_defaults(engine: State<'_, Engine>, settings: QueueSettings) {
+    engine.set_queue_defaults(settings);
+}
+
 #[tauri::command]
 pub fn clear_completed(engine: State<'_, Engine>, queue_id: QueueId) -> CommandResult<usize> {
     engine.clear_completed(queue_id).map_err(err)

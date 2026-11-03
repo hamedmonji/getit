@@ -214,6 +214,8 @@ export const engine = {
   reorderQueue: (queueId: QueueId, ids: DownloadId[]) => invoke<void>("reorder_queue", { queueId, ids }),
   setQueueSettings: (queueId: QueueId, settings: QueueSettings) =>
     invoke<void>("set_queue_settings", { queueId, settings }),
+  /** Sets what queues created from now on start with: limit, schedule and retries. Existing queues keep theirs. */
+  setQueueDefaults: (settings: QueueSettings) => invoke<void>("set_queue_defaults", { settings }),
   clearCompleted: (queueId: QueueId) => invoke<number>("clear_completed", { queueId }),
   openPath: (path: string) => openPath(path),
   /** Shows the items selected in Finder (or the system file manager). */

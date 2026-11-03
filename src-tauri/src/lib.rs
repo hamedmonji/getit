@@ -77,6 +77,7 @@ pub fn run() {
             commands::move_to_trash,
             commands::restore_from_trash,
             commands::set_queue_settings,
+            commands::set_queue_defaults,
             commands::reorder_queue,
             commands::clear_completed,
             commands::set_speed_limit,

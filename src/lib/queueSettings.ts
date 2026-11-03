@@ -1,7 +1,7 @@
 // Editing a queue's settings: how many downloads run at once, how often they
 // retry, and the auto rename rules applied to new downloads' names.
 
-import type { DownloadItem, LinkInfo, QueueSettings, RenameRule } from "./engine";
+import type { DownloadItem, LinkInfo, QueueSettings, RenameRule, TimeWindow } from "./engine";
 import { displayName } from "./viewModels";
 
 /** Most downloads the context menu's stepper offers; the panel has no limit. */
@@ -201,3 +201,65 @@ export function withAutoNames(
   }
   return out;
 }
+
+/** What new queues start with until the user sets defaults, as in the engine. */
+export const ENGINE_DEFAULTS: QueueSettings = {
+  max_concurrent: DEFAULT_LIMIT,
+  paused: false,
+  retries: 3,
+  rename: [],
+  schedule: { mode: "any", windows: [{ start: 60, end: 405 }] },
+};
+
+/**
+ * `settings` with the defaults' limit, schedule and retries; its pause and
+ * auto rename rules stay, which the defaults don't set.
+ */
+export const withDefaults = (settings: QueueSettings, defaults: QueueSettings): QueueSettings => ({
+  ...settings,
+  max_concurrent: defaults.max_concurrent,
+  schedule: defaults.schedule,
+  retries: defaults.retries,
+});
+
+const isWindow = (w: unknown): w is TimeWindow =>
+  typeof (w as TimeWindow)?.start === "number" &&
+  typeof (w as TimeWindow)?.end === "number" &&
+  [(w as TimeWindow).start, (w as TimeWindow).end].every((m) => Number.isInteger(m) && m >= 0 && m < 1440);
+
+/**
+ * Defaults for new queues read back from storage: what's readable and within
+ * the panel's limits, and the engine's own for the rest.
+ */
+export function parseQueueDefaults(raw: string | null): QueueSettings {
+  let saved: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(raw ?? "{}");
+    if (parsed && typeof parsed === "object") saved = parsed as Record<string, unknown>;
+  } catch {
+    // Unreadable; the engine's defaults.
+  }
+  const limit = saved.max_concurrent;
+  const retries = saved.retries;
+  const schedule = saved.schedule as { mode?: unknown; windows?: unknown } | undefined;
+  return {
+    ...ENGINE_DEFAULTS,
+    max_concurrent:
+      limit === null
+        ? null
+        : Number.isInteger(limit) && (limit as number) >= 1
+          ? (limit as number)
+          : ENGINE_DEFAULTS.max_concurrent,
+    retries:
+      Number.isInteger(retries) && (retries as number) >= 0 && (retries as number) <= MAX_RETRIES
+        ? (retries as number)
+        : ENGINE_DEFAULTS.retries,
+    schedule:
+      (schedule?.mode === "any" || schedule?.mode === "hours") && Array.isArray(schedule.windows)
+        ? { mode: schedule.mode, windows: schedule.windows.filter(isWindow) }
+        : ENGINE_DEFAULTS.schedule,
+  };
+}
+
+/** What the apply button says once it has applied the defaults to `count` queues. */
+export const appliedLabel = (count: number): string => `Applied to ${count} ${count === 1 ? "queue" : "queues"}`;

@@ -1,4 +1,5 @@
-import { useId, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
+import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -21,13 +22,16 @@ import {
   type Stripes,
   type ThemePreference,
 } from "../lib/appearance";
+import type { QueueSettings } from "../lib/engine";
 import { displayPath } from "../lib/paths";
+import { appliedLabel } from "../lib/queueSettings";
 import { SETTINGS_PAGE_LABELS, settingsPages } from "../lib/settingsPages";
 import type { SectionId } from "../lib/sidebar";
 import { SORT_LABELS, type SortKey } from "../lib/sort";
 import { TEST_QUEUE_NAME } from "../lib/testServer";
 import { SPEED_LIMIT_LABELS, SPEED_LIMITS, type SpeedLimit } from "../lib/speedLimit";
 import { GripIcon } from "./icons";
+import { QueueSettingsForm } from "./QueueSettingsForm";
 
 /** Settings for development only. */
 export interface DevelopmentSettings {
@@ -71,6 +75,14 @@ export interface AppearanceSettings {
   onStripes: (stripes: Stripes) => void;
 }
 
+/** What the Queues page shows and changes: what new queues start with. */
+export interface QueueDefaultsSettings {
+  defaults: QueueSettings;
+  onDefaults: (settings: QueueSettings) => void;
+  /** Gives every existing queue the defaults; resolves with how many it changed. */
+  onApply: () => Promise<number>;
+}
+
 /** The sidebar's sections, to show again those hidden from it. */
 export interface SidebarSettings {
   sections: { id: SectionId; label: string; shown: boolean }[];
@@ -95,6 +107,7 @@ export function Settings({
   pasteMode,
   onPasteMode,
   appearance,
+  queues,
   sidebar,
   access,
   development,
@@ -106,6 +119,7 @@ export function Settings({
   pasteMode: "ask" | "always";
   onPasteMode: (mode: "ask" | "always") => void;
   appearance: AppearanceSettings;
+  queues: QueueDefaultsSettings;
   sidebar: SidebarSettings;
   /** The Folder access section shows only when given. */
   access?: AccessSettings;
@@ -157,6 +171,9 @@ export function Settings({
               <p className="settings-note">When off, pasted links go straight into the current folder's queue.</p>
             </section>
             <SidebarSections {...sidebar} />
+          </TabsContent>
+          <TabsContent value="queues" className="min-h-0 overflow-y-auto p-5 pt-12">
+            <QueueDefaults {...queues} />
           </TabsContent>
           <TabsContent value="appearance" className="min-h-0 overflow-y-auto p-5 pt-12">
             <Appearance {...appearance} />
@@ -214,6 +231,54 @@ export function Settings({
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** How long the apply button says it applied, before it can be pressed again. */
+const APPLIED_MS = 2500;
+
+/**
+ * What new queues start with: the same limit, schedule and retries as a
+ * queue's own panel, then a button giving them to every existing queue.
+ */
+function QueueDefaults({ defaults, onDefaults, onApply }: QueueDefaultsSettings) {
+  // The limit before going unlimited, to go back to.
+  const [rememberedLimit, setRememberedLimit] = useState<number | undefined>();
+  /** How many queues the last apply changed, while it says so. */
+  const [applied, setApplied] = useState<number | null>(null);
+  useEffect(() => {
+    if (applied === null) return;
+    const timer = setTimeout(() => setApplied(null), APPLIED_MS);
+    return () => clearTimeout(timer);
+  }, [applied]);
+  return (
+    <div className="queue-defaults">
+      <p className="qs-hint">
+        New queues start with these settings. A queue's own settings, set from its Queue settings panel, override them.
+      </p>
+      <QueueSettingsForm
+        settings={defaults}
+        rememberedLimit={rememberedLimit}
+        onChange={(settings) => {
+          setApplied(null);
+          onDefaults(settings);
+        }}
+        onRememberLimit={setRememberedLimit}
+      />
+      <div className="queue-defaults-apply">
+        <span className="flex-1 font-medium">Existing queues</span>
+        {applied === null ? (
+          <Button variant="outline" onClick={() => onApply().then(setApplied, () => {})}>
+            Apply to existing queues
+          </Button>
+        ) : (
+          <span role="status" className="queue-defaults-applied">
+            <Check size={12} strokeWidth={2.4} />
+            {appliedLabel(applied)}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 

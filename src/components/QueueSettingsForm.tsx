@@ -56,25 +56,23 @@ const SAVE_DELAY = 400;
  * A queue's settings, in sections: how many downloads run at once, when the
  * queue may run, how many times they retry, and the auto rename rules for new downloads' names, with
  * a preview on the queue's unfinished files and a button to rename them too.
- * Each change is saved as it's made; rules once typing pauses.
+ * Each change is saved as it's made; rules once typing pauses. Without
+ * `rename`, as for the defaults new queues start with, there are no rules.
  */
 export function QueueSettingsForm({
   settings,
-  items,
   rememberedLimit,
   onChange,
   onRememberLimit,
-  onRename,
+  rename,
 }: {
   settings: QueueSettings;
-  /** The queue's unfinished downloads, in queue order. */
-  items: DownloadItem[];
   /** The limit the queue had before it went unlimited, if it did here. */
   rememberedLimit: number | undefined;
   onChange: (settings: QueueSettings) => void;
   onRememberLimit: (limit: number) => void;
-  /** Renames downloads already in the queue. */
-  onRename: (renames: { id: string; name: string }[]) => void;
+  /** The auto rename section: the queue's unfinished downloads in queue order, and renaming those already in it. */
+  rename?: { items: DownloadItem[]; onRename: (renames: { id: string; name: string }[]) => void };
 }) {
   const limit = settings.max_concurrent;
   const setMode = (mode: LimitMode) => {
@@ -126,13 +124,15 @@ export function QueueSettingsForm({
         </ButtonGroup>
       </section>
 
-      <section className="qs-section">
-        <div>
-          <div className="qs-label">Auto rename</div>
-          <div className="qs-hint qs-sub">Rules run in order on every new link. Extension is kept.</div>
-        </div>
-        <RenameRules settings={settings} items={items} onChange={onChange} onRename={onRename} />
-      </section>
+      {rename && (
+        <section className="qs-section">
+          <div>
+            <div className="qs-label">Auto rename</div>
+            <div className="qs-hint qs-sub">Rules run in order on every new link. Extension is kept.</div>
+          </div>
+          <RenameRules settings={settings} items={rename.items} onChange={onChange} onRename={rename.onRename} />
+        </section>
+      )}
     </div>
   );
 }

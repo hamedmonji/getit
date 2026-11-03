@@ -1067,6 +1067,25 @@ async fn without_retries_network_errors_fail_at_once() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn new_queues_start_with_the_defaults() {
+    let ctx = Ctx::new().await;
+    let before = ctx.engine.ensure_queue(ctx.folder("before")).unwrap();
+    ctx.engine.set_queue_defaults(QueueSettings {
+        max_concurrent: Some(5),
+        retries: 7,
+        // Not taken: new queues start running, without rename rules.
+        paused: true,
+        rename: vec![RenameRule::Prefix { text: "x".into() }],
+        ..Default::default()
+    });
+    let after = ctx.engine.queue(ctx.engine.ensure_queue(ctx.folder("after")).unwrap()).unwrap().settings;
+    assert_eq!((after.max_concurrent, after.retries, after.paused), (Some(5), 7, false));
+    assert!(after.rename.is_empty());
+    // Queues made before keep theirs.
+    assert_eq!(ctx.engine.queue(before).unwrap().settings, QueueSettings::default());
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn rejects_invalid_input() {
     let ctx = Ctx::new().await;
     assert!(ctx.engine.enqueue(ctx.folder("a"), "not a url").is_err());

@@ -79,11 +79,10 @@ export function QueueSettings({
             <QueueSettingsForm
               key={queue.id}
               settings={queue.settings}
-              items={items}
               rememberedLimit={limits.current.get(queue.id)}
               onChange={onSettings}
               onRememberLimit={(limit) => limits.current.set(queue.id, limit)}
-              onRename={onRename}
+              rename={{ items, onRename }}
             />
           </TabsContent>
           <TabsContent value="order" className="flex min-h-0 flex-col">
