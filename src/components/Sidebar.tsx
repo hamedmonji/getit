@@ -371,14 +371,14 @@ function ViewNameEditor({
 /** Follows the pointer across the window until the button comes up, with the resize cursor everywhere. */
 function dragResize(onMove: (x: number) => void) {
   const root = document.documentElement;
-  root.classList.add("col-resizing");
+  root.classList.add("col-resizing", "sidebar-resizing");
   const move = (e: MouseEvent) => onMove(e.clientX);
   const up = () => {
     swallowClick();
     stop();
   };
   const stop = () => {
-    root.classList.remove("col-resizing");
+    root.classList.remove("col-resizing", "sidebar-resizing");
     window.removeEventListener("mousemove", move);
     window.removeEventListener("mouseup", up);
     window.removeEventListener("blur", stop);

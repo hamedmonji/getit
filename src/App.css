@@ -927,7 +927,7 @@ body {
 }
 
 .sidebar-resize:hover,
-.col-resizing .sidebar-resize {
+.sidebar-resizing .sidebar-resize {
   background: linear-gradient(to right, transparent 3px, var(--ink-muted) 3px, var(--ink-muted) 4px, transparent 4px);
 }
 
