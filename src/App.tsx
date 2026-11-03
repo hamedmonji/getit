@@ -116,6 +116,7 @@ import {
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
 import { sortFiles } from "./lib/sort";
+import { TEST_QUEUE_NAME, testServerUrls } from "./lib/testServer";
 import { SPEED_LIMITS, speedLimitBytes, type SpeedLimit } from "./lib/speedLimit";
 import { isTyping, matchByName, typeAhead, type Typed } from "./lib/typeSelect";
 import {
@@ -871,6 +872,24 @@ export default function App() {
       .catch((e) => setNotice(`Couldn't reset onboarding: ${e}`));
   };
 
+  // Development only: a queue in this folder holding every test server
+  // download, gone to with the settings closed.
+  const addTestQueue = () => {
+    if (!cwd) return;
+    engine
+      .createQueue(cwd)
+      .then(async (created) => {
+        // Keeps the default name if the test name is taken.
+        const path = await engine.renameFolder(created, TEST_QUEUE_NAME).catch(() => created);
+        // One at a time, so they line up in the queue in the list's order.
+        for (const url of testServerUrls()) await engine.addDownload(path, url);
+        setSettingsOpen(false);
+        setListNonce((n) => n + 1);
+        go(path);
+      })
+      .catch((e) => setNotice(`Couldn't create the test queue: ${e}`));
+  };
+
   // While onboarding asks where getit can save, or the main view asks for a
   // folder after the chosen ones were deleted, getit goes on by itself once Full
   // Disk Access is on, whether the user turned it on just now or before a restart.
@@ -1562,7 +1581,7 @@ export default function App() {
             : undefined
         }
         development={
-          import.meta.env.DEV ? { onResetOnboarding: resetOnboarding, speedLimit, onSpeedLimit: setSpeedLimit } : undefined
+          import.meta.env.DEV ? { onResetOnboarding: resetOnboarding, onAddTestQueue: addTestQueue, speedLimit, onSpeedLimit: setSpeedLimit } : undefined
         }
         onClose={closeSettings}
       />

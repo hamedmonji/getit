@@ -25,6 +25,7 @@ import { displayPath } from "../lib/paths";
 import { SETTINGS_PAGE_LABELS, settingsPages } from "../lib/settingsPages";
 import type { SectionId } from "../lib/sidebar";
 import { SORT_LABELS, type SortKey } from "../lib/sort";
+import { TEST_QUEUE_NAME } from "../lib/testServer";
 import { SPEED_LIMIT_LABELS, SPEED_LIMITS, type SpeedLimit } from "../lib/speedLimit";
 import { GripIcon } from "./icons";
 
@@ -32,6 +33,8 @@ import { GripIcon } from "./icons";
 export interface DevelopmentSettings {
   /** Forgets the first-launch choice and restarts getit. */
   onResetOnboarding: () => void;
+  /** Creates a queue in the current folder with every test server download in it. */
+  onAddTestQueue: () => void;
   speedLimit: SpeedLimit;
   onSpeedLimit: (limit: SpeedLimit) => void;
 }
@@ -183,6 +186,18 @@ export function Settings({
                 </ToggleGroup>
                 <p className="settings-note">
                   For all downloads together. Running downloads slow down or speed up right away.
+                </p>
+              </section>
+              <section className="settings-section">
+                <h3 className="settings-heading">Test downloads</h3>
+                <div>
+                  <Button variant="outline" size="sm" onClick={development.onAddTestQueue}>
+                    Create test queue
+                  </Button>
+                </div>
+                <p className="settings-note">
+                  Makes a "{TEST_QUEUE_NAME}" in the current folder with every test server download in it. Start the
+                  server first with <code>python3 test-server/server.py</code>.
                 </p>
               </section>
               <section className="settings-section">
