@@ -4,6 +4,7 @@ import {
   MIN_WIDTHS,
   columnTemplate,
   columnsWidth,
+  fitColumn,
   parseHiddenColumns,
   shownColumns,
   withColumnShown,
@@ -109,5 +110,19 @@ describe("hidden columns", () => {
     expect(parseHiddenColumns('["size","name","nope","size"]')).toEqual(["size"]);
     expect(parseHiddenColumns(null)).toEqual([]);
     expect(parseHiddenColumns("bad")).toEqual([]);
+  });
+});
+
+describe("fitColumn", () => {
+  it("fits a column to its widest text, with a little room", () => {
+    expect(fitColumn(DEFAULT_WIDTHS, "status", [40.2, 151.3, 90])).toEqual({ ...DEFAULT_WIDTHS, status: 156 });
+  });
+
+  it("keeps a fitted column to its minimum", () => {
+    expect(fitColumn(DEFAULT_WIDTHS, "size", [10])).toEqual({ ...DEFAULT_WIDTHS, size: 56 });
+  });
+
+  it("puts a column with no text back to its default", () => {
+    expect(fitColumn({ ...DEFAULT_WIDTHS, progress: 300 }, "progress", [])).toEqual(DEFAULT_WIDTHS);
   });
 });

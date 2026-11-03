@@ -46,6 +46,26 @@ export function resetColumn(widths: ColumnWidths, key: ColumnKey): ColumnWidths 
   return { ...widths, [key]: DEFAULT_WIDTHS[key] };
 }
 
+/** Where each column's text is in a row, to measure for fitting it; the progress bars have none. */
+export const FIT_SELECTORS: Partial<Record<ColumnKey, string>> = {
+  name: ".row-name",
+  status: ".row-status, .row-sub",
+  size: ".row-size",
+};
+
+/** Room left after the widest text, so a fitted column doesn't cut it off at a rounding. */
+const FIT_SLACK = 4;
+
+/**
+ * `widths` with `key` as wide as the widest of `textWidths` (its header's and
+ * its cells' text), within its minimum; back to its default when there's no
+ * text to fit, as for the progress bars.
+ */
+export function fitColumn(widths: ColumnWidths, key: ColumnKey, textWidths: number[]): ColumnWidths {
+  if (!textWidths.length) return resetColumn(widths, key);
+  return resizeColumn(widths, key, Math.ceil(Math.max(...textWidths)) + FIT_SLACK);
+}
+
 /**
  * The columns' `grid-template-columns`, without the action button and icon in
  * front of each row. Once the name column is sized, an empty column at the end

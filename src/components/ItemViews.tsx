@@ -13,9 +13,10 @@ import {
   COLUMNS,
   columnTemplate,
   columnsWidth,
+  FIT_SELECTORS,
+  fitColumn,
   parseHiddenColumns,
   pinName,
-  resetColumn,
   resizeColumn,
   shownColumns,
   withColumnShown,
@@ -222,7 +223,7 @@ export function IconView(props: ItemViewProps) {
 
 /**
  * The divider after a header cell: dragging it sizes that column, and
- * double-clicking puts the column back to its default width.
+ * double-clicking fits the column to its widest text.
  */
 function ColumnDivider({
   label,
@@ -279,11 +280,34 @@ function ColumnDivider({
  * The list: a header of resizable columns over the rows. Right-clicking the
  * header lists the columns to show or hide; the name column always shows.
  */
+/** How wide an element's text is laid out, past where it's cut off with an ellipsis. */
+function textWidth(el: Element): number {
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  return range.getBoundingClientRect().width;
+}
+
 export function ListView(props: ItemViewProps) {
   const [widths, setWidths] = useColumnWidths();
   const [hidden, setHidden] = useStoredJson("getit.hiddenColumns", parseHiddenColumns);
   const shown = shownColumns(hidden);
   const nameCell = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  /**
+   * Fits column `key` to its widest text: its header's and its rows'. The name
+   * column is fixed at its width first, as for a drag, so fitting another
+   * column doesn't take room from it.
+   */
+  const fit = (key: ColumnKey) => {
+    const list = listRef.current;
+    const selector = FIT_SELECTORS[key];
+    if (!list || !nameCell.current) return;
+    const header = list.querySelector(`[data-column="${key}"] .ellipsis`);
+    const texts = selector ? [header, ...(list.querySelector(".list-rows")?.querySelectorAll(selector) ?? [])] : [];
+    const measured = texts.filter((el): el is Element => !!el).map(textWidth);
+    const nameWidth = nameCell.current.getBoundingClientRect().width;
+    setWidths((w) => fitColumn(pinName(w, nameWidth), key, measured));
+  };
   const columns = {
     "--list-columns": columnTemplate(widths, shown),
     "--list-columns-width": `${columnsWidth(widths, shown)}px`,
@@ -291,7 +315,7 @@ export function ListView(props: ItemViewProps) {
   /** A row's cells for the shown columns, in their order. */
   const cells = (row: Record<ColumnKey, ReactNode>) => shown.map((key) => <Fragment key={key}>{row[key]}</Fragment>);
   return (
-    <div className="list" style={columns}>
+    <div ref={listRef} className="list" style={columns}>
       <ContextMenu modal={false}>
         <ContextMenuTrigger asChild>
           <div
@@ -300,13 +324,13 @@ export function ListView(props: ItemViewProps) {
             onContextMenu={(e) => e.stopPropagation()}
           >
             {shown.map((key) => (
-              <div key={key} ref={key === "name" ? nameCell : undefined} className="list-column">
+              <div key={key} ref={key === "name" ? nameCell : undefined} className="list-column" data-column={key}>
                 <div className="ellipsis">{COLUMN_LABELS[key]}</div>
                 <ColumnDivider
                   label={COLUMN_LABELS[key]}
                   onStart={() => setWidths((w) => pinName(w, nameCell.current!.getBoundingClientRect().width))}
                   onResize={(width) => setWidths((w) => resizeColumn(w, key, width))}
-                  onReset={() => setWidths((w) => resetColumn(w, key))}
+                  onReset={() => fit(key)}
                 />
               </div>
             ))}
