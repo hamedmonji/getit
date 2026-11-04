@@ -14,6 +14,7 @@ import { Details } from "./components/Details";
 import { NoAccess } from "./components/NoAccess";
 import { NoFolders } from "./components/NoFolders";
 import { Onboarding } from "./components/Onboarding";
+import { FinishFlood } from "./components/FinishFlood";
 import { QueueSettings } from "./components/QueueSettings";
 import { RefreshLink } from "./components/RefreshLink";
 import { Settings } from "./components/Settings";
@@ -46,7 +47,9 @@ import { useStoredState } from "./hooks/useStoredState";
 import { useSystemDark } from "./hooks/useSystemDark";
 import { useUndo } from "./hooks/useUndo";
 import { useUpdate } from "./hooks/useUpdate";
+import { showsOnboarding, STORED_STEPS, type OnboardingStep, type StoredStep } from "./lib/onboarding";
 import {
+  floodColor,
   accentTokens,
   backgroundTokens,
   DENSITIES,
@@ -189,9 +192,12 @@ export default function App() {
    * can bring it back and a restart asks again.
    */
   const [noFolders, setNoFolders] = useState(false);
+  /** Whether onboarding's finish is fading away over getit, just opened. */
+  const [welcome, setWelcome] = useState(false);
   // Remembered so onboarding resumes at step 2 when macOS restarts getit to
   // apply Full Disk Access.
-  const [onboardingStep, setOnboardingStep] = useStoredState("getit.onboardingStep", ["1", "2"] as const, () => "1");
+  // Step 3 comes after the access choice is saved, so it's shown again after a restart too.
+  const [onboardingStep, setOnboardingStep] = useStoredState<StoredStep>("getit.onboardingStep", STORED_STEPS, () => "1");
   const [history, setHistory] = useState<History | null>(null);
   /** Selected folder paths and download ids. */
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -343,7 +349,7 @@ export default function App() {
       setHome(home);
       setRoot(setup?.root ?? null);
       setAccessFolders(setup?.folders ?? []);
-      setFirstLaunch(IS_MAC && !setup);
+      setFirstLaunch(showsOnboarding(IS_MAC, !!setup, onboardingStep));
       setHistory({ cwd: start, back: [], forward: [] });
     });
   }, []);
@@ -827,7 +833,8 @@ export default function App() {
         await engine.setAccessSetup(picked);
         setRoot(picked);
         setAccessFolders([]);
-        setFirstLaunch(false);
+        // Onboarding goes on to how getit looks.
+        if (firstLaunch) setOnboardingStep("3");
         setNoFolders(false);
         setHistory({ cwd: picked, back: [], forward: [] });
       })
@@ -874,12 +881,14 @@ export default function App() {
     if (import.meta.env.DEV) report(engine.setSpeedLimit(speedLimitBytes(speedLimit)));
   }, [speedLimit]);
 
-  // Development only: shows onboarding again from step 1, after a restart.
+  // Development only: shows onboarding again from step 1. Reloads the page
+  // rather than restarting getit, since quitting would end `tauri dev` and its
+  // dev server with it, leaving the restarted getit on a blank page.
   const resetOnboarding = () => {
     setOnboardingStep("1");
     engine
       .resetAccessSetup()
-      .then(() => engine.relaunch())
+      .then(() => window.location.reload())
       .catch((e) => setNotice(`Couldn't reset onboarding: ${e}`));
   };
 
@@ -896,7 +905,8 @@ export default function App() {
         engine
           .setAccessSetup(null)
           .then(() => {
-            setFirstLaunch(false);
+            // Onboarding goes on to how getit looks.
+            if (firstLaunch) setOnboardingStep("3");
             if (noFolders) {
               setNoFolders(false);
               setRoot(null);
@@ -1187,13 +1197,27 @@ export default function App() {
   if (firstLaunch) {
     return (
       <Onboarding
-        step={onboardingStep === "2" ? 2 : 1}
-        onStep={(step) => setOnboardingStep(step === 2 ? "2" : "1")}
+        step={Number(onboardingStep) as OnboardingStep}
+        onStep={(step) => setOnboardingStep(String(step) as StoredStep)}
         home={home ? baseName(home) : "Home"}
         asked={accessAsked}
         onFullDiskAccess={askFullDiskAccess}
         onChooseFolder={chooseRoot}
         error={notice}
+        appearance={{
+          theme: themePref,
+          onTheme: setThemePref,
+          resolvedTheme: theme,
+          accent,
+          onAccent: setAccent,
+          background,
+          onBackground: setBackground,
+        }}
+        onFinish={(flooded) => {
+          setOnboardingStep("1");
+          setFirstLaunch(false);
+          setWelcome(flooded);
+        }}
       />
     );
   }
@@ -1601,6 +1625,7 @@ export default function App() {
           {drag.keys.length === 1 ? nameOf(drag.keys[0]) : plural(drag.keys.length, "item")}
         </div>
       )}
+      {welcome && <FinishFlood color={floodColor(accent)} phase="fade" onFaded={() => setWelcome(false)} />}
     </div>
   );
 }

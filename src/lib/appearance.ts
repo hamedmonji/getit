@@ -206,3 +206,27 @@ export function backgroundColor(background: Background): string {
   const tint = backgroundTint(background)!;
   return oklchCss({ l: 0.78, c: tint.c * 5, h: tint.h });
 }
+
+/** The accent presets as swatches, each in its colour for `theme`. */
+export function accentOptions(theme: ResolvedTheme): { id: AccentPreset; label: string; color: string }[] {
+  return ACCENT_PRESET_IDS.map((id) => ({ id, label: ACCENT_PRESETS[id].label, color: accentColor(id, theme) }));
+}
+
+/** The backgrounds as swatches, getit's own greys first, called `defaultLabel`. */
+export function backgroundOptions(defaultLabel: string): { id: Background; label: string; color: string }[] {
+  return (["default", ...ACCENT_PRESET_IDS] as const).map((id) => ({
+    id,
+    label: id === "default" ? defaultLabel : ACCENT_PRESETS[id].label,
+    color: backgroundColor(id),
+  }));
+}
+
+/**
+ * The colour step 3's finish floods the window in: a preset's light tuning,
+ * kept dark enough for white text on it, or a custom colour as it is.
+ */
+export function floodColor(accent: Accent): string {
+  if (!isPreset(accent)) return accent;
+  const { l, c, h } = ACCENT_PRESETS[accent].light;
+  return oklchCss({ l: Math.min(l, 0.56), c, h });
+}

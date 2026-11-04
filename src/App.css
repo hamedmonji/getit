@@ -1908,6 +1908,14 @@ body {
   --ob-soft: color-mix(in oklch, var(--tint) 8%, var(--panel));
   --ob-soft-strong: color-mix(in oklch, var(--tint) 16%, var(--panel));
   --ob-success: #2f9e6a;
+  /* Step 3's own surfaces: getit's default greys, whatever accent and
+     background are picked, so the preview's colours stand out against them. */
+  --ob-plain: #fbfbf9;
+  --ob-stage: #e6e5df;
+}
+[data-theme="Dark"] {
+  --ob-plain: #1b1b19;
+  --ob-stage: #0c0c0b;
 }
 
 /* The Finder look-alike drawn in onboarding's illustrations, light or dark
@@ -2402,4 +2410,90 @@ body {
   background: var(--tint);
   color: #fff;
   opacity: 0.9;
+}
+
+/* Onboarding's appearance preview: getit itself, scaled down, in a window. */
+.appearance-preview {
+  position: relative;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+}
+
+/* Step 3's wave: each item takes the new colours and bounces in turn,
+   after its own --wave-delay. Two names for the same bounce, so a pick
+   during a wave starts it over. */
+.appearance-preview .app [data-sidebar="menu-item"] *,
+.appearance-preview .app .tile * {
+  transition:
+    background-color 0.3s ease var(--wave-delay, 0ms),
+    color 0.3s ease var(--wave-delay, 0ms),
+    fill 0.3s ease var(--wave-delay, 0ms);
+}
+.appearance-preview .app [data-sidebar="menu-item"] {
+  --wave-to: translateX(4px) scale(1.06);
+  transform-origin: left center;
+}
+.appearance-preview .app .tile {
+  --wave-to: translateY(-5px) scale(1.07);
+}
+.appearance-preview .app[data-wave="odd"] :is([data-sidebar="menu-item"], .tile) {
+  animation: wave-odd 560ms var(--wave-delay, 0ms) both;
+}
+.appearance-preview .app[data-wave="even"] :is([data-sidebar="menu-item"], .tile) {
+  animation: wave-even 560ms var(--wave-delay, 0ms) both;
+}
+@keyframes wave-odd {
+  0% { transform: none; animation-timing-function: cubic-bezier(0.3, 1.6, 0.5, 1); }
+  45% { transform: var(--wave-to); animation-timing-function: cubic-bezier(0.3, 1.6, 0.5, 1); }
+  100% { transform: none; }
+}
+@keyframes wave-even {
+  0% { transform: none; animation-timing-function: cubic-bezier(0.3, 1.6, 0.5, 1); }
+  45% { transform: var(--wave-to); animation-timing-function: cubic-bezier(0.3, 1.6, 0.5, 1); }
+  100% { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .appearance-preview .app [data-sidebar="menu-item"] *,
+  .appearance-preview .app .tile * {
+    transition: none;
+  }
+  .appearance-preview .app[data-wave] :is([data-sidebar="menu-item"], .tile) {
+    animation: none;
+  }
+}
+
+.appearance-preview .app {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* The window's buttons, which macOS draws over the real toolbar. */
+.appearance-preview .traffic-light-space {
+  position: relative;
+}
+
+.appearance-preview .traffic-light-space::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  width: 12px;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow:
+    20px 0 0 #febc2e,
+    40px 0 0 #28c840;
+}
+
+/* Step 3's theme choices: the chosen one in the accent. */
+.look-theme[data-state="on"] {
+  border: 1.5px solid var(--tint);
+  background: var(--ob-soft);
+  color: var(--ink);
 }

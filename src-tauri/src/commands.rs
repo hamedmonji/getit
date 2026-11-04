@@ -155,6 +155,34 @@ const PACKAGE_EXTENSIONS: &[&str] = &[
 /// reading it would make macOS ask because getit doesn't have Full Disk Access.
 const NO_ACCESS: &str = "no access";
 
+/// Files in onboarding's appearance preview, by folder under the pretend home,
+/// with their sizes. Sparse, so they take no room on disk.
+const PREVIEW_FILES: &[(&str, &str, u64)] = &[
+    ("Downloads", "getit-setup.dmg", 48_000_000),
+    ("Downloads", "attention.pdf", 2_100_000),
+    ("Downloads/Movies", "cosmos_s01e01.mkv", 1_320_000_000),
+    ("Downloads/Movies", "cosmos_s01e02.mkv", 1_410_000_000),
+    ("Downloads/Installers", "node-v22.pkg", 31_000_000),
+    ("Downloads/Papers", "transformers.pdf", 3_400_000),
+];
+
+/// A pretend home folder for onboarding's appearance preview, made in getit's
+/// caches folder, which macOS lets it read without asking. Its Downloads holds
+/// Movies, Installers, Papers and a few files.
+#[tauri::command]
+pub fn appearance_preview_dir(app: AppHandle) -> CommandResult<String> {
+    let home = app.path().app_cache_dir().map_err(err)?.join("Appearance Preview");
+    for (dir, name, size) in PREVIEW_FILES {
+        let dir = home.join(dir);
+        fs::create_dir_all(&dir).map_err(err)?;
+        let path = dir.join(name);
+        if !path.exists() {
+            fs::File::create(&path).and_then(|f| f.set_len(*size)).map_err(err)?;
+        }
+    }
+    Ok(home.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub async fn list_dir(access: State<'_, Access>, path: String) -> CommandResult<DirListing> {
     if access.blocked(Path::new(&path)) {

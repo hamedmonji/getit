@@ -1,5 +1,32 @@
-// What the two onboarding screens show: step 1's animation, frame by frame,
-// and step 2's map of the folders each access choice lets getit reach.
+// What the onboarding screens show: step 1's animation, frame by frame, step
+// 2's map of the folders each access choice lets getit reach, and step 3's look.
+
+import type { Accent, Background, ThemePreference } from "./appearance";
+
+export type OnboardingStep = 1 | 2 | 3;
+/** The steps as stored, to resume at after a restart. */
+export const STORED_STEPS = ["1", "2", "3"] as const;
+export type StoredStep = (typeof STORED_STEPS)[number];
+
+/**
+ * Whether onboarding shows at launch: on macOS, until getit knows where it can
+ * save, and then still on step 3, which comes after that choice is saved.
+ */
+export function showsOnboarding(mac: boolean, accessChosen: boolean, step: StoredStep): boolean {
+  return mac && (!accessChosen || step === "3");
+}
+
+/** Step 3's theme choices, each drawn as a little window. */
+export const THEME_THUMBS: Record<ThemePreference, string> = {
+  Light: "linear-gradient(90deg, #efeee9 0 30%, #ffffff 30%)",
+  Dark: "linear-gradient(90deg, #2a2a2a 0 30%, #343434 30%)",
+  System: "linear-gradient(135deg, #ffffff 0 50%, #343434 50%)",
+};
+
+/** Step 3's background: the one chosen, or the accent's until one is. */
+export function followedBackground(accent: Accent, chosen: Background | null): Background {
+  return chosen ?? accent;
+}
 
 /** Step 1's animation advances one tick at a time. */
 export const TICK_MS = 200;
@@ -222,3 +249,67 @@ export function accessMap(choice: AccessChoice): { rows: ReachRow[]; sidebar: Si
   );
   return { rows, sidebar };
 }
+
+/**
+ * How far to move a step's heading down so it starts level with the showcase
+ * beside it, but only into the room the step has spare, so it never scrolls.
+ * `headingTop` is where the heading sits without the offset; `spare` is the
+ * empty room the step has now, with `offset` applied, and `overflow` how far
+ * it runs past the window, so that a window made shorter takes the offset back.
+ */
+export function alignedOffset({
+  showcaseTop,
+  headingTop,
+  spare,
+  overflow = 0,
+  offset,
+}: {
+  showcaseTop: number;
+  headingTop: number;
+  spare: number;
+  overflow?: number;
+  offset: number;
+}): number {
+  return Math.round(Math.max(0, Math.min(showcaseTop - headingTop, spare + offset - overflow)));
+}
+
+/**
+ * Step 3's wave: on each pick, the preview's sidebar rows and then its tiles
+ * bounce one after another as they take the new colours.
+ */
+export const WAVE = {
+  /** How long one item's bounce takes, up and back. */
+  bounceMs: 560,
+  /** The gap between one item and the next. */
+  stepMs: 70,
+  /** The longest the wave may take from first to last item, however many. */
+  spanMs: 490,
+};
+
+/** How long the whole wave takes, from the first item's start to the last one's end. */
+export function waveLength(): number {
+  return WAVE.spanMs + WAVE.bounceMs;
+}
+
+/** When each of `count` items in the wave starts, in ms, packed closer when there are many. */
+export function waveDelays(count: number): number[] {
+  if (count <= 0) return [];
+  const step = count > 1 ? Math.min(WAVE.stepMs, WAVE.spanMs / (count - 1)) : 0;
+  return Array.from({ length: count }, (_, i) => Math.round(i * step));
+}
+
+/**
+ * Step 3's finish: the window floods in the accent from the button, says
+ * hello, and fades away to getit.
+ */
+export const FINISH = {
+  /** Before the flood starts, so it starts from nothing. */
+  startMs: 40,
+  /** From the click until getit opens under the flood. */
+  holdMs: 1500,
+  /** How long the flood takes to fade away over getit. */
+  fadeMs: 450,
+};
+
+/** What the finish says. */
+export const FINISH_TITLE = "Let's Get it";

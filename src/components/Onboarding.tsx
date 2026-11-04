@@ -1,19 +1,39 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
+import { useAlignedOffset } from "../hooks/useAlignedOffset";
 import { useReducedMotion } from "../hooks/useReducedMotion";
+import {
+  accentOptions,
+  backgroundOptions,
+  floodColor,
+  isPreset,
+  THEME_PREFERENCES,
+  type Accent,
+  type Background,
+  type ThemePreference,
+} from "../lib/appearance";
 import {
   ACCESS_COPY,
   accessMap,
+  FINISH,
+  followedBackground,
   sameFoldersFrame,
+  THEME_THUMBS,
   TICK_MS,
   type AccessChoice,
+  type OnboardingStep,
   type FinderRow,
   type SidebarEntry,
   type Tile,
 } from "../lib/onboarding";
+import { AppearancePreview } from "./AppearancePreview";
+import { ColorSwatches } from "./ColorSwatches";
+import { FinishFlood } from "./FinishFlood";
 import { FileIcon } from "./FileIcon";
+import type { AppearanceSettings } from "./Settings";
 
 const primary = "h-[34px] rounded-lg bg-(--ob-accent) px-4 text-[13px] font-semibold text-white hover:bg-(--ob-accent-hover)";
 const secondary = "h-[34px] rounded-lg border-line bg-panel px-3.5 text-[13px] text-ink";
@@ -21,7 +41,8 @@ const secondary = "h-[34px] rounded-lg border-line bg-panel px-3.5 text-[13px] t
 /**
  * First launch on macOS, which protects Desktop, Documents and Downloads. Fills
  * the window in place of the app until the user chooses. Step 1 shows that
- * getit's folders are Finder's; step 2 asks for Full Disk Access or one folder.
+ * getit's folders are Finder's; step 2 asks for Full Disk Access or one folder;
+ * step 3 sets how getit looks, on getit itself.
  */
 export function Onboarding({
   step,
@@ -31,9 +52,11 @@ export function Onboarding({
   onFullDiskAccess,
   onChooseFolder,
   error,
+  appearance,
+  onFinish,
 }: {
-  step: 1 | 2;
-  onStep: (step: 1 | 2) => void;
+  step: OnboardingStep;
+  onStep: (step: OnboardingStep) => void;
   /** The home folder's name, as Finder titles it. */
   home: string;
   /** Whether the user already went to turn on Full Disk Access. */
@@ -42,17 +65,23 @@ export function Onboarding({
   onChooseFolder: () => void;
   /** What went wrong with the last choice, if anything. */
   error: string | null;
+  appearance: LookSettings;
+  /** Leaves onboarding for the app; `flooded` when the finish filled the window, to fade away over getit. */
+  onFinish: (flooded: boolean) => void;
 }) {
   return (
-    <div className="flex h-screen flex-col bg-panel text-ink">
-      {/* The window's bar, as in the design: room for its buttons, which sit
-          over the top, and something to drag it by. As tall as the app's
-          toolbar, where the buttons are placed. */}
-      <div data-tauri-drag-region className="h-12 flex-none border-b border-line bg-panel" />
+    // Step 3 keeps to plain greys, so only the preview shows the picked colours.
+    <div className={cn("relative flex h-screen flex-col text-ink", step === 3 ? "bg-(--ob-plain)" : "bg-panel")}>
+      {/* The window's bar: no bar of its own, so the page runs up under the
+          window's buttons, but something to drag the window by. As tall as
+          the app's toolbar, where the buttons are placed. */}
+      <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-10 h-12" />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex min-h-full flex-col">
           {step === 1 ? (
             <SameFolders onContinue={() => onStep(2)} />
+          ) : step === 3 ? (
+            <PickALook {...appearance} onBack={() => onStep(2)} onFinish={onFinish} />
           ) : (
             <WhereToSave
               home={home}
@@ -72,7 +101,7 @@ export function Onboarding({
 function StepHeading({ step, title, children }: { step: number; title: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="font-mono text-[11px] text-ink-muted">Step {step} of 2</div>
+      <div className="font-mono text-[11px] text-ink-muted">Step {step} of 3</div>
       <h1 className="text-2xl font-bold tracking-[-0.025em]">{title}</h1>
       <p className="max-w-[600px] text-[13.5px] leading-normal text-pretty text-ink-muted">{children}</p>
     </div>
@@ -276,6 +305,7 @@ function WhereToSave({
   const [choice, setChoice] = useState<AccessChoice>("full");
   const { rows, sidebar } = accessMap(choice);
   const copy = ACCESS_COPY[choice];
+  const align = useAlignedOffset();
 
   return (
     <div className="grid flex-1 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
@@ -283,7 +313,7 @@ function WhereToSave({
         className="flex items-center justify-center px-6 py-7 transition-colors duration-300"
         style={{ background: choice === "full" ? "var(--ob-soft-strong)" : "var(--ob-soft)" }}
       >
-        <div className="flex w-full max-w-[520px]">
+        <div ref={align.showcase} className="flex w-full max-w-[520px]">
         <FinderWindow title={home} height={340} sidebar={sidebar} column="Items" columnWidth={46}>
           {rows.map((row, i) => (
             <div
@@ -304,7 +334,11 @@ function WhereToSave({
         </FinderWindow>
         </div>
       </div>
-      <div className="flex max-w-[520px] flex-col gap-5 px-8 pt-8 pb-[26px]">
+      <div
+        ref={align.column}
+        className="flex max-w-[520px] flex-col gap-5 px-8 pb-[26px]"
+        style={{ paddingTop: 32 + align.offset }}
+      >
         <StepHeading step={2} title="Where can getit save files?">
           {copy.caption}
         </StepHeading>
@@ -335,7 +369,7 @@ function WhereToSave({
           </p>
         )}
         {error && <p className="text-[12.5px] leading-[1.45] text-destructive">{error}</p>}
-        <div className="flex-1" />
+        <div ref={align.filler} className="flex-1" />
         <div className="flex items-center justify-end gap-2.5">
           <Button variant="outline" className={secondary} onClick={onBack}>
             Back
@@ -345,6 +379,145 @@ function WhereToSave({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Step 3
+
+/** What step 3 changes: the theme, accent and background colours. */
+export type LookSettings = Pick<
+  AppearanceSettings,
+  "theme" | "onTheme" | "resolvedTheme" | "accent" | "onAccent" | "background" | "onBackground"
+>;
+
+function PickALook({
+  theme,
+  onTheme,
+  resolvedTheme,
+  accent,
+  onAccent,
+  background,
+  onBackground,
+  onBack,
+  onFinish,
+}: LookSettings & { onBack: () => void; onFinish: (flooded: boolean) => void }) {
+  const still = useReducedMotion();
+  // Goes up with each pick, for the preview to wave.
+  const [wave, setWave] = useState(0);
+  const waved = () => {
+    if (!still) setWave((n) => n + 1);
+  };
+  // The background follows the accent until one is picked here.
+  const [chosen, setChosen] = useState<Background | null>(null);
+  const pickAccent = (next: Accent) => {
+    onAccent(next);
+    onBackground(followedBackground(next, chosen));
+    waved();
+  };
+  // Where the finish floods from: the button's centre, once it's clicked.
+  const [flood, setFlood] = useState<{ x: number; y: number } | null>(null);
+  const finish = (button: HTMLElement) => {
+    if (still) return onFinish(false);
+    if (flood) return;
+    const r = button.getBoundingClientRect();
+    setFlood({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+  };
+  useEffect(() => {
+    if (!flood) return;
+    const timer = setTimeout(() => onFinish(true), FINISH.holdMs);
+    return () => clearTimeout(timer);
+  }, [flood]);
+  useEffect(() => {
+    if (background !== accent) onBackground(followedBackground(accent, null));
+  }, []);
+  const align = useAlignedOffset();
+
+  return (
+    <div className="grid flex-1 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+      <div className="flex items-center justify-center bg-(--ob-stage) px-6 py-7">
+        <div ref={align.showcase} className="w-full">
+          <AppearancePreview theme={resolvedTheme} wave={wave} />
+        </div>
+      </div>
+      <div
+        ref={align.column}
+        className="flex max-w-[520px] flex-col gap-5 px-8 pb-[26px]"
+        style={{ paddingTop: 32 + align.offset }}
+      >
+        <StepHeading step={3} title="Pick a look">
+          You can change this any time in Settings › Appearance.
+        </StepHeading>
+        <LookSection title="Theme">
+          <ToggleGroup
+            type="single"
+            spacing={2}
+            value={theme}
+            onValueChange={(v) => {
+              if (!v) return;
+              onTheme(v as ThemePreference);
+              waved();
+            }}
+            className="grid w-full grid-cols-3"
+          >
+            {THEME_PREFERENCES.map((option) => (
+              <ToggleGroupItem
+                key={option}
+                value={option}
+                className="look-theme flex h-auto flex-col gap-1.5 rounded-[10px] border border-line p-2 pb-[7px] text-[12.5px] font-medium"
+              >
+                <span
+                  className="h-9 w-full rounded-md shadow-[inset_0_0_0_1px_rgba(0,0,0,.12)]"
+                  style={{ background: THEME_THUMBS[option] }}
+                />
+                {option}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+        </LookSection>
+        <LookSection title="Accent">
+          <ColorSwatches
+            options={accentOptions(resolvedTheme)}
+            value={accent}
+            onChange={(v) => pickAccent(v as Accent)}
+            custom={false}
+          />
+        </LookSection>
+        <LookSection title="Background" note={chosen === null && isPreset(background) ? "Follows accent" : undefined}>
+          <ColorSwatches
+            options={backgroundOptions("Neutral")}
+            value={background}
+            onChange={(v) => {
+              setChosen(v as Background);
+              onBackground(v as Background);
+              waved();
+            }}
+            custom={false}
+          />
+        </LookSection>
+        <div ref={align.filler} className="flex-1" />
+        <div className="flex items-center justify-end gap-2.5">
+          <Button variant="outline" className={cn(secondary, "bg-(--ob-plain)")} onClick={onBack}>
+            Back
+          </Button>
+          <Button className={primary} onClick={(e) => finish(e.currentTarget)} autoFocus>
+            Done
+          </Button>
+        </div>
+      </div>
+      {flood && <FinishFlood color={floodColor(accent)} phase="flood" origin={flood} />}
+    </div>
+  );
+}
+
+function LookSection({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-xs font-semibold">{title}</h2>
+        {note && <span className="text-xs text-ink-muted">{note}</span>}
+      </div>
+      {children}
     </div>
   );
 }

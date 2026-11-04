@@ -1,16 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACCENT_PRESET_IDS,
   accentColor,
+  accentOptions,
   accentTokens,
   backgroundColor,
+  backgroundOptions,
   backgroundTokens,
   hexToOklch,
   isAccent,
   isBackground,
   parseAccent,
   parseBackground,
-  resolveTheme,
-} from "./appearance";
+  resolveTheme, floodColor } from "./appearance";
 
 describe("resolveTheme", () => {
   it("keeps an explicit choice whatever the system uses", () => {
@@ -130,5 +132,29 @@ describe("backgrounds", () => {
     expect(backgroundColor("blue")).toBe("oklch(0.78 0.08 235)");
     expect(backgroundColor("graphite")).toBe("oklch(0.78 0 0)");
     expect(backgroundColor("#123456")).toBe("#123456");
+  });
+});
+
+describe("swatch options", () => {
+  it("lists every accent in the theme's colour, and the backgrounds after the default", () => {
+    expect(accentOptions("Dark").map((o) => o.id)).toEqual(ACCENT_PRESET_IDS);
+    expect(accentOptions("Dark")[0].color).toBe(accentColor("blue", "Dark"));
+    const backgrounds = backgroundOptions("Neutral");
+    expect(backgrounds[0]).toEqual({ id: "default", label: "Neutral", color: backgroundColor("default") });
+    expect(backgrounds).toHaveLength(ACCENT_PRESET_IDS.length + 1);
+  });
+});
+
+describe("floodColor", () => {
+  it("keeps a dark preset as its light tuning", () => {
+    expect(floodColor("blue")).toBe("oklch(0.56 0.15 235)");
+  });
+
+  it("darkens a light preset enough for white text", () => {
+    expect(floodColor("yellow")).toBe("oklch(0.56 0.15 85)");
+  });
+
+  it("uses a custom colour as it is", () => {
+    expect(floodColor("#336699")).toBe("#336699");
   });
 });

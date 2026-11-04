@@ -50,6 +50,7 @@ pub fn run() {
             commands::home_dir,
             commands::initial_dir,
             commands::list_dir,
+            commands::appearance_preview_dir,
             commands::access_setup,
             commands::app_bundle,
             commands::set_access_setup,

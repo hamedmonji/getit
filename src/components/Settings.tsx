@@ -8,10 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
-  ACCENT_PRESET_IDS,
-  ACCENT_PRESETS,
-  accentColor,
-  backgroundColor,
+  accentOptions,
+  backgroundOptions,
   DENSITIES,
   DENSITY_LABELS,
   THEME_PREFERENCES,
@@ -29,6 +27,7 @@ import { SETTINGS_PAGE_LABELS, settingsPages } from "../lib/settingsPages";
 import type { SectionId } from "../lib/sidebar";
 import { SORT_LABELS, type SortKey } from "../lib/sort";
 import { SPEED_LIMIT_LABELS, SPEED_LIMITS, type SpeedLimit } from "../lib/speedLimit";
+import { ColorSwatches } from "./ColorSwatches";
 import { GripIcon } from "./icons";
 import { QueueSettingsForm } from "./QueueSettingsForm";
 
@@ -223,7 +222,7 @@ export function Settings({
                 <h3 className="settings-heading">Onboarding</h3>
                 <div>
                   <Button variant="outline" size="sm" onClick={development.onResetOnboarding}>
-                    Reset onboarding and restart
+                    Reset onboarding
                   </Button>
                 </div>
                 <p className="settings-note">Forgets the first-launch choice, so onboarding shows again.</p>
@@ -307,52 +306,6 @@ function SidebarSections({ sections, onShown }: SidebarSettings) {
   );
 }
 
-/**
- * A row of colour swatches to pick one of `options` by id, then a swatch that
- * opens the system's colour picker for a custom #rrggbb.
- */
-function ColorSwatches({
-  options,
-  value,
-  onChange,
-}: {
-  options: { id: string; label: string; color: string }[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const custom = options.some((o) => o.id === value) ? null : value;
-  return (
-    <div className="flex items-center gap-2">
-      <ToggleGroup type="single" spacing={2} value={custom ? "" : value} onValueChange={(v) => v && onChange(v)}>
-        {options.map((o) => (
-          <ToggleGroupItem
-            key={o.id}
-            value={o.id}
-            aria-label={o.label}
-            title={o.label}
-            className="accent-swatch"
-            style={{ background: o.color }}
-          />
-        ))}
-      </ToggleGroup>
-      {/* No shadcn colour picker; the system's opens from this swatch. */}
-      <label
-        className="accent-swatch accent-custom"
-        data-state={custom ? "on" : "off"}
-        title="Custom color"
-        style={custom ? { background: custom } : undefined}
-      >
-        <input
-          type="color"
-          aria-label="Custom color"
-          value={custom ?? "#888888"}
-          onChange={(e) => onChange(e.target.value.toLowerCase())}
-        />
-      </label>
-    </div>
-  );
-}
-
 /** The theme, accent and background colours, density and list stripes. */
 function Appearance(a: AppearanceSettings) {
   const stripesId = useId();
@@ -379,11 +332,7 @@ function Appearance(a: AppearanceSettings) {
       <section className="settings-section">
         <h3 className="settings-heading">Accent color</h3>
         <ColorSwatches
-          options={ACCENT_PRESET_IDS.map((id) => ({
-            id,
-            label: ACCENT_PRESETS[id].label,
-            color: accentColor(id, a.resolvedTheme),
-          }))}
+          options={accentOptions(a.resolvedTheme)}
           value={a.accent}
           onChange={(v) => a.onAccent(v as Accent)}
         />
@@ -394,11 +343,7 @@ function Appearance(a: AppearanceSettings) {
       <section className="settings-section">
         <h3 className="settings-heading">Background color</h3>
         <ColorSwatches
-          options={(["default", ...ACCENT_PRESET_IDS] as const).map((id) => ({
-            id,
-            label: id === "default" ? "Default" : ACCENT_PRESETS[id].label,
-            color: backgroundColor(id),
-          }))}
+          options={backgroundOptions("Default")}
           value={a.background}
           onChange={(v) => a.onBackground(v as Background)}
         />

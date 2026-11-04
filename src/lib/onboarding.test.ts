@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessMap, finderSize, LOOP_TICKS, sameFoldersFrame } from "./onboarding";
+import { accessMap, finderSize, followedBackground, LOOP_TICKS, sameFoldersFrame, showsOnboarding, alignedOffset, waveDelays, waveLength, WAVE } from "./onboarding";
 
 const newRow = (tick: number) => sameFoldersFrame(tick).rows[3];
 const newTile = (tick: number) => sameFoldersFrame(tick).tiles[2];
@@ -87,5 +87,68 @@ describe("accessMap", () => {
 
   it("staggers the rows down the list", () => {
     expect(accessMap("full").rows.map((r) => r.delayMs).slice(0, 3)).toEqual([0, 40, 80]);
+  });
+});
+
+describe("showsOnboarding", () => {
+  it("shows on macOS until access is chosen, then while on step 3", () => {
+    expect(showsOnboarding(true, false, "1")).toBe(true);
+    expect(showsOnboarding(true, true, "2")).toBe(false);
+    expect(showsOnboarding(true, true, "3")).toBe(true);
+    expect(showsOnboarding(false, false, "3")).toBe(false);
+  });
+});
+
+describe("followedBackground", () => {
+  it("follows the accent until a background is chosen", () => {
+    expect(followedBackground("green", null)).toBe("green");
+    expect(followedBackground("#123456", null)).toBe("#123456");
+    expect(followedBackground("green", "default")).toBe("default");
+  });
+});
+
+describe("alignedOffset", () => {
+  it("moves the heading down level with the showcase when there's room", () => {
+    expect(alignedOffset({ showcaseTop: 204, headingTop: 80, spare: 300, offset: 0 })).toBe(124);
+  });
+
+  it("moves it only as far as the spare room allows", () => {
+    expect(alignedOffset({ showcaseTop: 212, headingTop: 80, spare: 26, offset: 0 })).toBe(26);
+  });
+
+  it("counts the room the current offset already takes", () => {
+    expect(alignedOffset({ showcaseTop: 212, headingTop: 80, spare: 0, offset: 26 })).toBe(26);
+    expect(alignedOffset({ showcaseTop: 204, headingTop: 80, spare: 176, offset: 124 })).toBe(124);
+  });
+
+  it("takes the offset back when the step runs past a window made shorter", () => {
+    expect(alignedOffset({ showcaseTop: 153, headingTop: 80, spare: 0, overflow: 73, offset: 73 })).toBe(0);
+    expect(alignedOffset({ showcaseTop: 153, headingTop: 80, spare: 0, overflow: 40, offset: 73 })).toBe(33);
+  });
+
+  it("leaves the heading where it is when the showcase starts above it, as when stacked", () => {
+    expect(alignedOffset({ showcaseTop: 48, headingTop: 420, spare: 100, offset: 0 })).toBe(0);
+  });
+});
+
+describe("waveDelays", () => {
+  it("starts each item a step after the last", () => {
+    expect(waveDelays(4)).toEqual([0, 70, 140, 210]);
+  });
+
+  it("packs many items into the wave's span", () => {
+    const delays = waveDelays(15);
+    expect(delays[0]).toBe(0);
+    expect(delays[14]).toBe(WAVE.spanMs);
+    expect(delays[1]).toBe(35);
+  });
+
+  it("lasts until the last item's bounce ends", () => {
+    expect(waveLength()).toBe(WAVE.spanMs + WAVE.bounceMs);
+  });
+
+  it("starts a lone item at once, and has nothing for none", () => {
+    expect(waveDelays(1)).toEqual([0]);
+    expect(waveDelays(0)).toEqual([]);
   });
 });
