@@ -381,9 +381,7 @@ async fn attempt(
     }
 
     writer.flush().await.map_err(|e| io_fatal(&part, e))?;
-    let file = writer.into_inner();
-    file.sync_all().await.map_err(|e| io_fatal(&part, e))?;
-    drop(file);
+    sync_to_disk(writer.into_inner(), &part).await?;
 
     if let Some(total) = job.total_bytes
         && downloaded < total
@@ -582,8 +580,7 @@ async fn download_segments(
         .open(&part)
         .await
         .map_err(|e| io_fatal(&part, e))?;
-    file.sync_all().await.map_err(|e| io_fatal(&part, e))?;
-    drop(file);
+    sync_to_disk(file, &part).await?;
     finish(job, downloaded, tx).await
 }
 
@@ -786,6 +783,52 @@ fn status_error(status: StatusCode) -> AttemptError {
     } else {
         AttemptError::Fatal(msg)
     }
+}
+
+/// Makes sure what was written to `file` is on disk before it's renamed, and
+/// closes it. On macOS that asks the drive to flush its own cache too, which
+/// network shares (SMB, NFS) don't support; there it settles for an ordinary
+/// flush, as other apps do.
+async fn sync_to_disk(file: File, path: &Path) -> Result<(), AttemptError> {
+    match file.sync_all().await {
+        Ok(()) => Ok(()),
+        Err(e) if needs_plain_sync(&e) => plain_sync(file)
+            .await
+            .map_err(|e| io_fatal(path, e)),
+        Err(e) => Err(io_fatal(path, e)),
+    }
+}
+
+/// Whether `err`, from a full sync, means the file system can't do one.
+fn needs_plain_sync(err: &io::Error) -> bool {
+    // Rust doesn't count ENOTSUP, which macOS gives, as Unsupported.
+    #[cfg(unix)]
+    if matches!(err.raw_os_error(), Some(code) if code == libc::ENOTSUP || code == libc::EOPNOTSUPP) {
+        return true;
+    }
+    err.kind() == io::ErrorKind::Unsupported
+}
+
+/// An ordinary `fsync`, without macOS's flush of the drive's cache.
+#[cfg(unix)]
+async fn plain_sync(file: File) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    let file = file.into_std().await;
+    tokio::task::spawn_blocking(move || {
+        // SAFETY: the descriptor belongs to `file`, which stays open until this returns.
+        if unsafe { libc::fsync(file.as_raw_fd()) } == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    })
+    .await
+    .map_err(io::Error::other)?
+}
+
+#[cfg(not(unix))]
+async fn plain_sync(_file: File) -> io::Result<()> {
+    Ok(())
 }
 
 fn io_fatal(path: &Path, err: io::Error) -> AttemptError {
@@ -1096,6 +1139,27 @@ mod tests {
                 (75 * MIB, 100 * MIB + 3)
             ]
         );
+    }
+
+    #[test]
+    fn falls_back_to_a_plain_sync_where_a_full_one_is_unsupported() {
+        // What macOS gives for F_FULLFSYNC on an SMB share: ENOTSUP (45 there).
+        #[cfg(unix)]
+        assert!(needs_plain_sync(&io::Error::from_raw_os_error(libc::ENOTSUP)));
+        assert!(needs_plain_sync(&io::Error::from(io::ErrorKind::Unsupported)));
+        assert!(!needs_plain_sync(&io::Error::from(io::ErrorKind::PermissionDenied)));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_plain_sync_flushes_and_closes_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.part");
+        let mut file = File::create(&path).await.unwrap();
+        file.write_all(b"done").await.unwrap();
+        plain_sync(file).await.unwrap();
+        fs::rename(&path, dir.path().join("a")).await.unwrap();
+        assert_eq!(fs::read(dir.path().join("a")).await.unwrap(), b"done");
     }
 
     #[test]
