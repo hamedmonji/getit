@@ -38,12 +38,30 @@ pub fn run() {
             forward_events(app.handle().clone(), &engine);
             app.manage(engine);
             browser::listen(app.handle().clone());
+            // The extension opens `getit://` to start getit, which also brings
+            // back a window hidden by closing it.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |_| browser::bring_to_front(&handle));
+            }
             native_host::register(&app.path().home_dir()?);
             app.manage(access::Access::load(
                 app.path().home_dir()?,
                 app.path().app_data_dir()?.join("setup.json"),
             ));
             Ok(())
+        })
+        // On macOS, closing the window (⌘W or its red button) only hides it, so
+        // getit keeps downloading; the Dock icon or the browser extension
+        // brings it back, and ⌘Q quits.
+        .on_window_event(|window, event| {
+            if cfg!(target_os = "macos")
+                && let tauri::WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::snapshot,
@@ -88,8 +106,14 @@ pub fn run() {
             relaunch::relaunch,
             thumbnail::thumbnail,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| match event {
+            // Clicking the Dock icon while the window is hidden.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { has_visible_windows: false, .. } => browser::bring_to_front(app),
+            _ => {}
+        });
 }
 
 fn forward_events(app: AppHandle, engine: &Engine) {

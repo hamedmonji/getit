@@ -135,7 +135,8 @@ fn is_web_url(url: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
-fn bring_to_front(app: &AppHandle) {
+/// Shows the window, also when it was hidden by closing it on macOS.
+pub fn bring_to_front(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
