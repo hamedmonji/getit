@@ -2,6 +2,8 @@
 // (src-tauri/src/browser.rs). The app shows them as captured until the user
 // adds them to a folder.
 
+import { buttonLook, clickedTarget, DEFAULT_OPTIONS, MENU_CONTEXTS, MENU_ID, menuTitle } from "./menu.js";
+
 // Must match `PORT` in src-tauri/src/browser.rs.
 const PORT = 47615;
 const APP = `http://127.0.0.1:${PORT}`;
@@ -14,40 +16,60 @@ const LAUNCH_URL = "getit://open";
 // How long to wait for getit to start before giving up.
 const LAUNCH_TIMEOUT_MS = 20000;
 
-const MENU_LINK = "getit-link";
-const MENU_MEDIA = "getit-media";
-const MENU_SELECTION = "getit-selection";
-
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
-    chrome.contextMenus.create({ id: MENU_LINK, title: "Download Link with getit", contexts: ["link"] });
-    chrome.contextMenus.create({
-      id: MENU_MEDIA,
-      title: "Download with getit",
-      contexts: ["image", "video", "audio"],
-    });
-    chrome.contextMenus.create({
-      id: MENU_SELECTION,
-      title: "Download Links in Selection with getit",
-      contexts: ["selection"],
-    });
+    chrome.contextMenus.create({ id: MENU_ID, title: menuTitle(false), contexts: MENU_CONTEXTS });
   });
 });
 
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  switch (info.menuItemId) {
-    case MENU_LINK:
-      return send([info.linkUrl], tab?.title);
-    case MENU_MEDIA:
-      return send([info.srcUrl], tab?.title);
-    case MENU_SELECTION:
-      return send(await selectedLinks(tab, info.frameId ?? 0), tab?.title);
-  }
+// selection.js says whenever text is selected or unselected, and again on the
+// right-click, and the title follows. Firefox also says so itself.
+// null after the browser restarts this script, so the first update always lands.
+let titledSelection = null;
+function retitle(inSelection) {
+  if (inSelection === titledSelection) return;
+  titledSelection = inSelection;
+  chrome.contextMenus.update(MENU_ID, { title: menuTitle(inSelection) });
+}
+chrome.runtime.onMessage.addListener((message) => {
+  if (typeof message?.getitSelection === "boolean") retitle(message.getitSelection);
+});
+const menus = globalThis.browser?.menus;
+menus?.onShown.addListener((info) => {
+  retitle(info.contexts.includes("selection"));
+  menus.refresh();
 });
 
-// The toolbar button downloads the page itself, which suits files the browser
-// opened instead of saving (PDFs, videos, archives served inline).
-chrome.action.onClicked.addListener((tab) => send([tab.url], tab.title));
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (info.menuItemId !== MENU_ID) return;
+  const target = clickedTarget(info);
+  const urls = target.selection ? await selectedLinks(tab, info.frameId ?? 0) : target.urls;
+  return send(urls, tab?.title);
+});
+
+// The toolbar button pauses and resumes catching browser downloads, the same
+// setting as "Send browser downloads to getit" in options.html.
+chrome.action.onClicked.addListener(async () => {
+  const { takeOver } = await chrome.storage.local.get(DEFAULT_OPTIONS);
+  await chrome.storage.local.set({ takeOver: !takeOver });
+});
+
+async function catching() {
+  return (await chrome.storage.local.get(DEFAULT_OPTIONS)).takeOver;
+}
+
+/** Shows on the toolbar button whether downloads are being caught. */
+async function showCatching() {
+  const look = buttonLook(await catching());
+  chrome.action.setTitle({ title: look.title });
+  chrome.action.setBadgeBackgroundColor({ color: look.color });
+  chrome.action.setBadgeText({ text: look.badge });
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && "takeOver" in changes) showCatching();
+});
+chrome.runtime.onInstalled.addListener(showCatching);
+chrome.runtime.onStartup.addListener(showCatching);
 
 /** Links inside the selection in `tab`, plus any URLs written out in its text. */
 async function selectedLinks(tab, frameId) {
@@ -83,12 +105,13 @@ function linksInSelection() {
   return [...urls].filter((url) => /^https?:/i.test(url));
 }
 
-// When "Send browser downloads to getit" is on (options.html), new browser
+// When "Send browser downloads to getit" is on (options.html, on unless the
+// user turns it off), new browser
 // downloads are paused and offered to getit, starting it if it isn't running.
 // If getit takes them, the browser's copy is cancelled and erased from its
 // list; otherwise it carries on, so nothing is lost when getit can't start.
 chrome.downloads.onCreated.addListener(async (item) => {
-  const { takeOver } = await chrome.storage.local.get({ takeOver: false });
+  const { takeOver } = await chrome.storage.local.get(DEFAULT_OPTIONS);
   const url = item.finalUrl || item.url;
   if (!takeOver || item.state !== "in_progress" || !/^https?:/i.test(url)) return;
   await chrome.downloads.pause(item.id).catch(() => {});
@@ -199,10 +222,11 @@ async function waitForApp(timeoutMs) {
   return false;
 }
 
+/** Shows `text` on the toolbar button for a moment, then whether downloads are being caught again. */
 function flashBadge(text, color) {
   chrome.action.setBadgeBackgroundColor({ color });
   chrome.action.setBadgeText({ text });
-  setTimeout(() => chrome.action.setBadgeText({ text: "" }), 2500);
+  setTimeout(showCatching, 2500);
 }
 
 function notify(title, message) {

@@ -20,10 +20,11 @@
     "service_worker": "background.js",
     "scripts": [
       "background.js"
-    ]
+    ],
+    "type": "module"
   },
   "action": {
-    "default_title": "Download this page with getit",
+    "default_title": "Catching downloads for Get it. Click to pause.",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png"
@@ -41,6 +42,14 @@
       "strict_min_version": "121.0"
     }
   },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["selection.js"],
+      "all_frames": true,
+      "run_at": "document_start"
+    }
+  ],
   "options_ui": {
     "page": "options.html",
     "open_in_tab": false

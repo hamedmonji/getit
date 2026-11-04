@@ -9,11 +9,15 @@ listens on `http://127.0.0.1:47615` (see `src-tauri/src/browser.rs`) and shows
 the links it receives at the bottom of its window as captured, with an "Add here"
 button that adds them to the folder you're in.
 
-- **Right-click a link:** Download Link with getit
-- **Right-click an image, video or audio:** Download with getit
-- **Select part of a page and right-click:** Download Links in Selection with getit
-- **Toolbar button:** downloads the current page's URL (for a PDF or video the browser opened instead of saving)
-- **Send browser downloads to getit** (off by default, in the extension's options): new browser
+- **Right-click a link, image, video or audio:** Download with Get it (a linked image downloads what it links to)
+- **Select part of a page and right-click it:** Download selected with Get it, for the links in the selection,
+  a link inside it included. It's one menu item whose title changes, so the browser never puts it in a
+  submenu: `selection.js`, which runs in every page, tells the extension whenever text is selected or
+  unselected, ahead of the right-click since Chrome builds the menu too quickly to change it then, and
+  reads nothing else. It's why the browser says on install that the
+  extension can read and change data on all websites.
+- **Toolbar button:** pauses and resumes catching browser downloads (the option below); it shows "off" while paused
+- **Send browser downloads to getit** (on by default; can be turned off in the extension's options): new browser
   downloads are paused and sent to getit; once getit takes them, the browser's copy is cancelled
   and erased from its list. If getit isn't running it's started first; if it can't start, the
   browser downloads as usual. Files
