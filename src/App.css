@@ -871,7 +871,7 @@ body {
   display: flex;
 }
 
-.main > .content {
+.content-column > .content {
   min-width: 0;
 }
 
@@ -2326,4 +2326,80 @@ body {
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+/* The folder view and the update card along its bottom, from the v9 Update design. */
+.content-column {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.update-card {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  min-height: 52px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--panel2);
+}
+
+.update-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--tint);
+}
+
+.update-icon.muted {
+  color: var(--ink-muted);
+}
+
+.update-text {
+  flex: 1;
+  min-width: 160px;
+}
+
+.update-text-snug {
+  flex: none;
+  min-width: 0;
+}
+
+.update-card .update-bar {
+  flex: 1;
+  min-width: 120px;
+  max-width: 320px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--track);
+}
+
+.update-bar > div {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s linear;
+}
+
+.update-pct {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+
+.update-card .update-primary {
+  border-color: var(--tint);
+  background: var(--tint);
+  color: #fff;
+}
+
+.update-card .update-primary:hover {
+  background: var(--tint);
+  color: #fff;
+  opacity: 0.9;
 }

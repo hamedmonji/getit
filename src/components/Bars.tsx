@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Check, CircleArrowUp, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,7 +24,8 @@ import { useLinkInfo } from "../hooks/useLinkInfo";
 import { chosen, moveTo, syncOrder, syncSelected, totalLabel } from "../lib/batch";
 import { LinkBatch } from "./LinkBatch";
 import { linkHeading, type ViewMode } from "../lib/viewModels";
-import type { UpdatePhase } from "../hooks/useUpdate";
+import type { UpdateAction, UpdateCard as UpdateCardVm } from "../lib/update";
+import { ProgressBar } from "./Glyphs";
 import {
   BackIcon,
   CloseIcon,
@@ -793,59 +795,48 @@ export function DuplicatePanel({
   );
 }
 
-/** Offers a newer version of getit, then shows its download and asks to restart into it. */
-export function UpdateBar({
-  version,
-  phase,
-  onInstall,
-  onRestart,
-  onClose,
+/**
+ * The update card along the bottom of the folder view: a new version to
+ * download, its download, restarting into it (now, or once the running
+ * downloads finish), and that it was updated.
+ */
+export function UpdateCard({
+  card,
+  onAction,
 }: {
-  version: string;
-  phase: UpdatePhase;
-  onInstall: () => void;
-  onRestart: () => void;
-  onClose: () => void;
+  card: UpdateCardVm;
+  onAction: (action: UpdateAction) => void;
 }) {
+  const Icon = { update: CircleArrowUp, waiting: Clock, done: Check }[card.icon];
   return (
-    <div className="paste-prompt" role="alertdialog" aria-label="Update getit">
-      <div className="add-bar">
-        <span className="add-label">
-          {phase.kind === "ready" ? (
-            <>getit {version} is installed.</>
-          ) : (
-            <>
-              getit <span className="ink">{version}</span> is available.
-            </>
-          )}
-        </span>
-        <span className="paste-urls muted ellipsis">
-          {phase.kind === "downloading"
-            ? phase.pct === null
-              ? "Downloading…"
-              : `Downloading… ${phase.pct}%`
-            : phase.kind === "ready"
-              ? "Restart getit to start using it."
-              : phase.kind === "failed"
-                ? `Couldn't update: ${phase.error}`
-                : ""}
-        </span>
-        {phase.kind !== "downloading" && (
-          <Button variant="outline" onClick={onClose}>
-            Later
-          </Button>
-        )}
-        {(phase.kind === "available" || phase.kind === "failed") && (
-          <Button variant="outline" autoFocus onClick={onInstall}>
-            {phase.kind === "failed" ? "Try again" : "Update"}
-          </Button>
-        )}
-        {phase.kind === "ready" && (
-          <Button variant="outline" autoFocus onClick={onRestart}>
-            Restart now
-          </Button>
-        )}
-      </div>
+    <div className="update-card" role="status" aria-label="Update getit">
+      <Icon className={card.icon === "waiting" ? "update-icon muted" : "update-icon"} />
+      {/* While downloading, the bar takes the room instead. */}
+      <span className={card.progress ? "update-text update-text-snug" : "update-text"}>
+        <span className="font-semibold">{card.title}</span>
+        {card.detail && <span className="muted"> · {card.detail}</span>}
+      </span>
+      {card.progress && (
+        <>
+          <ProgressBar className="update-bar" pct={card.pct ?? 0} color="var(--tint)" />
+          {card.pct !== null && <span className="update-pct">{card.pct}%</span>}
+        </>
+      )}
+      {card.actions.length > 0 && (
+        <div className="flex gap-1.5">
+          {card.actions.map((a) => (
+            <Button
+              key={a.action}
+              variant="outline"
+              className={a.primary ? "update-primary" : undefined}
+              autoFocus={a.primary}
+              onClick={() => onAction(a.action)}
+            >
+              {a.label}
+            </Button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -27,7 +27,7 @@ import {
   PasteBar,
   PauseBar,
   Toolbar,
-  UpdateBar,
+  UpdateCard,
   type SearchKind,
 } from "./components/Bars";
 import { ContextMenuItems } from "./components/ContextMenu";
@@ -117,7 +117,7 @@ import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
 import { parseQueueDefaults, withDefaults } from "./lib/queueSettings";
 import { sortFiles } from "./lib/sort";
-import { TEST_QUEUE_NAME, testServerUrls } from "./lib/testServer";
+import { updateCard } from "./lib/update";
 import { SPEED_LIMITS, speedLimitBytes, type SpeedLimit } from "./lib/speedLimit";
 import { isTyping, matchByName, typeAhead, type Typed } from "./lib/typeSelect";
 import {
@@ -316,6 +316,13 @@ export default function App() {
   /** Pastes, trashes and renames that can be undone. */
   const { push: pushUndo, undo } = useUndo(setNotice, refresh);
   const updater = useUpdate();
+  /** Downloads running now, which a restart to update waits for. */
+  const running = Object.values(state.downloads).filter((d) => d.status === "downloading").length;
+  // Waiting to update restarts once nothing is downloading.
+  useEffect(() => {
+    if (updater.shown?.phase.kind === "waiting" && running === 0) updater.restart();
+  }, [updater.shown?.phase.kind, running]);
+  const updateCardVm = updater.shown && updateCard(updater.shown.phase, updater.shown.version, running);
   /** Whether the address bar is being typed in. */
   const [addressOpen, setAddressOpen] = useState(false);
   /** The search shown in place of the folder's contents; empty when browsing. */
@@ -876,24 +883,6 @@ export default function App() {
       .catch((e) => setNotice(`Couldn't reset onboarding: ${e}`));
   };
 
-  // Development only: a queue in this folder holding every test server
-  // download, gone to with the settings closed.
-  const addTestQueue = () => {
-    if (!cwd) return;
-    engine
-      .createQueue(cwd)
-      .then(async (created) => {
-        // Keeps the default name if the test name is taken.
-        const path = await engine.renameFolder(created, TEST_QUEUE_NAME).catch(() => created);
-        // One at a time, so they line up in the queue in the list's order.
-        for (const url of testServerUrls()) await engine.addDownload(path, url);
-        setSettingsOpen(false);
-        setListNonce((n) => n + 1);
-        go(path);
-      })
-      .catch((e) => setNotice(`Couldn't create the test queue: ${e}`));
-  };
-
   // While onboarding asks where getit can save, or the main view asks for a
   // folder after the chosen ones were deleted, getit goes on by itself once Full
   // Disk Access is on, whether the user turned it on just now or before a restart.
@@ -1277,16 +1266,6 @@ export default function App() {
         />
       )}
 
-      {updater.update && (
-        <UpdateBar
-          version={updater.update.version}
-          phase={updater.phase}
-          onInstall={() => void updater.install()}
-          onRestart={() => report(updater.restart())}
-          onClose={updater.dismiss}
-        />
-      )}
-
       {confirmPause && (
         <PauseBar
           names={confirmPause.flatMap((id) => (state.downloads[id] ? [displayName(state.downloads[id])] : []))}
@@ -1347,6 +1326,8 @@ export default function App() {
             />
           )}
         </SidebarProvider>
+        {/* The folder view, with the update card along its bottom. */}
+        <div className="content-column">
         {/* Not modal, so a click outside still lands and a right-click elsewhere moves the menu there. */}
         <ContextMenu modal={false}>
           <ContextMenuTrigger asChild>
@@ -1416,6 +1397,18 @@ export default function App() {
             )}
           </ContextMenuContent>
         </ContextMenu>
+        {updateCardVm && (
+          <UpdateCard
+            card={updateCardVm}
+            onAction={(action) => {
+              if (action === "later") updater.later();
+              else if (action === "download") updater.download();
+              else if (action === "wait") updater.wait();
+              else updater.restart();
+            }}
+          />
+        )}
+        </div>
         {queuePanelOpen && activeView && (
           <ViewSettings
             view={activeView}
@@ -1599,7 +1592,7 @@ export default function App() {
             : undefined
         }
         development={
-          import.meta.env.DEV ? { onResetOnboarding: resetOnboarding, onAddTestQueue: addTestQueue, speedLimit, onSpeedLimit: setSpeedLimit } : undefined
+          import.meta.env.DEV ? { onResetOnboarding: resetOnboarding, onTestUpdate: updater.test, speedLimit, onSpeedLimit: setSpeedLimit } : undefined
         }
         onClose={closeSettings}
       />

@@ -28,7 +28,6 @@ import { appliedLabel } from "../lib/queueSettings";
 import { SETTINGS_PAGE_LABELS, settingsPages } from "../lib/settingsPages";
 import type { SectionId } from "../lib/sidebar";
 import { SORT_LABELS, type SortKey } from "../lib/sort";
-import { TEST_QUEUE_NAME } from "../lib/testServer";
 import { SPEED_LIMIT_LABELS, SPEED_LIMITS, type SpeedLimit } from "../lib/speedLimit";
 import { GripIcon } from "./icons";
 import { QueueSettingsForm } from "./QueueSettingsForm";
@@ -37,8 +36,8 @@ import { QueueSettingsForm } from "./QueueSettingsForm";
 export interface DevelopmentSettings {
   /** Forgets the first-launch choice and restarts getit. */
   onResetOnboarding: () => void;
-  /** Creates a queue in the current folder with every test server download in it. */
-  onAddTestQueue: () => void;
+  /** Shows a pretend update, whose download fails when `fails`. */
+  onTestUpdate: (fails: boolean) => void;
   speedLimit: SpeedLimit;
   onSpeedLimit: (limit: SpeedLimit) => void;
 }
@@ -206,15 +205,18 @@ export function Settings({
                 </p>
               </section>
               <section className="settings-section">
-                <h3 className="settings-heading">Test downloads</h3>
-                <div>
-                  <Button variant="outline" size="sm" onClick={development.onAddTestQueue}>
-                    Create test queue
+                <h3 className="settings-heading">Update</h3>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => development.onTestUpdate(false)}>
+                    Show test update
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => development.onTestUpdate(true)}>
+                    Show failing update
                   </Button>
                 </div>
                 <p className="settings-note">
-                  Makes a "{TEST_QUEUE_NAME}" in the current folder with every test server download in it. Start the
-                  server first with <code>python3 test-server/server.py</code>.
+                  Offers a pretend next version on the update card. Its download takes a few seconds, and restarting
+                  only pretends to, so every step can be tried without a release.
                 </p>
               </section>
               <section className="settings-section">

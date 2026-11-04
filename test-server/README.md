@@ -25,8 +25,6 @@ The samples cover every icon kind in `src/lib/fileKind.ts`:
 | image | `hero-01.jpg` (12 MB), `screenshot.png` (6 MB) |
 | audio | `track-01.mp3` (9 MB), `field-recordings.flac.zip` (120 MB, audio despite the `.zip`) |
 
-In a development build, **Settings › Development › Create test queue** makes a "Test Queue" in the current folder with all the samples below plus both `.bin` files. Its list is in `src/lib/testServer.ts`; keep it in step with `SAMPLES` in `server.py`.
-
 All the samples at 1.3 MB/s (`rate=1300`), to copy and paste into the app together:
 
 ```
