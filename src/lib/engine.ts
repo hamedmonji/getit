@@ -6,6 +6,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import type { DownloadPrefs } from "./downloadPrefs";
 
 export type DownloadId = string;
 export type QueueId = string;
@@ -240,6 +241,10 @@ export const engine = {
    */
   thumbnail: (path: string, size: number, available: number | null = null) =>
     invoke<ArrayBuffer>("thumbnail", { path, size, available }),
+  /** The Downloads settings: connections per download and keeping the Mac awake. */
+  downloadPrefs: () => invoke<DownloadPrefs>("download_prefs"),
+  /** Saves and applies the Downloads settings; resolves with them as saved. */
+  setDownloadPrefs: (prefs: DownloadPrefs) => invoke<DownloadPrefs>("set_download_prefs", { prefs }),
   /** Limits how fast all downloads together receive data, in bytes per second; null lifts the limit. */
   setSpeedLimit: (limit: number | null) => invoke<void>("set_speed_limit", { limit }),
   /** Quits and opens getit again, which macOS may need before Full Disk Access applies. */

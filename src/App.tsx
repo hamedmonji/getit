@@ -118,6 +118,7 @@ import {
 } from "./lib/sidebar";
 import { hasWork, pauseAll, pauseQueue, resumeQueue } from "./lib/queueControl";
 import { report } from "./lib/report";
+import { DEFAULT_DOWNLOAD_PREFS, type DownloadPrefs } from "./lib/downloadPrefs";
 import { parseQueueDefaults, withDefaults } from "./lib/queueSettings";
 import { sortFiles } from "./lib/sort";
 import { updateCard } from "./lib/update";
@@ -293,6 +294,15 @@ export default function App() {
   const [views, setViews] = useStoredJson("getit.views", parseViews);
   /** What new queues start with, given to the engine at launch and whenever it changes. */
   const [queueDefaults, setQueueDefaults] = useStoredJson("getit.queueDefaults", parseQueueDefaults);
+  // Kept by the Rust side, so they apply before the window opens.
+  const [downloadPrefs, setDownloadPrefs] = useState<DownloadPrefs>(DEFAULT_DOWNLOAD_PREFS);
+  useEffect(() => {
+    engine.downloadPrefs().then(setDownloadPrefs, (e) => console.error("Couldn't read the Downloads settings:", e));
+  }, []);
+  const changeDownloadPrefs = (prefs: DownloadPrefs) => {
+    setDownloadPrefs(prefs);
+    engine.setDownloadPrefs(prefs).then(setDownloadPrefs, (e) => setNotice(`Couldn't save the Downloads settings: ${e}`));
+  };
   useEffect(() => report(engine.setQueueDefaults(queueDefaults)), [queueDefaults]);
   /**
    * The view on screen in place of a folder, and the folder opened in it when
@@ -1577,6 +1587,11 @@ export default function App() {
           onDensity: setDensity,
           stripes,
           onStripes: setStripes,
+        }}
+        downloads={{
+          prefs: downloadPrefs,
+          onPrefs: changeDownloadPrefs,
+          canKeepAwake: IS_MAC,
         }}
         queues={{
           defaults: queueDefaults,

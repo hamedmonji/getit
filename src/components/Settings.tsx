@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -20,6 +22,13 @@ import {
   type Stripes,
   type ThemePreference,
 } from "../lib/appearance";
+import {
+  MAX_CONNECTIONS,
+  MIN_CONNECTIONS,
+  stepConnections,
+  typedConnections,
+  type DownloadPrefs,
+} from "../lib/downloadPrefs";
 import type { QueueSettings } from "../lib/engine";
 import { displayPath } from "../lib/paths";
 import { appliedLabel } from "../lib/queueSettings";
@@ -74,6 +83,13 @@ export interface AppearanceSettings {
 }
 
 /** What the Queues page shows and changes: what new queues start with. */
+export interface DownloadsSettings {
+  prefs: DownloadPrefs;
+  onPrefs: (prefs: DownloadPrefs) => void;
+  /** Whether getit can keep this computer awake; only on macOS for now. */
+  canKeepAwake: boolean;
+}
+
 export interface QueueDefaultsSettings {
   defaults: QueueSettings;
   onDefaults: (settings: QueueSettings) => void;
@@ -105,6 +121,7 @@ export function Settings({
   pasteMode,
   onPasteMode,
   appearance,
+  downloads,
   queues,
   sidebar,
   access,
@@ -117,6 +134,7 @@ export function Settings({
   pasteMode: "ask" | "always";
   onPasteMode: (mode: "ask" | "always") => void;
   appearance: AppearanceSettings;
+  downloads: DownloadsSettings;
   queues: QueueDefaultsSettings;
   sidebar: SidebarSettings;
   /** The Folder access section shows only when given. */
@@ -169,6 +187,9 @@ export function Settings({
               <p className="settings-note">When off, pasted links go straight into the current folder's queue.</p>
             </section>
             <SidebarSections {...sidebar} />
+          </TabsContent>
+          <TabsContent value="downloads" className="min-h-0 overflow-y-auto p-5 pt-12">
+            <Downloads {...downloads} />
           </TabsContent>
           <TabsContent value="queues" className="min-h-0 overflow-y-auto p-5 pt-12">
             <QueueDefaults {...queues} />
@@ -242,6 +263,82 @@ const APPLIED_MS = 2500;
  * What new queues start with: the same limit, schedule and retries as a
  * queue's own panel, then a button giving them to every existing queue.
  */
+function Downloads({ prefs, onPrefs, canKeepAwake }: DownloadsSettings) {
+  const awakeId = useId();
+  return (
+    <>
+      <section className="settings-section">
+        <h3 className="settings-heading">Connections per download</h3>
+        <ConnectionsStepper
+          value={prefs.connections}
+          onChange={(connections) => onPrefs({ ...prefs, connections })}
+        />
+        <p className="settings-note">
+          From {MIN_CONNECTIONS} to {MAX_CONNECTIONS}. A large file is fetched in parts over this many connections at
+          once, when its server allows it;
+        </p>
+      </section>
+      {canKeepAwake && (
+        <section className="settings-section">
+          <h3 className="settings-heading">Sleep</h3>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={awakeId}
+              checked={prefs.keep_awake}
+              onCheckedChange={(checked) => onPrefs({ ...prefs, keep_awake: checked === true })}
+            />
+            <Label htmlFor={awakeId}>Keep the Mac awake while downloading</Label>
+          </div>
+          <p className="settings-note">
+            Your Mac won't go to sleep on its own while a download is running; the display can still turn off. Closing
+            the lid still puts it to sleep.
+          </p>
+        </section>
+      )}
+    </>
+  );
+}
+
+/** − and + around the connections, which can also be typed; a number out of range goes to its nearest end. */
+function ConnectionsStepper({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const commit = () => {
+    const n = typedConnections(text);
+    setText(String(n ?? value));
+    if (n !== null && n !== value) onChange(n);
+  };
+  return (
+    <ButtonGroup className="qs-stepper w-fit">
+      <Button
+        variant="ghost"
+        title="Fewer connections"
+        disabled={value <= MIN_CONNECTIONS}
+        onClick={() => onChange(stepConnections(value, -1))}
+      >
+        −
+      </Button>
+      <Input
+        className="qs-stepper-input"
+        inputMode="numeric"
+        aria-label="Connections per download"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
+      />
+      <Button
+        variant="ghost"
+        title="More connections"
+        disabled={value >= MAX_CONNECTIONS}
+        onClick={() => onChange(stepConnections(value, 1))}
+      >
+        +
+      </Button>
+    </ButtonGroup>
+  );
+}
+
 function QueueDefaults({ defaults, onDefaults, onApply }: QueueDefaultsSettings) {
   // The limit before going unlimited, to go back to.
   const [rememberedLimit, setRememberedLimit] = useState<number | undefined>();

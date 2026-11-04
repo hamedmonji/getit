@@ -1,9 +1,11 @@
 mod access;
+mod awake;
 mod browser;
 mod commands;
 mod dock;
 mod drives;
 pub mod native_host;
+mod prefs;
 mod relaunch;
 mod thumbnail;
 
@@ -35,6 +37,10 @@ pub fn run() {
             let store = JsonDirStore::new(app.path().app_data_dir()?.join("queues"))?;
             // The engine spawns its tasks on the runtime it is created in.
             let engine = async_runtime::block_on(async { Engine::new(store) })?;
+            // Before the window opens, so downloads resumed at launch get them.
+            let download_prefs = prefs::Prefs::load(app.path().app_data_dir()?.join("downloads.json"));
+            prefs::apply(app.handle(), &engine, download_prefs.get());
+            app.manage(download_prefs);
             forward_events(app.handle().clone(), &engine);
             app.manage(engine);
             browser::listen(app.handle().clone());
@@ -100,6 +106,8 @@ pub fn run() {
             commands::reorder_queue,
             commands::clear_completed,
             commands::set_speed_limit,
+            prefs::download_prefs,
+            prefs::set_download_prefs,
             browser::take_browser_links,
             dock::set_dock_overlay,
             drives::list_drives,
@@ -128,14 +136,22 @@ fn forward_events(app: AppHandle, engine: &Engine) {
                     let _ = app.emit(EVENT, event);
                     if stopping {
                         dock::clear_when_idle(&app, &engine);
+                        keep_awake(&app, &engine);
                     }
                 }
                 Err(RecvError::Lagged(_)) => {
                     let _ = app.emit(RESYNC, ());
                     dock::clear_when_idle(&app, &engine);
+                    keep_awake(&app, &engine);
                 }
                 Err(RecvError::Closed) => break,
             }
         }
     });
+}
+
+/// Keeps the Mac awake while a download runs, if the Downloads settings say to.
+fn keep_awake(app: &AppHandle, engine: &Engine) {
+    let wanted = app.state::<prefs::Prefs>().get().keep_awake;
+    awake::update(app, engine, wanted);
 }

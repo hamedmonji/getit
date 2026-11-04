@@ -14,6 +14,7 @@ use std::error::Error as StdError;
 use std::io;
 use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -39,8 +40,10 @@ const MAX_FILE_NAME_BYTES: usize = 200;
 const FALLBACK_FILE_NAME: &str = "download";
 /// How long a file name lookup waits for the server's response headers.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
-/// How many connections a segmented download uses.
-const SEGMENTS: u64 = 4;
+/// How many connections a download uses at most, until set otherwise.
+pub const DEFAULT_CONNECTIONS: u64 = 16;
+/// The most connections a download may be set to use.
+pub const MAX_CONNECTIONS: u64 = 32;
 /// Files too small to give every segment this much use fewer segments, down to
 /// a single connection.
 const MIN_SEGMENT_SIZE: u64 = 4 * 1024 * 1024;
@@ -99,6 +102,9 @@ pub(crate) struct Job {
     segments: Vec<Segment>,
     /// The speed limit shared by every download.
     throttle: Throttle,
+    /// How many connections a download may use, shared by every download and
+    /// read when this one is split, so a change reaches downloads not split yet.
+    connections: Arc<AtomicU64>,
 }
 
 impl Job {
@@ -109,6 +115,7 @@ impl Job {
         rename: Vec<RenameRule>,
         retries: u32,
         throttle: Throttle,
+        connections: Arc<AtomicU64>,
     ) -> Self {
         Self {
             id: item.id,
@@ -124,6 +131,7 @@ impl Job {
             last_modified: item.last_modified.clone(),
             segments: item.segments.clone(),
             throttle,
+            connections,
         }
     }
 
@@ -290,7 +298,9 @@ async fn attempt(
     job.etag = header_string(headers, header::ETAG);
     job.last_modified = header_string(headers, header::LAST_MODIFIED);
     job.segments = match total {
-        Some(total) if start == 0 && job.resumable == Some(true) => split(total),
+        Some(total) if start == 0 && job.resumable == Some(true) => {
+            split(total, job.connections.load(Ordering::Relaxed))
+        }
         _ => Vec::new(),
     };
     let _ = tx.send(WorkerMsg::Meta {
@@ -422,10 +432,10 @@ fn send_progress(tx: &UnboundedSender<WorkerMsg>, job: &Job, downloaded: u64, sp
     });
 }
 
-/// Splits a file of `total` bytes into segments, or none if it's too small for
-/// two.
-fn split(total: u64) -> Vec<Segment> {
-    let count = (total / MIN_SEGMENT_SIZE).min(SEGMENTS);
+/// Splits a file of `total` bytes into at most `connections` segments, or none
+/// if it's too small for two or only one connection is allowed.
+fn split(total: u64, connections: u64) -> Vec<Segment> {
+    let count = (total / MIN_SEGMENT_SIZE).min(connections.clamp(1, MAX_CONNECTIONS));
     if count < 2 {
         return Vec::new();
     }
@@ -1069,9 +1079,9 @@ mod tests {
     #[test]
     fn splits_into_segments() {
         const MIB: u64 = 1024 * 1024;
-        assert!(split(7 * MIB).is_empty());
+        assert!(split(7 * MIB, 4).is_empty());
         let ranges = |total| {
-            split(total)
+            split(total, 4)
                 .iter()
                 .map(|s| (s.start, s.end))
                 .collect::<Vec<_>>()
@@ -1086,6 +1096,17 @@ mod tests {
                 (75 * MIB, 100 * MIB + 3)
             ]
         );
+    }
+
+    #[test]
+    fn splits_into_as_many_segments_as_connections_allow() {
+        const MIB: u64 = 1024 * 1024;
+        assert!(split(100 * MIB, 1).is_empty());
+        assert_eq!(split(100 * MIB, 8).len(), 8);
+        // Never more than the file has room for, nor than the most allowed.
+        assert_eq!(split(12 * MIB, 8).len(), 3);
+        assert_eq!(split(1024 * MIB, 64).len(), MAX_CONNECTIONS as usize);
+        assert!(split(100 * MIB, 0).is_empty());
     }
 
     #[tokio::test]

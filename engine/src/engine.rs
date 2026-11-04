@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -19,7 +20,7 @@ use crate::types::{
     QueueInfo, QueueSettings, Result,
 };
 use crate::types::part_path;
-use crate::worker::{self, Job, Outcome, WorkerMsg, split_extension};
+use crate::worker::{self, DEFAULT_CONNECTIONS, Job, MAX_CONNECTIONS, Outcome, WorkerMsg, split_extension};
 
 const EVENT_CAPACITY: usize = 1024;
 const USER_AGENT: &str = concat!("getit/", env!("CARGO_PKG_VERSION"));
@@ -50,6 +51,8 @@ struct Inner {
     worker_tx: mpsc::UnboundedSender<WorkerMsg>,
     runtime: Handle,
     throttle: Throttle,
+    /// How many connections each download may use; see [`Engine::set_connections`].
+    connections: Arc<AtomicU64>,
 }
 
 #[derive(Default)]
@@ -136,6 +139,7 @@ impl Engine {
             worker_tx,
             runtime: runtime.clone(),
             throttle: Throttle::default(),
+            connections: Arc::new(AtomicU64::new(DEFAULT_CONNECTIONS)),
         });
         runtime.spawn(drive(Arc::downgrade(&inner), worker_rx));
         if schedule_clock {
@@ -171,6 +175,17 @@ impl Engine {
     /// second, or lifts the limit with None. Running downloads follow it at once.
     pub fn set_speed_limit(&self, bytes_per_sec: Option<u64>) {
         self.inner.throttle.set_limit(bytes_per_sec);
+    }
+
+    /// Sets how many connections a download may use, from 1 to
+    /// [`MAX_CONNECTIONS`]; small files use fewer. It applies to every
+    /// download that starts from the beginning from now on, including ones
+    /// already started but still asking the server about the file. One already
+    /// split carries on with the connections it has.
+    pub fn set_connections(&self, connections: u64) {
+        self.inner
+            .connections
+            .store(connections.clamp(1, MAX_CONNECTIONS), Ordering::Relaxed);
     }
 
     /// Receives every change from now on. A receiver that falls more than 1024
@@ -1082,6 +1097,7 @@ impl Inner {
                 queue.settings.rename.clone(),
                 queue.settings.retries,
                 self.throttle.clone(),
+                self.connections.clone(),
             ),
             token,
             self.worker_tx.clone(),

@@ -14,7 +14,8 @@ use tauri::{AppHandle, State};
 /// Whether an overlay is on the Dock icon now, so clearing it again is skipped.
 static SHOWING: AtomicBool = AtomicBool::new(false);
 
-fn any_downloading(engine: &Engine) -> bool {
+/// Whether any download is running now.
+pub fn any_downloading(engine: &Engine) -> bool {
     engine
         .all_downloads()
         .iter()

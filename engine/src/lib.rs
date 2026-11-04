@@ -19,6 +19,7 @@ mod types;
 mod worker;
 
 pub use engine::Engine;
+pub use worker::{DEFAULT_CONNECTIONS, MAX_CONNECTIONS};
 pub use rename::{apply_rules, rule_errors};
 pub use store::{JsonDirStore, MemoryStore, QueueSnapshot, QueueStore};
 pub use types::{

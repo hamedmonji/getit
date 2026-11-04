@@ -2296,6 +2296,13 @@ body {
   color: var(--tint);
   border-color: var(--tint);
 }
+/* In joined options, each after the first has no left border of its own, so
+   the chosen one's left edge is drawn over its neighbour's. */
+.settings-dialog [data-slot="toggle-group"][data-spacing="0"] [data-slot="toggle-group-item"][data-state="on"]:not(:first-child) {
+  position: relative;
+  z-index: 1;
+  box-shadow: -1px 0 0 var(--tint);
+}
 
 .settings-dialog [data-slot="tabs-trigger"][data-state="active"] {
   color: var(--tint);

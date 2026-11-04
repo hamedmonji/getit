@@ -486,6 +486,39 @@ async fn pause_and_resume_continues_with_a_range_request() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn large_files_use_as_many_connections_as_set() {
+    let ctx = Ctx::new().await;
+    ctx.engine.set_connections(2);
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/big.bin"))
+        .unwrap();
+    wait_until(&ctx.engine, id, "both segments under way", |item| {
+        item.segments.len() == 2
+    })
+    .await;
+    wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert_file_is(&ctx.engine, id, &ctx.server.big);
+    let ranges: Vec<Option<String>> = ctx.server.requests().into_iter().map(|r| r.range).collect();
+    let half = BIG_FILE_SIZE / 2;
+    assert_eq!(ranges, [None, Some(format!("bytes={half}-{}", BIG_FILE_SIZE - 1))]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_connection_downloads_large_files_whole() {
+    let ctx = Ctx::new().await;
+    ctx.engine.set_connections(1);
+    let id = ctx
+        .engine
+        .enqueue(ctx.folder("a"), &ctx.url("/big.bin"))
+        .unwrap();
+    let item = wait_for_status(&ctx.engine, id, DownloadStatus::Completed).await;
+    assert_file_is(&ctx.engine, id, &ctx.server.big);
+    assert!(item.segments.is_empty());
+    assert_eq!(ctx.server.requests().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn large_files_download_in_four_segments() {
     let ctx = Ctx::new().await;
     let id = ctx

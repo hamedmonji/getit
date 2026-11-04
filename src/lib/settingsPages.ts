@@ -1,9 +1,10 @@
 // The pages in the settings sidebar.
 
-export type SettingsPage = "general" | "queues" | "appearance" | "access" | "development";
+export type SettingsPage = "general" | "downloads" | "queues" | "appearance" | "access" | "development";
 
 export const SETTINGS_PAGE_LABELS: Record<SettingsPage, string> = {
   general: "General",
+  downloads: "Downloads",
   queues: "Queues",
   appearance: "Appearance",
   access: "Folder access",
@@ -11,12 +12,13 @@ export const SETTINGS_PAGE_LABELS: Record<SettingsPage, string> = {
 };
 
 /**
- * The pages to show, in order: General, Queues and Appearance always, Folder access
+ * The pages to show, in order: General, Downloads, Queues and Appearance always, Folder access
  * only where it applies, Development only in development.
  */
 export function settingsPages({ access, development }: { access: boolean; development: boolean }): SettingsPage[] {
   return [
     "general",
+    "downloads",
     "queues",
     "appearance",
     ...(access ? ["access" as const] : []),
