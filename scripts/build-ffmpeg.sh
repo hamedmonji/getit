@@ -4,6 +4,9 @@
 # that needs. Tauri bundles it from src-tauri/binaries/ffmpeg-<target triple>.
 #
 # Usage: build-ffmpeg.sh [target triple]   (defaults to this machine's)
+#
+# Windows targets build with MinGW under MSYS2 (gcc, make, diffutils, xz, zlib),
+# statically linked so the .exe needs no MinGW runtime DLLs beside it.
 set -euo pipefail
 
 VERSION=7.1.1
@@ -11,7 +14,9 @@ SHA256=733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TRIPLE="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
-OUT="$ROOT_DIR/src-tauri/binaries/ffmpeg-$TRIPLE"
+EXE=""
+case "$TRIPLE" in *-windows-*) EXE=".exe" ;; esac
+OUT="$ROOT_DIR/src-tauri/binaries/ffmpeg-$TRIPLE$EXE"
 WORK="$ROOT_DIR/target/ffmpeg-build"
 
 if [ -x "$OUT" ]; then
@@ -30,6 +35,9 @@ case "$TRIPLE" in
     [ "$arch" != "$(uname -m)" ] && configure_target+=(--enable-cross-compile)
     ;;
   *-linux-gnu) ;;
+  x86_64-pc-windows-msvc | x86_64-pc-windows-gnu)
+    configure_target=(--arch=x86_64 --target-os=mingw32 --extra-ldflags=-static)
+    ;;
   *)
     echo "No ffmpeg build for $TRIPLE yet" >&2
     exit 1
@@ -44,7 +52,11 @@ if [ ! -f "$tarball" ]; then
   curl -fsSL -o "$tarball.part" "https://ffmpeg.org/releases/$tarball"
   mv "$tarball.part" "$tarball"
 fi
-echo "$SHA256  $tarball" | shasum -a 256 -c -
+if command -v sha256sum >/dev/null; then
+  echo "$SHA256  $tarball" | sha256sum -c -
+else
+  echo "$SHA256  $tarball" | shasum -a 256 -c -
+fi
 
 src="$WORK/$TRIPLE"
 rm -rf "$src"
@@ -72,6 +84,6 @@ echo "→ Configuring for $TRIPLE..."
 echo "→ Building..."
 make -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)" ffmpeg
 mkdir -p "$(dirname "$OUT")"
-cp ffmpeg "$OUT"
+cp "ffmpeg$EXE" "$OUT"
 strip "$OUT"
 echo "→ Built $OUT ($(du -h "$OUT" | cut -f1))"

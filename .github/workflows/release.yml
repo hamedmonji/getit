@@ -22,6 +22,12 @@ jobs:
           - platform: macos-26-intel
             args: --target x86_64-apple-darwin
             rust_target: x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            args: ''
+            rust_target: x86_64-unknown-linux-gnu
+          - platform: windows-latest
+            args: ''
+            rust_target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
 
@@ -57,8 +63,34 @@ jobs:
           path: src-tauri/binaries
           key: ffmpeg-${{ matrix.rust_target }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
 
+      # Tauri's system libraries, plus zlib for the ffmpeg build.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf zlib1g-dev
+
+      # ffmpeg builds with MinGW on Windows (see scripts/build-ffmpeg.sh).
+      - name: Setup MSYS2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            make diffutils xz
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-zlib
+
       - name: Build ffmpeg
+        if: runner.os != 'Windows'
         run: scripts/build-ffmpeg.sh ${{ matrix.rust_target }}
+
+      - name: Build ffmpeg (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: bash scripts/build-ffmpeg.sh ${{ matrix.rust_target }}
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -68,6 +100,7 @@ jobs:
 
       # ── Import signing cert and write notarization API key ───────────────────
       - name: Import Apple certificate
+        if: runner.os == 'macOS'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -89,6 +122,7 @@ jobs:
           echo "CERT_ID=$CERT_ID" >> "$GITHUB_ENV"
 
       - name: Write Apple notarization API key
+        if: runner.os == 'macOS'
         env:
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
         run: echo "$APPLE_API_KEY_CONTENT" | base64 --decode > "$RUNNER_TEMP/apple_api_key.p8"

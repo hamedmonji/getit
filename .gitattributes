@@ -1,0 +1,2 @@
+# Shell scripts run under bash on Windows CI too, which CRLF breaks.
+*.sh text eol=lf
