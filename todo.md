@@ -1,5 +1,5 @@
 
-1. Extension
+1. Multiple add with duplicates has bug
 2. Windows Build
 3. advanced search, filter based on source, file type etc
 4. apply queue settings to all children

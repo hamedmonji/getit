@@ -66,6 +66,7 @@ export function previewState(home: string): EngineState {
     settings: SETTINGS,
     downloads: items.filter((d) => d.queue_id === id).map((d) => d.id),
     schedule_closed: false,
+    started: [],
   });
   return {
     queues: {

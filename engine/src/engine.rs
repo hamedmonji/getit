@@ -336,6 +336,8 @@ impl Engine {
     /// their own keep going. Unpausing or adding slots lets the queue start
     /// more. A changed schedule never opens the queue (see
     /// [`Queue::set_settings`]); it waits for the next window to start.
+    /// Unpausing hands the start order back to the queue: downloads started on
+    /// their own that still wait go back to waiting their turn in queue order.
     pub fn set_queue_settings(&self, id: QueueId, settings: QueueSettings) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
@@ -344,9 +346,13 @@ impl Engine {
             .get_mut(&id)
             .ok_or(EngineError::QueueNotFound(id))?;
         let was_held = queue.held();
+        let was_paused = queue.settings.paused;
         queue.set_settings(settings);
         if queue.held() && !was_held {
             self.inner.stop_running(&mut st.active, queue);
+        }
+        if was_paused && !queue.settings.paused {
+            queue.clear_started();
         }
         self.inner.save(queue);
         self.inner.emit(EngineEvent::QueueChanged(queue.info()));
@@ -665,8 +671,8 @@ impl Engine {
 
     /// Adds `url` to the queue for `dir`, creating the queue if needed, as the
     /// user adding a link. In a running queue it goes to the end and starts when
-    /// the queue's limit allows; in a paused queue it starts right away on its
-    /// own, as if resumed, and the queue stays paused.
+    /// the queue's limit allows; in a paused queue it's started on its own, as
+    /// if resumed (so within the limit too), and the queue stays paused.
     pub fn enqueue(&self, dir: impl AsRef<Path>, url: &str) -> Result<DownloadId> {
         self.enqueue_with(dir, url, None)
     }
@@ -681,12 +687,9 @@ impl Engine {
         let queue_id = self.inner.ensure_queue(st, dir);
         let id = self.inner.add_known(st, queue_id, url, info);
         let queue = st.queues.get_mut(&queue_id).expect("queue exists");
-        if queue.settings.paused {
-            let item = queue.items.get_mut(&id).expect("just added");
-            start_running(item);
-            self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
-            self.inner.spawn(&mut st.active, queue, id);
-            self.inner.save(queue);
+        if queue.settings.paused && queue.start(id) {
+            self.inner.emit(EngineEvent::QueueChanged(queue.info()));
+            self.inner.schedule(st, queue_id);
         }
         Ok(id)
     }
@@ -711,13 +714,18 @@ impl Engine {
         if let Some(active) = st.active.get_mut(&id) {
             active.stop(Stop::Pause);
         }
+        if queue.unstart(id) {
+            self.inner.emit(EngineEvent::QueueChanged(queue.info()));
+        }
         self.inner.save(queue);
         Ok(())
     }
 
-    /// Starts a waiting, paused or failed download right away, continuing from its
-    /// partial file. It runs whether or not its queue is paused or full, and starts
-    /// nothing else. While it runs it takes up one of the queue's slots.
+    /// Starts a waiting, paused or failed download, continuing from its partial
+    /// file, as soon as its queue has a free slot: right away if it has one,
+    /// else once one frees up, ahead of the queue's own order and after
+    /// downloads started this way before it. It starts whether or not the
+    /// queue is paused, and starts nothing else; a paused queue stays paused.
     pub fn resume(&self, id: DownloadId) -> Result<()> {
         let mut guard = self.inner.lock();
         let st = &mut *guard;
@@ -732,15 +740,22 @@ impl Engine {
         ) {
             return Err(invalid("resume", item));
         }
-        start_running(item);
         item.error = None;
-        self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
-        match st.active.get_mut(&id) {
-            // Still stopping after a pause; start again once it has.
-            Some(active) => active.restart = true,
-            None => self.inner.spawn(&mut st.active, queue, id),
+        if let Some(active) = st.active.get_mut(&id) {
+            // Still stopping after a pause, in the slot it had; start again once it has.
+            start_running(item);
+            active.restart = true;
+            self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
+            self.inner.save(queue);
+            return Ok(());
         }
+        item.status = DownloadStatus::Queued;
+        self.inner.emit(EngineEvent::DownloadChanged(item.clone()));
+        queue.start(id);
         self.inner.save(queue);
+        self.inner.emit(EngineEvent::QueueChanged(queue.info()));
+        let queue_id = queue.id;
+        self.inner.schedule(st, queue_id);
         Ok(())
     }
 
@@ -1001,6 +1016,8 @@ impl Inner {
                 stopped = true;
             }
         }
+        // Downloads started on their own wait for the queue again too.
+        queue.clear_started();
         stopped
     }
 
@@ -1072,6 +1089,9 @@ impl Inner {
             start_running(item);
             self.emit(EngineEvent::DownloadChanged(item.clone()));
             self.spawn(&mut st.active, queue, id);
+        }
+        if queue.prune_started(|id| st.active.contains_key(id)) {
+            self.emit(EngineEvent::QueueChanged(queue.info()));
         }
     }
 

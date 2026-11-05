@@ -122,6 +122,19 @@ describe("pauseQueue", () => {
     expect(engine.setQueueSettings).not.toHaveBeenCalled();
     expect(engine.pause).toHaveBeenCalledExactlyOnceWith("a");
   });
+
+  it("in a paused queue, also pauses downloads started by hand that wait for a slot", async () => {
+    const state = stateOf(
+      [{ ...paused, started: ["b"] }],
+      [
+        item({ id: "a", queue_id: "q", status: "downloading" }),
+        item({ id: "b", queue_id: "q", status: "queued" }),
+        item({ id: "c", queue_id: "q", status: "queued" }),
+      ],
+    );
+    await pauseQueue(state, state.queues.q);
+    expect(vi.mocked(engine.pause).mock.calls).toEqual([["a"], ["b"]]);
+  });
 });
 
 describe("pauseAll", () => {

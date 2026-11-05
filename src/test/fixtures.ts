@@ -20,7 +20,7 @@ export function item(overrides: Partial<DownloadItem> & Pick<DownloadItem, "id" 
 }
 
 export function queue(overrides: Partial<QueueInfo> & Pick<QueueInfo, "id" | "dir">): QueueInfo {
-  return { settings: { max_concurrent: 2, paused: false, retries: 3, rename: [], schedule: { mode: "any", windows: [{ start: 60, end: 405 }] } }, downloads: [], schedule_closed: false, ...overrides };
+  return { settings: { max_concurrent: 2, paused: false, retries: 3, rename: [], schedule: { mode: "any", windows: [{ start: 60, end: 405 }] } }, downloads: [], schedule_closed: false, started: [], ...overrides };
 }
 
 /** State holding `queues` and `items`; each queue lists the items whose `queue_id` is its id. */

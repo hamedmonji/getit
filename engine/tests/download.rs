@@ -1317,9 +1317,10 @@ async fn notes_when_a_download_last_started() {
     let again = ctx.engine.get(id).unwrap().started_at.expect("started again");
     assert!(again > first, "{again} should be after {first}");
 
-    // Added to a paused queue by the user, it starts right away.
+    // Added to a paused queue by the user, it starts once the queue has room.
     let added = ctx.engine.enqueue(ctx.folder("b"), &url).unwrap();
-    assert!(ctx.engine.get(added).unwrap().started_at.is_some());
+    assert_eq!(ctx.engine.get(added).unwrap().started_at, None);
+    wait_until(&ctx.engine, added, "started", |item| item.started_at.is_some()).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1341,7 +1342,7 @@ async fn resume_right_after_pause_continues_the_download() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn resumed_downloads_take_up_queue_slots() {
+async fn resuming_in_a_full_queue_waits_for_a_slot_ahead_of_queue_order() {
     let ctx = Ctx::new().await;
     let mut events = ctx.engine.subscribe();
     let queue = ctx.paused_queue("a", 1);
@@ -1352,16 +1353,79 @@ async fn resumed_downloads_take_up_queue_slots() {
     ctx.unpause(queue);
     wait_for_progress(&ctx.engine, ids[0]).await;
 
-    // Resuming goes past the limit, but the queue starts nothing more until
-    // both are done.
-    ctx.engine.resume(ids[1]).unwrap();
+    // The limit holds: it waits, then goes before the one above it in the queue.
+    ctx.engine.resume(ids[2]).unwrap();
+    assert_eq!(ctx.engine.get(ids[2]).unwrap().status, DownloadStatus::Queued);
+    assert_eq!(ctx.engine.queue(queue).unwrap().started, vec![ids[2]]);
     let watch = watch(&mut events, 3).await;
-    assert_eq!(watch.max_running, 2);
-    assert_eq!(watch.completed.last(), Some(&ids[2]));
-    assert_eq!(watch.running_at_start[&ids[2]], 0);
+    assert_eq!(watch.max_running, 1);
+    assert_eq!(watch.completed, vec![ids[0], ids[2], ids[1]]);
+    assert!(ctx.engine.queue(queue).unwrap().started.is_empty());
     for id in &ids {
         ctx.assert_file_matches(*id);
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn downloads_started_in_a_paused_queue_run_in_click_order_within_its_limit() {
+    let ctx = Ctx::new().await;
+    let mut events = ctx.engine.subscribe();
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let ids: Vec<_> = (0..4)
+        .map(|_| ctx.engine.add(queue, &url).unwrap())
+        .collect();
+
+    for id in [ids[2], ids[0], ids[1]] {
+        ctx.engine.resume(id).unwrap();
+    }
+    let watch = watch(&mut events, 3).await;
+    assert_eq!(watch.max_running, 1);
+    assert_eq!(watch.completed, vec![ids[2], ids[0], ids[1]]);
+    // The queue stays paused, so what wasn't started keeps waiting.
+    settle().await;
+    assert!(ctx.engine.queue(queue).unwrap().settings.paused);
+    assert_eq!(ctx.engine.get(ids[3]).unwrap().status, DownloadStatus::Queued);
+    assert_eq!(ctx.engine.get(ids[3]).unwrap().started_at, None);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pausing_a_download_waiting_to_start_takes_it_out_of_line() {
+    let ctx = Ctx::new().await;
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let first = ctx.engine.add(queue, &url).unwrap();
+    let second = ctx.engine.add(queue, &url).unwrap();
+    ctx.engine.resume(first).unwrap();
+    ctx.engine.resume(second).unwrap();
+    assert_eq!(ctx.engine.queue(queue).unwrap().started, vec![second]);
+
+    ctx.engine.pause(second).unwrap();
+    assert!(ctx.engine.queue(queue).unwrap().started.is_empty());
+    wait_for_status(&ctx.engine, first, DownloadStatus::Completed).await;
+    settle().await;
+    assert_eq!(ctx.engine.get(second).unwrap().status, DownloadStatus::Paused);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn starting_the_queue_hands_the_order_back_to_it() {
+    let ctx = Ctx::new().await;
+    let mut events = ctx.engine.subscribe();
+    let queue = ctx.paused_queue("a", 1);
+    let url = ctx.url("/file.bin");
+    let ids: Vec<_> = (0..3)
+        .map(|_| ctx.engine.add(queue, &url).unwrap())
+        .collect();
+    ctx.engine.resume(ids[2]).unwrap();
+    ctx.engine.resume(ids[1]).unwrap();
+    wait_for_progress(&ctx.engine, ids[2]).await;
+
+    // ids[1] waited its turn behind ids[2]; the queue now runs the rest in its own order.
+    ctx.unpause(queue);
+    assert!(ctx.engine.queue(queue).unwrap().started.is_empty());
+    let watch = watch(&mut events, 3).await;
+    assert_eq!(watch.max_running, 1);
+    assert_eq!(watch.completed, vec![ids[2], ids[0], ids[1]]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1371,18 +1435,19 @@ async fn pausing_a_queue_stops_resumed_downloads_too() {
     let url = ctx.url("/file.bin");
     let first = ctx.engine.add(queue, &url).unwrap();
     let resumed = ctx.engine.add(queue, &url).unwrap();
-    ctx.unpause(queue);
-    wait_for_progress(&ctx.engine, first).await;
-    // Past the limit, started by hand.
+    // Started by hand in the paused queue.
     ctx.engine.resume(resumed).unwrap();
     wait_for_progress(&ctx.engine, resumed).await;
 
+    // Pausing it while running stops what was started by hand.
+    ctx.unpause(queue);
     let mut settings = ctx.engine.queue(queue).unwrap().settings;
     settings.paused = true;
     ctx.engine.set_queue_settings(queue, settings).unwrap();
     for id in [first, resumed] {
         assert_eq!(ctx.engine.get(id).unwrap().status, DownloadStatus::Queued);
     }
+    assert!(ctx.engine.queue(queue).unwrap().started.is_empty());
 
     // Unpausing picks them up again in queue order.
     ctx.unpause(queue);

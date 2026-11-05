@@ -13,6 +13,7 @@ import {
   queueForDir,
   readableBytes,
   searchResults,
+  startOrder,
   stats,
   type ViewMode,
 } from "./viewModels";
@@ -127,6 +128,37 @@ describe("fileVm", () => {
       ],
     );
     expect(fileVm(state.downloads.z, state.queues.q, state, "List", null).status).toBe("Queued #2");
+  });
+
+  it("numbers downloads started by hand first, in the order they were started", () => {
+    const state = stateOf(
+      [{ ...q, started: ["z"] }],
+      [item({ id: "y", queue_id: "q", status: "queued" }), item({ id: "z", queue_id: "q", status: "queued" })],
+    );
+    expect(startOrder(state.queues.q, state)).toEqual(["z", "y"]);
+    expect(fileVm(state.downloads.z, state.queues.q, state, "List", null).status).toBe("Queued #1");
+    expect(fileVm(state.downloads.y, state.queues.q, state, "List", null).status).toBe("Queued #2");
+  });
+
+  it("in a paused queue, only downloads started by hand are in line to start", () => {
+    const paused = { ...q, settings: { ...q.settings, paused: true }, started: ["z", "gone", "x"] };
+    const state = stateOf(
+      [paused],
+      [
+        item({ id: "x", queue_id: "q", status: "paused" }),
+        item({ id: "y", queue_id: "q", status: "queued", downloaded: 40 }),
+        item({ id: "z", queue_id: "q", status: "queued" }),
+      ],
+    );
+    expect(startOrder(state.queues.q, state)).toEqual(["z"]);
+    expect(fileVm(state.downloads.z, state.queues.q, state, "List", null)).toMatchObject({
+      status: "Queued #1",
+      action: "pause",
+    });
+    expect(fileVm(state.downloads.y, state.queues.q, state, "List", null)).toMatchObject({
+      status: "40%",
+      action: "resume",
+    });
   });
 
   it("offers to resume a download waiting in a paused queue", () => {

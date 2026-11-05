@@ -154,6 +154,18 @@ export function pendingVm(key: string, url: string, name: string | null, status:
   };
 }
 
+/**
+ * A queue's waiting downloads in the order they'll start: the ones the user
+ * started first, in the order they were started, then, unless the queue is
+ * paused, the rest in queue order.
+ */
+export function startOrder(queue: QueueInfo, state: EngineState): string[] {
+  const queued = (id: string) => state.downloads[id]?.status === "queued";
+  const started = (queue.started ?? []).filter(queued);
+  if (queue.settings.paused) return started;
+  return [...started, ...queue.downloads.filter((id) => queued(id) && !started.includes(id))];
+}
+
 export function fileVm(
   item: DownloadItem,
   queue: QueueInfo,
@@ -168,18 +180,19 @@ export function fileVm(
   const done = item.status === "completed";
   const missing = done && !!item.file_name && !!present && !present.has(item.file_name);
   const active = item.status === "downloading";
-  const waiting = item.status === "queued" && queue.settings.paused;
+  const order = startOrder(queue, state);
+  // Waiting for a paused queue, not started by hand.
+  const waiting = item.status === "queued" && !order.includes(item.id);
   const speed = state.speeds[item.id] ?? 0;
   const total = item.total_bytes;
   const etaS = total && speed ? (total - item.downloaded) / speed : Infinity;
-  const queuedIds = queue.downloads.filter((id) => state.downloads[id]?.status === "queued");
 
   let status = missing ? "Missing" : "Done";
   if (active) {
     // Time left can't be known without a size, so only the speed shows then.
     status = total ? `${formatEta(etaS)} · ${formatSpeed(speed)}` : formatSpeed(speed);
   } else if (waiting) status = `${pct}%`;
-  else if (item.status === "queued") status = `Queued #${queuedIds.indexOf(item.id) + 1}`;
+  else if (item.status === "queued") status = `Queued #${order.indexOf(item.id) + 1}`;
   else if (item.status === "paused") status = `Paused`;
   else if (item.status === "failed") status = `Failed`;
   if (mode === "Icons") {

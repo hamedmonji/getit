@@ -315,6 +315,10 @@ pub struct QueueInfo {
     /// Its schedule holds it until the next window starts.
     #[serde(default)]
     pub schedule_closed: bool,
+    /// Downloads the user started that wait for a free slot, in the order
+    /// they start in (see [`Engine::resume`](crate::Engine::resume)).
+    #[serde(default)]
+    pub started: Vec<DownloadId>,
 }
 
 /// Change notifications sent to every [`subscriber`](crate::Engine::subscribe).

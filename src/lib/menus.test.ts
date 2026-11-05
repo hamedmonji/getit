@@ -299,14 +299,14 @@ describe("selectionMenu", () => {
     expect(find(selectionMenu(ctx), "Resume").disabled).toBe(true);
   });
 
-  it("puts resumed downloads back in line in a running queue", () => {
+  it("starts resumed downloads in a running queue in order, for it to fit them in", () => {
     const ctx = select(
       contextFor([item({ id: "a", queue_id: "q", status: "paused" }), item({ id: "b", queue_id: "q", status: "failed" })]),
       ["a", "b"],
     );
     find(selectionMenu(ctx), "Resume").onSelect();
-    expect(engine.requeue).toHaveBeenCalledWith(["a", "b"]);
-    expect(engine.resume).not.toHaveBeenCalled();
+    expect(vi.mocked(engine.resume).mock.calls).toEqual([["a"], ["b"]]);
+    expect(engine.requeue).not.toHaveBeenCalled();
   });
 
   it("starts resumed downloads on their own in a paused queue", () => {

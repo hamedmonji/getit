@@ -17,6 +17,10 @@ pub(crate) struct Queue {
     pub items: HashMap<DownloadId, DownloadItem>,
     /// Outside its schedule's windows when last checked.
     pub closed: bool,
+    /// Downloads the user started that wait for a free slot, in the order they
+    /// were started. They go before the queue's own order, and start even while
+    /// the queue is held, but never past its limit.
+    pub started: Vec<DownloadId>,
 }
 
 impl Queue {
@@ -28,6 +32,7 @@ impl Queue {
             order: Vec::new(),
             items: HashMap::new(),
             closed: false,
+            started: Vec::new(),
         }
     }
 
@@ -43,6 +48,7 @@ impl Queue {
             settings,
             order: Vec::with_capacity(snapshot.downloads.len()),
             items: HashMap::with_capacity(snapshot.downloads.len()),
+            started: Vec::new(),
         };
         for mut item in snapshot.downloads {
             if queue.items.contains_key(&item.id) {
@@ -79,6 +85,7 @@ impl Queue {
             settings: self.settings.clone(),
             downloads: self.order.clone(),
             schedule_closed: self.closed,
+            started: self.started.clone(),
         }
     }
 
@@ -98,6 +105,7 @@ impl Queue {
     pub fn remove(&mut self, id: DownloadId) -> Option<DownloadItem> {
         let item = self.items.remove(&id)?;
         self.order.retain(|other| *other != id);
+        self.unstart(id);
         Some(item)
     }
 
@@ -150,36 +158,71 @@ impl Queue {
         self.order = order;
     }
 
+    /// Puts a waiting download in line to start ahead of the queue's own order,
+    /// after the ones started before it. Returns whether it was added.
+    pub fn start(&mut self, id: DownloadId) -> bool {
+        if !self.items.contains_key(&id) || self.started.contains(&id) {
+            return false;
+        }
+        self.started.push(id);
+        true
+    }
+
+    /// Takes a download out of the started line. Returns whether it was in it.
+    pub fn unstart(&mut self, id: DownloadId) -> bool {
+        let before = self.started.len();
+        self.started.retain(|other| *other != id);
+        self.started.len() != before
+    }
+
+    /// Empties the started line, for when the queue's own order takes over
+    /// (it was resumed) or everything stops (it was held). Returns whether it
+    /// had any.
+    pub fn clear_started(&mut self) -> bool {
+        !std::mem::take(&mut self.started).is_empty()
+    }
+
+    /// Drops downloads from the started line that are running or no longer
+    /// waiting. Returns whether any were dropped.
+    pub fn prune_started(&mut self, is_running: impl Fn(&DownloadId) -> bool) -> bool {
+        let before = self.started.len();
+        let items = &self.items;
+        self.started.retain(|id| {
+            !is_running(id) && items.get(id).is_some_and(|item| item.status == DownloadStatus::Queued)
+        });
+        self.started.len() != before
+    }
+
     /// How many downloads may run at once.
     fn limit(&self) -> usize {
         self.settings.max_concurrent.unwrap_or(usize::MAX)
     }
 
-    /// The queued downloads to start now, in queue order, to fill the queue's free
-    /// slots. Every running download takes up a slot, including ones the user
-    /// started past the limit.
+    /// The queued downloads to start now to fill the queue's free slots: first
+    /// the ones the user started, in the order they were started, then, unless
+    /// the queue is held, the rest in queue order. Every running download takes
+    /// up a slot.
     pub fn next_to_start(&self, is_running: impl Fn(&DownloadId) -> bool) -> Vec<DownloadId> {
-        if self.held() {
-            return Vec::new();
-        }
         let running = self
             .order
             .iter()
             .filter(|id| is_running(id))
             .count();
         let free = self.limit().saturating_sub(running);
-        self.order
+        let waiting = |id: &&DownloadId| {
+            !is_running(id)
+                && self
+                    .items
+                    .get(id)
+                    .is_some_and(|item| item.status == DownloadStatus::Queued)
+        };
+        let started = self.started.iter().filter(waiting);
+        let rest = self
+            .order
             .iter()
-            .copied()
-            .filter(|id| {
-                !is_running(id)
-                    && self
-                        .items
-                        .get(id)
-                        .is_some_and(|item| item.status == DownloadStatus::Queued)
-            })
-            .take(free)
-            .collect()
+            .filter(|id| !self.held() && !self.started.contains(id))
+            .filter(waiting);
+        started.chain(rest).copied().take(free).collect()
     }
 
     /// Running downloads to send back to waiting so that the queue's top
@@ -280,6 +323,72 @@ mod tests {
         assert!(queue.next_to_start(|_| false).is_empty());
         queue.closed = false;
         assert_eq!(queue.next_to_start(|_| false).len(), 3);
+    }
+
+    #[test]
+    fn starts_downloads_started_by_hand_first_in_the_order_they_were_started() {
+        let mut queue = queue_with(Some(2), 4);
+        let ids = queue.order.clone();
+        queue.start(ids[3]);
+        queue.start(ids[1]);
+        assert_eq!(queue.next_to_start(|_| false), vec![ids[3], ids[1]]);
+        queue.set_settings(QueueSettings { max_concurrent: Some(3), ..Default::default() });
+        assert_eq!(queue.next_to_start(|_| false), vec![ids[3], ids[1], ids[0]]);
+    }
+
+    #[test]
+    fn a_held_queue_starts_only_downloads_started_by_hand_within_its_limit() {
+        let mut queue = queue_with(Some(1), 3);
+        let ids = queue.order.clone();
+        queue.settings.paused = true;
+        assert!(queue.next_to_start(|_| false).is_empty());
+        queue.start(ids[2]);
+        queue.start(ids[0]);
+        assert_eq!(queue.next_to_start(|_| false), vec![ids[2]]);
+        // Full while ids[2] runs.
+        assert!(queue.next_to_start(|id| *id == ids[2]).is_empty());
+        queue.closed = true;
+        queue.settings.paused = false;
+        assert_eq!(queue.next_to_start(|_| false), vec![ids[2]]);
+    }
+
+    #[test]
+    fn starts_a_download_once_and_only_while_it_waits() {
+        let mut queue = queue_with(None, 2);
+        let ids = queue.order.clone();
+        assert!(queue.start(ids[0]));
+        assert!(!queue.start(ids[0]));
+        assert!(!queue.start(DownloadId::new()));
+        queue.items.get_mut(&ids[0]).unwrap().status = DownloadStatus::Paused;
+        assert_eq!(queue.next_to_start(|_| false), vec![ids[1]]);
+    }
+
+    #[test]
+    fn prunes_downloads_that_started_or_stopped_waiting() {
+        let mut queue = queue_with(None, 3);
+        let ids = queue.order.clone();
+        for id in &ids {
+            queue.start(*id);
+        }
+        queue.items.get_mut(&ids[1]).unwrap().status = DownloadStatus::Paused;
+        assert!(queue.prune_started(|id| *id == ids[0]));
+        assert_eq!(queue.started, vec![ids[2]]);
+        assert!(!queue.prune_started(|_| false));
+        queue.remove(ids[2]);
+        assert!(queue.started.is_empty());
+    }
+
+    #[test]
+    fn clears_and_unstarts() {
+        let mut queue = queue_with(None, 2);
+        let ids = queue.order.clone();
+        queue.start(ids[0]);
+        queue.start(ids[1]);
+        assert!(queue.unstart(ids[0]));
+        assert!(!queue.unstart(ids[0]));
+        assert_eq!(queue.info().started, vec![ids[1]]);
+        assert!(queue.clear_started());
+        assert!(!queue.clear_started());
     }
 
     #[test]

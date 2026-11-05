@@ -221,11 +221,10 @@ export function selectionMenu(ctx: MenuContext): MenuItem[] {
   items.push(revealItem(ctx, selection), { kind: "separator" }, ...clipMenu(ctx, selection), { kind: "separator" });
   if (!selectedFiles.length) return [...items, trash];
   const status = (f: FileVm) => state.downloads[f.id]?.status;
-  const queuePaused = (f: FileVm) => state.queues[state.downloads[f.id]?.queue_id]?.settings.paused ?? false;
   const pausable = selectedFiles.filter((f) => status(f) === "downloading" || status(f) === "queued");
   // Downloads waiting in a paused queue can be started on their own too.
   const resumable = selectedFiles.filter(
-    (f) => status(f) === "paused" || status(f) === "failed" || (status(f) === "queued" && queuePaused(f)),
+    (f) => status(f) === "paused" || status(f) === "failed" || (status(f) === "queued" && f.action === "resume"),
   );
   const done = selectedFiles.filter((f) => f.done);
   items.push(
@@ -239,12 +238,8 @@ export function selectionMenu(ctx: MenuContext): MenuItem[] {
       kind: "action",
       label: "Resume",
       disabled: !resumable.length,
-      // Back in line, so the queue's limit holds; a paused queue gets them started on their own.
-      onSelect: () => {
-        resumable.filter(queuePaused).forEach((f) => report(engine.resume(f.id)));
-        const requeued = resumable.filter((f) => !queuePaused(f)).map((f) => f.id);
-        if (requeued.length) report(engine.requeue(requeued));
-      },
+      // Started in the order selected, as the queue's limit allows; a paused queue stays paused.
+      onSelect: () => resumable.forEach((f) => report(engine.resume(f.id))),
     },
     { kind: "separator" },
   );

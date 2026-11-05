@@ -31,12 +31,13 @@ export async function resumeQueue(state: EngineState, target: QueueInfo) {
 
 // Stops everything in a queue. Pausing a running queue stops all its
 // downloads; in one that's paused already, only downloads started on their
-// own run, so they're paused one by one.
+// own run or wait to, so they're paused one by one.
 export function pauseQueue(state: EngineState, target: QueueInfo): Promise<unknown> {
   const { settings } = target;
   if (!settings.paused) return engine.setQueueSettings(target.id, { ...settings, paused: true });
   const running = target.downloads.filter((id) => state.downloads[id]?.status === "downloading");
-  return Promise.all(running.map((id) => engine.pause(id)));
+  const waiting = (target.started ?? []).filter((id) => state.downloads[id]?.status === "queued");
+  return Promise.all([...running, ...waiting].map((id) => engine.pause(id)));
 }
 
 /** Stops every queue that has something running. */

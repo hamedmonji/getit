@@ -98,6 +98,8 @@ export interface QueueInfo {
   downloads: DownloadId[];
   /** Its schedule holds it until the next window starts. */
   schedule_closed: boolean;
+  /** Downloads the user started that wait for a free slot, in the order they start in. */
+  started: DownloadId[];
 }
 
 export type EngineEvent =
