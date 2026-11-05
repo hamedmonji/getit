@@ -22,9 +22,6 @@ jobs:
           - platform: macos-26-intel
             args: --target x86_64-apple-darwin
             rust_target: x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            args: ''
-            rust_target: x86_64-unknown-linux-gnu
           - platform: windows-latest
             args: ''
             rust_target: x86_64-pc-windows-msvc
@@ -63,14 +60,6 @@ jobs:
           path: src-tauri/binaries
           key: ffmpeg-${{ matrix.rust_target }}-${{ hashFiles('scripts/build-ffmpeg.sh') }}
 
-      # Tauri's system libraries, plus zlib for the ffmpeg build.
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
-            librsvg2-dev patchelf zlib1g-dev
-
       # ffmpeg builds with MinGW on Windows (see scripts/build-ffmpeg.sh).
       - name: Setup MSYS2
         if: runner.os == 'Windows'
@@ -79,7 +68,7 @@ jobs:
           msystem: MINGW64
           update: false
           install: >-
-            make diffutils xz
+            make diffutils xz gzip
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-zlib
 

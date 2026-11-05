@@ -11,6 +11,7 @@ set -euo pipefail
 
 VERSION=7.1.1
 SHA256=733984395e0dbbe5c046abda2dc49a5544e7e0e1e2366bba849222ae9e3a03b1
+GITHUB_SHA256=f117507dc501f2a6c11f9241d8d0c3213846cfad91764361af37befd6b6c523d
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TRIPLE="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
@@ -46,22 +47,51 @@ esac
 
 mkdir -p "$WORK"
 cd "$WORK"
-tarball="ffmpeg-$VERSION.tar.xz"
-if [ ! -f "$tarball" ]; then
-  echo "→ Downloading ffmpeg $VERSION..."
-  curl -fsSL -o "$tarball.part" "https://ffmpeg.org/releases/$tarball"
-  mv "$tarball.part" "$tarball"
-fi
-if command -v sha256sum >/dev/null; then
-  echo "$SHA256  $tarball" | sha256sum -c -
-else
-  echo "$SHA256  $tarball" | shasum -a 256 -c -
+
+sha256_ok() { # <sha256> <file>
+  if command -v sha256sum >/dev/null; then
+    echo "$1  $2" | sha256sum -c -
+  else
+    echo "$1  $2" | shasum -a 256 -c -
+  fi
+}
+
+# ffmpeg.org is sometimes unreachable from CI runners, so fall back to GitHub's
+# archive of the same release tag (a different tarball, with its own checksum).
+SOURCES=(
+  "https://ffmpeg.org/releases/ffmpeg-$VERSION.tar.xz $SHA256"
+  "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/n$VERSION.tar.gz $GITHUB_SHA256"
+)
+tarball=""
+for source in "${SOURCES[@]}"; do
+  url="${source% *}"
+  sha="${source##* }"
+  file="$(basename "$url")"
+  if [ ! -f "$file" ]; then
+    echo "→ Downloading $url..."
+    if ! curl -fsSL --connect-timeout 20 --retry 3 --retry-all-errors \
+      -o "$file.part" "$url"; then
+      echo "→ Download failed, trying next source" >&2
+      rm -f "$file.part"
+      continue
+    fi
+    mv "$file.part" "$file"
+  fi
+  if sha256_ok "$sha" "$file"; then
+    tarball="$file"
+    break
+  fi
+  rm -f "$file"
+done
+if [ -z "$tarball" ]; then
+  echo "Could not download ffmpeg $VERSION" >&2
+  exit 1
 fi
 
 src="$WORK/$TRIPLE"
 rm -rf "$src"
 mkdir -p "$src"
-tar -xJf "$tarball" -C "$src" --strip-components 1
+tar -xf "$tarball" -C "$src" --strip-components 1
 cd "$src"
 
 echo "→ Configuring for $TRIPLE..."
@@ -82,7 +112,8 @@ echo "→ Configuring for $TRIPLE..."
   --enable-muxer=image2pipe
 
 echo "→ Building..."
-make -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)" ffmpeg
+# The target carries the executable suffix: ffmpeg.exe on Windows.
+make -j"$(sysctl -n hw.ncpu 2>/dev/null || nproc)" "ffmpeg$EXE"
 mkdir -p "$(dirname "$OUT")"
 cp "ffmpeg$EXE" "$OUT"
 strip "$OUT"
