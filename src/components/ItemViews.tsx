@@ -6,6 +6,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { useColumnWidths } from "../hooks/useColumnWidths";
+import { useListFiller } from "../hooks/useListFiller";
 import { useStoredJson } from "../hooks/useStoredJson";
 import { swallowClick } from "../hooks/useItemDrag";
 import {
@@ -24,6 +25,7 @@ import {
 } from "../lib/columns";
 import { splitName } from "../lib/paths";
 import type { FileVm, FolderVm } from "../lib/viewModels";
+import { fillerStripes } from "../lib/listFiller";
 import { ActionButton, FileGlyph, FolderGlyph, ProgressBar } from "./Glyphs";
 
 export interface ItemViewProps {
@@ -314,6 +316,9 @@ export function ListView(props: ItemViewProps) {
   } as CSSProperties;
   /** A row's cells for the shown columns, in their order. */
   const cells = (row: Record<ColumnKey, ReactNode>) => shown.map((key) => <Fragment key={key}>{row[key]}</Fragment>);
+  const rowsRef = useRef<HTMLDivElement>(null);
+  const space = useListFiller(rowsRef);
+  const filler = fillerStripes(space.realRows, space.room, space.rowHeight);
   return (
     <div ref={listRef} className="list" style={columns}>
       <ContextMenu modal={false}>
@@ -352,7 +357,7 @@ export function ListView(props: ItemViewProps) {
           ))}
         </ContextMenuContent>
       </ContextMenu>
-      <div className="list-rows">
+      <div ref={rowsRef} className="list-rows">
         {props.folders.map((g) => (
           <div
             key={g.path}
@@ -412,6 +417,14 @@ export function ListView(props: ItemViewProps) {
             <span />
           </div>
         ))}
+        {/* Carries alternate row colours on to the bottom of the view. */}
+        {filler.length > 0 && (
+          <div className="list-filler" aria-hidden style={{ height: space.room }}>
+            {filler.map((striped, i) => (
+              <div key={i} className={striped ? "filler-row striped" : "filler-row"} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

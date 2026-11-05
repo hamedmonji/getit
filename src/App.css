@@ -788,7 +788,25 @@ body {
 }
 
 .list-rows {
+  /* A file row's height, also the filler rows'. */
+  --file-row-h: 38px;
   padding: 4px 6px;
+}
+
+/* Rows after the real ones, so alternate row colors reach the bottom of the
+   view. Cut off at the bottom, and never in the way of a click. */
+.list-filler {
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.filler-row {
+  height: var(--file-row-h);
+  border-radius: 7px;
+}
+
+[data-stripes="on"] .filler-row.striped {
+  background: var(--stripe);
 }
 
 .row {
@@ -823,7 +841,7 @@ body {
 }
 
 .file-row {
-  height: 38px;
+  height: var(--file-row-h);
 }
 
 .row-name {
@@ -2002,8 +2020,8 @@ body {
   height: 28px;
 }
 
-[data-density="compact"] .file-row {
-  height: 30px;
+[data-density="compact"] .list-rows {
+  --file-row-h: 30px;
 }
 
 [data-density="compact"] .list-header {
