@@ -74,15 +74,6 @@ export function PlusIcon({ size = 12 }: IconProps) {
   );
 }
 
-export function ThemeIcon({ size = 14 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 16 16">
-      <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" strokeWidth={1.5} />
-      <path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor" />
-    </svg>
-  );
-}
-
 export function PauseIcon({ size = 10, weight = 2.2 }: IconProps & { weight?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 16 16">

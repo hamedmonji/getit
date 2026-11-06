@@ -9,11 +9,43 @@ export const STORED_STEPS = ["1", "2", "3"] as const;
 export type StoredStep = (typeof STORED_STEPS)[number];
 
 /**
- * Whether onboarding shows at launch: on macOS, until getit knows where it can
- * save, and then still on step 3, which comes after that choice is saved.
+ * Whether onboarding shows at launch: where it's offered (macOS and Windows),
+ * until getit knows where it can save, and then still on step 3, which comes
+ * after that choice is saved.
  */
-export function showsOnboarding(mac: boolean, accessChosen: boolean, step: StoredStep): boolean {
-  return mac && (!accessChosen || step === "3");
+export function showsOnboarding(offered: boolean, accessChosen: boolean, step: StoredStep): boolean {
+  return offered && (!accessChosen || step === "3");
+}
+
+/**
+ * The steps onboarding goes through. Only macOS asks before an app reads
+ * Desktop, Documents or Downloads, so elsewhere there's no access to choose
+ * and step 2 is skipped.
+ */
+export function onboardingSteps(mac: boolean): OnboardingStep[] {
+  return mac ? [1, 2, 3] : [1, 3];
+}
+
+/** The step a stored one resumes at: itself, or the first step when it's one this platform skips. */
+export function resumeStep(steps: OnboardingStep[], stored: StoredStep): OnboardingStep {
+  const step = Number(stored) as OnboardingStep;
+  return steps.includes(step) ? step : steps[0];
+}
+
+/** The step after `step`, or null after the last. */
+export function stepAfter(steps: OnboardingStep[], step: OnboardingStep): OnboardingStep | null {
+  return steps[steps.indexOf(step) + 1] ?? null;
+}
+
+/** The step before `step`, or null before the first. */
+export function stepBefore(steps: OnboardingStep[], step: OnboardingStep): OnboardingStep | null {
+  const i = steps.indexOf(step);
+  return i > 0 ? steps[i - 1] : null;
+}
+
+/** How a step heading counts: "Step 2 of 2" for step 3 when step 2 is skipped. */
+export function stepLabel(steps: OnboardingStep[], step: OnboardingStep): string {
+  return `Step ${steps.indexOf(step) + 1} of ${steps.length}`;
 }
 
 /** Step 3's theme choices, each drawn as a little window. */

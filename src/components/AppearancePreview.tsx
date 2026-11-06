@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { useDirListing } from "../hooks/useDirListing";
-import type { ResolvedTheme } from "../lib/appearance";
 import { previewContent, previewPaths, fitScale, PREVIEW_SIZE } from "../lib/appearancePreview";
 import { waveDelays, waveLength } from "../lib/onboarding";
 import { engine } from "../lib/engine";
@@ -23,7 +22,7 @@ const none = new Set<string>();
  * so it always looks as getit will. Each time `wave` goes up, its sidebar rows
  * and then its tiles bounce one after another as they take the new colours.
  */
-export function AppearancePreview({ theme, wave = 0 }: { theme: ResolvedTheme; wave?: number }) {
+export function AppearancePreview({ wave = 0 }: { wave?: number }) {
   const [home, setHome] = useState<string | null>(null);
   useEffect(() => {
     engine.appearancePreviewDir().then(setHome, (e) => console.error("Couldn't make the preview's folder:", e));
@@ -98,8 +97,6 @@ export function AppearancePreview({ theme, wave = 0 }: { theme: ResolvedTheme; w
               queueState="running"
               onToggleQueue={noop}
               onToggleAdd={noop}
-              theme={theme}
-              onToggleTheme={noop}
               onToggleSettings={noop}
             />
             <div className="main">

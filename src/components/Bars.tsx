@@ -54,7 +54,6 @@ import {
   PlayIcon,
   PlusIcon,
   SearchIcon,
-  ThemeIcon,
   UpIcon,
 } from "./icons";
 
@@ -110,8 +109,6 @@ export interface ToolbarProps {
   queueState: "stopped" | "running" | "empty" | null;
   onToggleQueue: () => void;
   onToggleAdd: () => void;
-  theme: Theme;
-  onToggleTheme: () => void;
   onToggleSettings: () => void;
 }
 
@@ -183,9 +180,6 @@ export function Toolbar(p: ToolbarProps) {
         onClick={p.onToggleQueue}
       >
         {p.queueState === "running" ? <PauseIcon /> : <PlayIcon />}
-      </Button>
-      <Button variant="outline" size="icon" title={p.theme === "Dark" ? "Light mode" : "Dark mode"} onClick={p.onToggleTheme}>
-        <ThemeIcon />
       </Button>
       <Button variant="outline" size="icon" title="Add a download" onClick={p.onToggleAdd}>
         <PlusIcon />

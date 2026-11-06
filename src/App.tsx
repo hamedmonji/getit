@@ -47,7 +47,7 @@ import { useStoredState } from "./hooks/useStoredState";
 import { useSystemDark } from "./hooks/useSystemDark";
 import { useUndo } from "./hooks/useUndo";
 import { useUpdate } from "./hooks/useUpdate";
-import { showsOnboarding, STORED_STEPS, type OnboardingStep, type StoredStep } from "./lib/onboarding";
+import { onboardingSteps, resumeStep, showsOnboarding, STORED_STEPS, type StoredStep } from "./lib/onboarding";
 import {
   floodColor,
   accentTokens,
@@ -360,7 +360,7 @@ export default function App() {
       setHome(home);
       setRoot(setup?.root ?? null);
       setAccessFolders(setup?.folders ?? []);
-      setFirstLaunch(showsOnboarding(IS_MAC, !!setup, onboardingStep));
+      setFirstLaunch(showsOnboarding(IS_MAC || IS_WINDOWS, !!setup, onboardingStep));
       setHistory({ cwd: start, back: [], forward: [] });
     });
   }, []);
@@ -1209,10 +1209,23 @@ export default function App() {
   };
 
   if (firstLaunch) {
+    const steps = onboardingSteps(IS_MAC);
     return (
       <Onboarding
-        step={Number(onboardingStep) as OnboardingStep}
-        onStep={(step) => setOnboardingStep(String(step) as StoredStep)}
+        steps={steps}
+        step={resumeStep(steps, onboardingStep)}
+        onStep={(step) => {
+          // Without an access step, getit may open any folder, as with Full
+          // Disk Access; saving that marks onboarding past it, as step 2 does.
+          if (step === 3 && !steps.includes(2)) {
+            engine.setAccessSetup(null).then(
+              () => setOnboardingStep("3"),
+              (e) => setNotice(`Couldn't save: ${e}`),
+            );
+          } else {
+            setOnboardingStep(String(step) as StoredStep);
+          }
+        }}
         home={home ? baseName(home) : "Home"}
         asked={accessAsked}
         onFullDiskAccess={askFullDiskAccess}
@@ -1284,8 +1297,6 @@ export default function App() {
           setPasting(null);
           setAdding((a) => !a);
         }}
-        theme={theme}
-        onToggleTheme={() => setThemePref(theme === "Dark" ? "Light" : "Dark")}
         onToggleSettings={toggleSettings}
       />
 

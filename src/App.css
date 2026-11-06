@@ -2101,6 +2101,37 @@ body {
   --finder-file: linear-gradient(#3a3a3c, #2e2e30);
 }
 
+/* The File Explorer look-alike drawn in onboarding on Windows, light or dark
+   like Windows 11 in the app's theme. */
+.explorer-art {
+  --explorer-bg: #ffffff;
+  --explorer-tabs: #f3f3f3;
+  --explorer-field: #f7f7f7;
+  --explorer-stripe: #f4f4f6;
+  --explorer-ink: #1c1b19;
+  --explorer-sub: #6e6e6e;
+  --explorer-faint: #c4c4c4;
+  --explorer-line: #ececec;
+  --explorer-border: rgba(0, 0, 0, 0.14);
+  --explorer-selected: #ededed;
+  --explorer-folder: #ffc83d;
+  --explorer-folder-back: #e3a21a;
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+[data-theme="Dark"] .explorer-art {
+  --explorer-bg: #191919;
+  --explorer-tabs: #202020;
+  --explorer-field: #2b2b2b;
+  --explorer-stripe: #1f1f1f;
+  --explorer-ink: #ffffff;
+  --explorer-sub: #a0a0a0;
+  --explorer-faint: #5c5c5c;
+  --explorer-line: #2b2b2b;
+  --explorer-border: rgba(255, 255, 255, 0.12);
+  --explorer-selected: #2d2d2d;
+}
+
 /* A Finder-style folder glyph, drawn from simple shapes. */
 .finder-folder {
   position: relative;

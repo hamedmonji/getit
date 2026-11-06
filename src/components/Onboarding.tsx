@@ -21,6 +21,9 @@ import {
   FINISH,
   followedBackground,
   sameFoldersFrame,
+  stepAfter,
+  stepBefore,
+  stepLabel,
   THEME_THUMBS,
   TICK_MS,
   type AccessChoice,
@@ -29,22 +32,30 @@ import {
   type SidebarEntry,
   type Tile,
 } from "../lib/onboarding";
+import { FILE_MANAGER, IS_MAC, IS_WINDOWS, MOD } from "../lib/platform";
+import { CaptionGlyphs, ExplorerRowName, ExplorerWindow, STEP1_PLACES } from "./ExplorerArt";
+import { WindowControls } from "./WindowControls";
 import { AppearancePreview } from "./AppearancePreview";
 import { ColorSwatches } from "./ColorSwatches";
 import { FinishFlood } from "./FinishFlood";
 import { FileIcon } from "./FileIcon";
 import type { AppearanceSettings } from "./Settings";
 
-const primary = "h-[34px] rounded-lg bg-(--ob-accent) px-4 text-[13px] font-semibold text-white hover:bg-(--ob-accent-hover)";
-const secondary = "h-[34px] rounded-lg border-line bg-panel px-3.5 text-[13px] text-ink";
+// Windows' buttons are square-cornered, in its own size.
+const shape = IS_WINDOWS ? "h-8 rounded-[4px] text-sm" : "h-[34px] rounded-lg text-[13px]";
+const primary = cn(shape, "bg-(--ob-accent) px-4 font-semibold text-white hover:bg-(--ob-accent-hover)");
+const secondary = cn(shape, "border-line bg-panel px-3.5 text-ink");
+/** The file manager by its full name, as step 1 says it. */
+const FILE_MANAGER_NAME = IS_WINDOWS ? "File Explorer" : FILE_MANAGER;
 
 /**
- * First launch on macOS, which protects Desktop, Documents and Downloads. Fills
- * the window in place of the app until the user chooses. Step 1 shows that
- * getit's folders are Finder's; step 2 asks for Full Disk Access or one folder;
- * step 3 sets how getit looks, on getit itself.
+ * First launch. Fills the window in place of the app until the user finishes.
+ * Step 1 shows that getit's folders are the file manager's; step 2 asks for
+ * Full Disk Access or one folder, on macOS only, which protects Desktop,
+ * Documents and Downloads; step 3 sets how getit looks, on getit itself.
  */
 export function Onboarding({
+  steps,
   step,
   onStep,
   home,
@@ -55,6 +66,8 @@ export function Onboarding({
   appearance,
   onFinish,
 }: {
+  /** The steps this platform goes through, in order. */
+  steps: OnboardingStep[];
   step: OnboardingStep;
   onStep: (step: OnboardingStep) => void;
   /** The home folder's name, as Finder titles it. */
@@ -72,18 +85,39 @@ export function Onboarding({
   return (
     // Step 3 keeps to plain greys, so only the preview shows the picked colours.
     <div className={cn("relative flex h-screen flex-col text-ink", step === 3 ? "bg-(--ob-plain)" : "bg-panel")}>
-      {/* The window's bar: no bar of its own, so the page runs up under the
-          window's buttons, but something to drag the window by. As tall as
-          the app's toolbar, where the buttons are placed. */}
-      <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-10 h-12" />
+      {IS_WINDOWS ? (
+        // getit draws its own title bar on Windows, so setup has one too, with the window's buttons.
+        <div data-tauri-drag-region className="flex h-8 flex-none items-center gap-2.5 pl-3.5 text-xs">
+          <span className="grid size-4 place-items-center rounded bg-(--ob-accent)" aria-hidden>
+            <svg width="10" height="10" viewBox="0 0 16 16">
+              <path d="M8 2v9m-4-4 4 4 4-4M3 14h10" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <span data-tauri-drag-region>getit setup</span>
+          <div className="ml-auto h-full">
+            <WindowControls />
+          </div>
+        </div>
+      ) : (
+        /* The window's bar: no bar of its own, so the page runs up under the
+           window's buttons, but something to drag the window by. As tall as
+           the app's toolbar, where the buttons are placed. */
+        <div data-tauri-drag-region className="absolute inset-x-0 top-0 z-10 h-12" />
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex min-h-full flex-col">
           {step === 1 ? (
-            <SameFolders onContinue={() => onStep(2)} />
+            <SameFolders label={stepLabel(steps, 1)} onContinue={() => onStep(stepAfter(steps, 1) ?? 1)} />
           ) : step === 3 ? (
-            <PickALook {...appearance} onBack={() => onStep(2)} onFinish={onFinish} />
+            <PickALook
+              {...appearance}
+              label={stepLabel(steps, 3)}
+              onBack={() => onStep(stepBefore(steps, 3) ?? 3)}
+              onFinish={onFinish}
+            />
           ) : (
             <WhereToSave
+              label={stepLabel(steps, 2)}
               home={home}
               asked={asked}
               error={error}
@@ -98,10 +132,11 @@ export function Onboarding({
   );
 }
 
-function StepHeading({ step, title, children }: { step: number; title: string; children: ReactNode }) {
+/** A step's heading under its count, such as "Step 1 of 3". */
+function StepHeading({ label, title, children }: { label: string; title: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="font-mono text-[11px] text-ink-muted">Step {step} of 3</div>
+      <div className="font-mono text-[11px] text-ink-muted">{label}</div>
       <h1 className="text-2xl font-bold tracking-[-0.025em]">{title}</h1>
       <p className="max-w-[600px] text-[13.5px] leading-normal text-pretty text-ink-muted">{children}</p>
     </div>
@@ -110,7 +145,7 @@ function StepHeading({ step, title, children }: { step: number; title: string; c
 
 // Step 1
 
-function SameFolders({ onContinue }: { onContinue: () => void }) {
+function SameFolders({ label, onContinue }: { label: string; onContinue: () => void }) {
   const still = useReducedMotion();
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -124,11 +159,19 @@ function SameFolders({ onContinue }: { onContinue: () => void }) {
     <>
       <div className="flex flex-1 items-center justify-center bg-(--ob-soft) p-7">
         <div className="grid w-full max-w-[1000px] grid-cols-[minmax(0,1.25fr)_32px_minmax(0,1fr)] items-center">
-        <FinderWindow title="Downloads" height={300} sidebar={STEP1_SIDEBAR} column="Size" columnWidth={60}>
-          {frame.rows.map((row) => (
-            <DownloadRow key={row.depth + row.name.replace(/\.part$/, "")} row={row} />
-          ))}
-        </FinderWindow>
+        {IS_WINDOWS ? (
+          <ExplorerWindow title="Downloads" height={300} places={STEP1_PLACES} column="Size" columnWidth={60}>
+            {frame.rows.map((row) => (
+              <DownloadRow key={row.depth + row.name.replace(/\.part$/, "")} row={row} explorer />
+            ))}
+          </ExplorerWindow>
+        ) : (
+          <FinderWindow title="Downloads" height={300} sidebar={STEP1_SIDEBAR} column="Size" columnWidth={60}>
+            {frame.rows.map((row) => (
+              <DownloadRow key={row.depth + row.name.replace(/\.part$/, "")} row={row} />
+            ))}
+          </FinderWindow>
+        )}
         <div className="grid place-items-center">
           <span
             className={cn(
@@ -144,9 +187,9 @@ function SameFolders({ onContinue }: { onContinue: () => void }) {
       </div>
       <div className="flex flex-none items-end gap-6 border-t border-line px-8 pt-[26px] pb-6">
         <div className="flex-1">
-          <StepHeading step={1} title="Same folders, now with downloads">
-            getit opens the folders you already have in Finder. Downloads land right inside them, and Finder sees each
-            file the moment it's done.
+          <StepHeading label={label} title="Same folders, now with downloads">
+            getit opens the folders you already have in {FILE_MANAGER_NAME}. Downloads land right inside them, and{" "}
+            {FILE_MANAGER_NAME} sees each file the moment it's done.
           </StepHeading>
         </div>
         <Button className={primary} onClick={onContinue} autoFocus>
@@ -166,7 +209,9 @@ const STEP1_SIDEBAR: SidebarEntry[] = [
   { kind: "item", label: "Media", selected: false, reachable: true, delayMs: 0 },
 ];
 
-function DownloadRow({ row }: { row: FinderRow }) {
+/** A row of step 1's file manager list, in Finder's look or, with `explorer`, File Explorer's. */
+function DownloadRow({ row, explorer = false }: { row: FinderRow; explorer?: boolean }) {
+  const name = { depth: row.depth, folder: row.folder, open: row.open, name: row.name };
   return (
     <div
       className="overflow-hidden transition-[height,opacity] duration-300"
@@ -174,12 +219,28 @@ function DownloadRow({ row }: { row: FinderRow }) {
     >
       <div
         className={cn(
-          "mx-1.5 grid h-6 grid-cols-[minmax(0,1fr)_60px] items-center rounded-[5px] px-2.5 text-xs transition-colors duration-400",
-          row.highlighted ? "bg-[#0a64d6] text-white" : row.striped ? "bg-(--finder-stripe)" : "bg-(--finder-bg)",
+          "mx-1.5 grid h-6 grid-cols-[minmax(0,1fr)_60px] items-center px-2.5 transition-colors duration-400",
+          explorer ? "rounded text-[11.5px]" : "rounded-[5px] text-xs",
+          row.highlighted
+            ? "bg-[#0a64d6] text-white"
+            : explorer
+              ? row.striped
+                ? "bg-(--explorer-stripe)"
+                : "bg-(--explorer-bg)"
+              : row.striped
+                ? "bg-(--finder-stripe)"
+                : "bg-(--finder-bg)",
         )}
       >
-        <RowName depth={row.depth} folder={row.folder} open={row.open} name={row.name} />
-        <span className={cn("text-right", row.highlighted ? "text-white" : "text-(--finder-sub)")}>{row.size}</span>
+        {explorer ? <ExplorerRowName {...name} /> : <RowName {...name} />}
+        <span
+          className={cn(
+            "text-right",
+            row.highlighted ? "text-white" : explorer ? "text-(--explorer-sub)" : "text-(--finder-sub)",
+          )}
+        >
+          {row.size}
+        </span>
       </div>
     </div>
   );
@@ -188,11 +249,13 @@ function DownloadRow({ row }: { row: FinderRow }) {
 function GetitWindow({ tiles, frame }: { tiles: Tile[]; frame: ReturnType<typeof sameFoldersFrame> }) {
   return (
     <div className="relative flex h-[300px] flex-col overflow-hidden rounded-[10px] border border-line bg-panel text-ink shadow-[0_10px_28px_color-mix(in_oklch,var(--ob-accent)_16%,transparent)]">
-      <div className="flex h-11 flex-none items-center border-b border-line px-2.5">
+      <div className={cn("flex h-11 flex-none items-center gap-2 border-b border-line", IS_WINDOWS ? "pl-2.5" : "px-2.5")}>
         <div className="flex h-[26px] min-w-0 flex-1 items-center gap-1 rounded-lg border border-line bg-panel2 px-2 font-mono text-[11px] whitespace-nowrap">
-          <span className="text-ink-muted">~ / Downloads /</span>
+          <span className="text-ink-muted">{IS_WINDOWS ? "Downloads \\" : "~ / Downloads /"}</span>
           <span className="font-semibold">Movies</span>
         </div>
+        {/* getit's own caption buttons on Windows, where the Mac's sit in Finder's window. */}
+        {IS_WINDOWS && <CaptionGlyphs width={30} height={44} />}
       </div>
       <div className="grid flex-1 grid-cols-3 content-start gap-1 px-2 py-4">
         {tiles.map((tile) => (
@@ -233,8 +296,8 @@ function GetitWindow({ tiles, frame }: { tiles: Tile[]; frame: ReturnType<typeof
 /** getit's menu for a folder's empty space, as drawn in the animation. */
 function PasteMenu({ open, hot }: { open: boolean; hot: boolean }) {
   const items: ([string, string, boolean] | null)[] = [
-    ["Paste Link", "⌘V", hot],
-    ["New Folder", "⇧⌘N", false],
+    ["Paste Link", `${MOD}V`, hot],
+    ["New Folder", IS_MAC ? "⇧⌘N" : "Ctrl+Shift+N", false],
     null,
     ["Queue Settings…", "", false],
   ];
@@ -288,6 +351,7 @@ function Pointer({ at }: { at: { x: number; y: number } | null }) {
 // Step 2
 
 function WhereToSave({
+  label,
   home,
   asked,
   error,
@@ -295,6 +359,7 @@ function WhereToSave({
   onFullDiskAccess,
   onChooseFolder,
 }: {
+  label: string;
   home: string;
   asked: boolean;
   error: string | null;
@@ -339,7 +404,7 @@ function WhereToSave({
         className="flex max-w-[520px] flex-col gap-5 px-8 pb-[26px]"
         style={{ paddingTop: 32 + align.offset }}
       >
-        <StepHeading step={2} title="Where can getit save files?">
+        <StepHeading label={label} title="Where can getit save files?">
           {copy.caption}
         </StepHeading>
         <RadioGroup value={choice} onValueChange={(v) => setChoice(v as AccessChoice)} className="gap-2">
@@ -399,9 +464,10 @@ function PickALook({
   onAccent,
   background,
   onBackground,
+  label,
   onBack,
   onFinish,
-}: LookSettings & { onBack: () => void; onFinish: (flooded: boolean) => void }) {
+}: LookSettings & { label: string; onBack: () => void; onFinish: (flooded: boolean) => void }) {
   const still = useReducedMotion();
   // Goes up with each pick, for the preview to wave.
   const [wave, setWave] = useState(0);
@@ -437,7 +503,7 @@ function PickALook({
     <div className="grid flex-1 md:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
       <div className="flex items-center justify-center bg-(--ob-stage) px-6 py-7">
         <div ref={align.showcase} className="w-full">
-          <AppearancePreview theme={resolvedTheme} wave={wave} />
+          <AppearancePreview wave={wave} />
         </div>
       </div>
       <div
@@ -445,7 +511,7 @@ function PickALook({
         className="flex max-w-[520px] flex-col gap-5 px-8 pb-[26px]"
         style={{ paddingTop: 32 + align.offset }}
       >
-        <StepHeading step={3} title="Pick a look">
+        <StepHeading label={label} title="Pick a look">
           You can change this any time in Settings › Appearance.
         </StepHeading>
         <LookSection title="Theme">

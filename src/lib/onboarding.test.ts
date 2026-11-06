@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { accessMap, finderSize, followedBackground, LOOP_TICKS, sameFoldersFrame, showsOnboarding, alignedOffset, waveDelays, waveLength, WAVE } from "./onboarding";
+import {
+  accessMap,
+  finderSize,
+  followedBackground,
+  LOOP_TICKS,
+  onboardingSteps,
+  resumeStep,
+  sameFoldersFrame,
+  showsOnboarding,
+  stepAfter,
+  stepBefore,
+  stepLabel,
+  alignedOffset,
+  waveDelays,
+  waveLength,
+  WAVE,
+} from "./onboarding";
 
 const newRow = (tick: number) => sameFoldersFrame(tick).rows[3];
 const newTile = (tick: number) => sameFoldersFrame(tick).tiles[2];
@@ -91,11 +107,42 @@ describe("accessMap", () => {
 });
 
 describe("showsOnboarding", () => {
-  it("shows on macOS until access is chosen, then while on step 3", () => {
+  it("shows where offered until access is chosen, then while on step 3", () => {
     expect(showsOnboarding(true, false, "1")).toBe(true);
     expect(showsOnboarding(true, true, "2")).toBe(false);
     expect(showsOnboarding(true, true, "3")).toBe(true);
     expect(showsOnboarding(false, false, "3")).toBe(false);
+  });
+});
+
+describe("onboarding steps", () => {
+  const mac = onboardingSteps(true);
+  const windows = onboardingSteps(false);
+
+  it("skips choosing access where there's none to choose", () => {
+    expect(mac).toEqual([1, 2, 3]);
+    expect(windows).toEqual([1, 3]);
+  });
+
+  it("goes forward and back over the skipped step", () => {
+    expect(stepAfter(windows, 1)).toBe(3);
+    expect(stepBefore(windows, 3)).toBe(1);
+    expect(stepAfter(mac, 1)).toBe(2);
+    expect(stepBefore(mac, 3)).toBe(2);
+    expect(stepAfter(windows, 3)).toBeNull();
+    expect(stepBefore(mac, 1)).toBeNull();
+  });
+
+  it("counts only the steps shown", () => {
+    expect(stepLabel(mac, 3)).toBe("Step 3 of 3");
+    expect(stepLabel(windows, 3)).toBe("Step 2 of 2");
+    expect(stepLabel(windows, 1)).toBe("Step 1 of 2");
+  });
+
+  it("resumes at the stored step, or the first when it's skipped here", () => {
+    expect(resumeStep(windows, "3")).toBe(3);
+    expect(resumeStep(windows, "2")).toBe(1);
+    expect(resumeStep(mac, "2")).toBe(2);
   });
 });
 
