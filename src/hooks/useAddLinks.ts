@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { bestMatch as pickBest, type BatchPlan } from "../lib/batchDuplicates";
 import { engine, type DownloadItem } from "../lib/engine";
 import { plural } from "../lib/format";
 import { sameUrl, withoutCopyNumber } from "../lib/links";
@@ -79,10 +80,7 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
   };
 
   /** Of several matching downloads, the one in `dir`'s queue, else an unfinished one. */
-  const bestMatch = (matches: DownloadItem[], dir: string) => {
-    const here = queueForDir(stateRef.current, dir)?.id;
-    return matches.find((d) => d.queue_id === here) ?? matches.find((d) => d.status !== "completed") ?? matches[0];
-  };
+  const bestMatch = (matches: DownloadItem[], dir: string) => pickBest(stateRef.current, matches, dir);
 
   /** A download of the same link, finished or not, in any queue. Answered from memory. */
   const findByLink = (url: string, dir: string): Duplicate | undefined => {
@@ -210,6 +208,22 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
   };
 
   /**
+   * Adds a pasted batch to `dir` as the user chose in it: existing downloads
+   * being replaced go to the Trash (with their files), then the duplicates
+   * being downloaded again are added, and last the new links, checked as
+   * usual. Rejects with what went wrong first.
+   */
+  const addBatch = async (plan: BatchPlan, dir = cwd) => {
+    if (!dir) return;
+    if (plan.trash.ids.length || plan.trash.paths.length) {
+      const trashed = await engine.moveToTrash(plan.trash.ids, plan.trash.paths);
+      if (trashed.error) throw trashed.error;
+    }
+    if (plan.again.length) await addNow(plan.again, dir);
+    if (plan.add.length) await addLinks(plan.add, dir);
+  };
+
+  /**
    * Checks links the browser extension sent, headed for `dir`, before the user
    * picks a folder for them, and asks about those that already exist. Returns
    * the links that aren't downloads of the same link, found at once, and a
@@ -287,5 +301,5 @@ export function useAddLinks({ state, cwd, select, go, setNotice, recapture }: Op
     }
   };
 
-  return { duplicates, pendingAdds, addLinks, checkCaptured, settleDuplicates, currentOf, showDuplicate };
+  return { duplicates, pendingAdds, addLinks, addBatch, checkCaptured, settleDuplicates, currentOf, showDuplicate };
 }

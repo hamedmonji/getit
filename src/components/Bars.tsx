@@ -23,6 +23,19 @@ import { IS_MAC, IS_WINDOWS, MOD } from "../lib/platform";
 import { WindowControls } from "./WindowControls";
 import { useAutoNames } from "../hooks/useAutoNames";
 import { useLinkInfo } from "../hooks/useLinkInfo";
+import { useFilesHere } from "../hooks/useFilesHere";
+import {
+  batchDuplicates,
+  choose,
+  duplicateView,
+  groupDuplicates,
+  planBatch,
+  syncPicks,
+  tick,
+  type BatchPicks,
+  type BatchPlan,
+  type Downloads,
+} from "../lib/batchDuplicates";
 import { chosen, moveTo, syncOrder, syncSelected, totalLabel } from "../lib/batch";
 import { LinkBatch } from "./LinkBatch";
 import { linkHeading, type ViewMode } from "../lib/viewModels";
@@ -464,11 +477,22 @@ function LinkWithInfo({ url, info }: { url: string; info: LinkInfo | null | unde
   );
 }
 
+/** How a batch of links handles the ones that already exist, in the batch itself. */
+export interface BatchDuplicateCheck {
+  /** The downloads to check against. */
+  state: Downloads;
+  /** A folder as shown, such as `~/Movies`. */
+  whereLabel: (dir: string) => string;
+  /** Adds the batch as the user chose, duplicates and all. */
+  onAddBatch: (plan: BatchPlan) => void;
+}
+
 /**
  * Links waiting at the bottom of the window to be added, each with its file
  * name and size once the server has given them. Several show as a table to
- * tick and order them; the ticked ones are added in that order. `extra` goes
- * before the buttons.
+ * tick and order them; the ticked ones are added in that order. With
+ * `duplicates`, links that already exist are shown first in the table, each
+ * with a choice of what to do. `extra` goes before the buttons.
  */
 function LinksPrompt({
   urls,
@@ -478,6 +502,7 @@ function LinksPrompt({
   closeLabel,
   autoFocus = false,
   extra,
+  duplicates,
   onAdd,
   onClose,
 }: {
@@ -491,6 +516,7 @@ function LinksPrompt({
   /** Focuses the add button, so Enter adds. */
   autoFocus?: boolean;
   extra?: ReactNode;
+  duplicates?: BatchDuplicateCheck;
   /**
    * Starts adding these links, in this order. The prompt closes at once; the
    * links show in the folder while they're checked.
@@ -500,19 +526,34 @@ function LinksPrompt({
 }) {
   const infos = useAutoNames(dir, rename, useLinkInfo(urls));
   const [order, setOrder] = useState(urls);
-  const [selected, setSelected] = useState(() => new Set(urls));
+  const [stored, setPicks] = useState<BatchPicks>(() => ({ ticked: new Set(urls), choices: {} }));
   // Captured links can arrive or leave while this is open.
   const [seen, setSeen] = useState(urls);
   if (seen !== urls) {
     setSeen(urls);
     setOrder((o) => syncOrder(o, urls));
-    setSelected((s) => syncSelected(s, seen, urls));
+    setPicks((p) => ({ ...p, ticked: syncSelected(p.ticked, seen, urls) }));
   }
 
   const batch = urls.length > 1;
-  const adding = batch ? chosen(order, selected) : urls;
+  const checking = batch && dir !== null && duplicates ? duplicates : null;
+  const names = checking ? urls.flatMap((u) => (infos[u] ? [infos[u]!.file_name] : [])) : [];
+  const filesHere = useFilesHere(checking ? dir : null, names);
+  const dups = checking && dir ? batchDuplicates(order, infos, dir, checking.state, filesHere) : {};
+  const dupUrls = groupDuplicates(order, dups).dups;
+  // Links found to be duplicates start skipped, as the server's names arrive.
+  const picks = syncPicks(stored, dupUrls);
+  if (picks !== stored) setPicks(picks);
+  const view =
+    checking &&
+    duplicateView(dupUrls, dups, picks.choices, dirLabel, (d) =>
+      checking.whereLabel(d.kind === "file" ? dir! : (checking.state.queues[d.existing.queue_id]?.dir ?? dir!)),
+    );
+
+  const adding = batch ? chosen(order, picks.ticked) : urls;
   const add = () => {
-    onAdd(adding);
+    if (checking && dir) checking.onAddBatch(planBatch(order, picks, dups, dir));
+    else onAdd(adding);
     onClose();
   };
 
@@ -537,20 +578,13 @@ function LinksPrompt({
       {batch && (
         <LinkBatch
           order={order}
-          ticked={selected}
+          ticked={picks.ticked}
           infos={infos}
-          onTick={(urls, ticked) =>
-            setSelected((s) => {
-              const next = new Set(s);
-              for (const url of urls) {
-                if (ticked) next.add(url);
-                else next.delete(url);
-              }
-              return next;
-            })
-          }
-          onTickAll={(ticked) => setSelected(new Set(ticked ? order : []))}
+          duplicates={view}
+          onTick={(urls, on) => setPicks((p) => tick(syncPicks(p, dupUrls), urls, on))}
+          onTickAll={(on) => setPicks((p) => tick(syncPicks(p, dupUrls), order, on))}
           onMove={(urls, index) => setOrder((o) => moveTo(o, urls, index))}
+          onChoose={(urls, choice) => setPicks((p) => choose(syncPicks(p, dupUrls), urls, choice))}
         />
       )}
     </div>
@@ -563,15 +597,21 @@ export function PasteBar({
   dir,
   rename,
   dirLabel,
+  duplicates,
   onAdd,
+  onAddBatch,
   onClose,
 }: {
   urls: string[];
   dir: string | null;
   rename: RenameRule[] | undefined;
   dirLabel: string;
+  /** For several links: the downloads they're checked against, and folders as shown. */
+  duplicates: Omit<BatchDuplicateCheck, "onAddBatch">;
   /** Starts adding the chosen links, in order; `always` skips this prompt from now on. */
   onAdd: (urls: string[], always: boolean) => void;
+  /** Adds several links as the user chose, duplicates and all. */
+  onAddBatch: (plan: BatchPlan, always: boolean) => void;
   onClose: () => void;
 }) {
   const [always, setAlways] = useState(false);
@@ -590,6 +630,7 @@ export function PasteBar({
           <Label htmlFor={alwaysId}>Don't ask again</Label>
         </div>
       }
+      duplicates={{ ...duplicates, onAddBatch: (plan) => onAddBatch(plan, always) }}
       onAdd={(chosen) => onAdd(chosen, always)}
       onClose={onClose}
     />

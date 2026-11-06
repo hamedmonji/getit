@@ -64,6 +64,7 @@ import {
   type Stripes,
   type ThemePreference,
 } from "./lib/appearance";
+import { anyKnownDuplicate } from "./lib/batchDuplicates";
 import { engine, onBrowserLinks, type Captured, type DownloadStatus } from "./lib/engine";
 import { formatSize, formatSpeed, plural } from "./lib/format";
 import { isFolderKey, splitKeys } from "./lib/keys";
@@ -391,7 +392,7 @@ export default function App() {
     },
     [select],
   );
-  const { duplicates, pendingAdds, addLinks, checkCaptured, settleDuplicates, currentOf, showDuplicate } = useAddLinks({
+  const { duplicates, pendingAdds, addLinks, addBatch, checkCaptured, settleDuplicates, currentOf, showDuplicate } = useAddLinks({
     state,
     cwd: history?.cwd ?? null,
     select,
@@ -940,7 +941,9 @@ export default function App() {
   const pasteLinks = (text: string) => {
     const urls = linksIn(text);
     if (!urls.length) return;
-    if (pasteMode === "always") {
+    // Several links that include ones already downloaded are asked about all
+    // the same, so each duplicate can be dealt with alongside the others.
+    if (pasteMode === "always" && !(urls.length > 1 && cwd && anyKnownDuplicate(urls, cwd, state))) {
       addLinks(urls).catch((e) => setNotice(`Couldn't add: ${e}`));
     } else {
       setAdding(false);
@@ -1511,9 +1514,14 @@ export default function App() {
           dir={cwd}
           rename={queueForDir(state, cwd)?.settings.rename}
           dirLabel={displayPath(cwd, home)}
+          duplicates={{ state, whereLabel: (dir) => displayPath(dir, home) }}
           onAdd={(urls, always) => {
             if (always) setPasteMode("always");
             addLinks(urls).catch((e) => setNotice(`Couldn't add: ${e}`));
+          }}
+          onAddBatch={(plan, always) => {
+            if (always) setPasteMode("always");
+            addBatch(plan).catch((e) => setNotice(`Couldn't add: ${e}`));
           }}
           onClose={() => setPasting(null)}
         />

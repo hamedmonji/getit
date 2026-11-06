@@ -34,6 +34,15 @@ export function moveTo(order: string[], urls: string[], index: number): string[]
 }
 
 /**
+ * Where in `order` a drop before the `index`th of `part` (a subset of
+ * `order`, in its order) lands: before that link, or after the part's last.
+ */
+export function indexInOrder(order: string[], part: string[], index: number): number {
+  if (index < part.length) return order.indexOf(part[index]);
+  return part.length ? order.indexOf(part[part.length - 1]) + 1 : order.length;
+}
+
+/**
  * The rows selected after clicking `url`, as in Finder: on its own, added or
  * removed with `toggle` (Command), or the range from `anchor` with `range`
  * (Shift). The anchor is where the next range starts.

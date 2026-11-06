@@ -307,7 +307,7 @@ body {
 }
 
 .link-batch-header,
-.link-batch-row {
+.link-batch-cells {
   display: grid;
   grid-template-columns: var(--link-batch-columns);
   gap: 10px;
@@ -341,11 +341,23 @@ body {
 
 .link-batch-row {
   position: relative;
-  height: 30px;
   padding: 0 14px;
   border-radius: 7px;
   font-size: 13px;
   cursor: grab;
+}
+
+.link-batch-cells {
+  height: 30px;
+}
+
+/* Duplicates are added first, so they stay where they are. */
+.link-batch-row.fixed {
+  cursor: default;
+}
+
+.link-batch-row.fixed .link-batch-grip {
+  opacity: 0;
 }
 
 .link-batch-row:hover {
@@ -405,6 +417,70 @@ body {
 
 .link-batch-url {
   font-size: 12px;
+}
+
+/* Links that already exist, grouped at the top of the batch. */
+.dup-group-head,
+.dup-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--ink);
+}
+
+.dup-group-head {
+  margin: 4px 6px 0;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* Under its row, lined up with the name. */
+.dup-line {
+  padding: 0 0 7px 50px;
+  font-size: 12px;
+}
+
+.dup-icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--tint);
+}
+
+.dup-group-text,
+.dup-line-text {
+  flex: 1;
+  min-width: 140px;
+}
+
+.dup-choice {
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+}
+
+.dup-choice-item {
+  height: 22px;
+  min-width: 0;
+  padding: 0 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.dup-choice-item[data-state="on"] {
+  background: var(--ink);
+  color: var(--panel);
+}
+
+.dup-separator {
+  height: 1px;
+  margin: 2px 14px;
+  background: var(--line);
 }
 
 .link-batch-total {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   chosen,
   clickSelect,
+  indexInOrder,
   moveTo,
   nameCell,
   selectAllState,
@@ -155,5 +156,21 @@ describe("sizeCell", () => {
     expect(sizeCell(null)).toBe("—");
     expect(sizeCell({ file_name: "f", total_bytes: null })).toBe("—");
     expect(sizeCell({ file_name: "f", total_bytes: 20 * MB })).toBe("20 MB");
+  });
+});
+
+describe("indexInOrder", () => {
+  const order = ["d1", "a", "d2", "b", "c"];
+  const part = ["a", "b", "c"];
+
+  it("drops before the same link in the whole order", () => {
+    expect(indexInOrder(order, part, 0)).toBe(1);
+    expect(indexInOrder(order, part, 1)).toBe(3);
+  });
+
+  it("drops after the part's last link at its end", () => {
+    expect(indexInOrder(order, part, 3)).toBe(5);
+    expect(indexInOrder(["a", "d1"], ["a"], 1)).toBe(1);
+    expect(indexInOrder(["d1"], [], 0)).toBe(1);
   });
 });
