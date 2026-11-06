@@ -299,7 +299,6 @@ body {
 
 /* Several links to add: a table to tick them and drag them into queue order. */
 .link-batch {
-  --link-batch-columns: 14px 16px minmax(120px, 1fr) 72px minmax(120px, 1.3fr);
   max-height: 260px;
   overflow: auto;
   border-top: 1px solid var(--line);
@@ -314,17 +313,35 @@ body {
   align-items: center;
 }
 
+/* As wide as the columns need, so the table scrolls sideways rather than squeezing them. */
+.link-batch-header,
+.link-batch-body {
+  min-width: var(--link-batch-width);
+}
+
 .link-batch-header {
   position: sticky;
   top: 0;
   z-index: 1;
   height: 30px;
+  align-items: stretch;
+  line-height: 30px;
   padding: 0 20px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   font-size: 11.5px;
   font-weight: 500;
   color: var(--ink-muted);
+}
+
+.link-batch-column {
+  position: relative;
+  min-width: 0;
+}
+
+/* The table's columns are 10px apart, the list view's 12px. */
+.link-batch .col-divider {
+  right: -10px;
 }
 
 .link-batch-rows {
@@ -411,7 +428,6 @@ body {
 }
 
 .link-batch-size {
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 

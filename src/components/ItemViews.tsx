@@ -8,7 +8,6 @@ import {
 import { useColumnWidths } from "../hooks/useColumnWidths";
 import { useListFiller } from "../hooks/useListFiller";
 import { useStoredJson } from "../hooks/useStoredJson";
-import { swallowClick } from "../hooks/useItemDrag";
 import {
   COLUMN_LABELS,
   COLUMNS,
@@ -27,6 +26,7 @@ import { splitName } from "../lib/paths";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { fillerStripes } from "../lib/listFiller";
 import { ActionButton, FileGlyph, FolderGlyph, ProgressBar } from "./Glyphs";
+import { ColumnDivider, textWidth } from "./ColumnDivider";
 
 export interface ItemViewProps {
   folders: FolderVm[];
@@ -224,71 +224,9 @@ export function IconView(props: ItemViewProps) {
 }
 
 /**
- * The divider after a header cell: dragging it sizes that column, and
- * double-clicking fits the column to its widest text.
- */
-function ColumnDivider({
-  label,
-  onStart,
-  onResize,
-  onReset,
-}: {
-  label: string;
-  onStart: () => void;
-  onResize: (width: number) => void;
-  onReset: () => void;
-}) {
-  const onMouseDown = (e: MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    // Not a press on the list, which would draw a selection box.
-    e.stopPropagation();
-    e.preventDefault();
-    const startX = e.clientX;
-    const startWidth = e.currentTarget.parentElement!.getBoundingClientRect().width;
-    onStart();
-    const root = document.documentElement;
-    root.classList.add("col-resizing");
-    const onMove = (m: globalThis.MouseEvent) => onResize(startWidth + m.clientX - startX);
-    const onUp = () => {
-      swallowClick();
-      stop();
-    };
-    const stop = () => {
-      root.classList.remove("col-resizing");
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      window.removeEventListener("blur", stop);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("blur", stop);
-  };
-  return (
-    <div
-      className="col-divider"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={`Resize ${label}`}
-      onMouseDown={onMouseDown}
-      onDoubleClick={(e) => {
-        e.stopPropagation();
-        onReset();
-      }}
-    />
-  );
-}
-
-/**
  * The list: a header of resizable columns over the rows. Right-clicking the
  * header lists the columns to show or hide; the name column always shows.
  */
-/** How wide an element's text is laid out, past where it's cut off with an ellipsis. */
-function textWidth(el: Element): number {
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  return range.getBoundingClientRect().width;
-}
-
 export function ListView(props: ItemViewProps) {
   const [widths, setWidths] = useColumnWidths();
   const [hidden, setHidden] = useStoredJson("getit.hiddenColumns", parseHiddenColumns);

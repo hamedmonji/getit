@@ -1,10 +1,24 @@
-import { useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { Copy, GripVertical } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { clickSelect, indexInOrder, nameCell, selectAllState, sizeCell, tickTargets } from "../lib/batch";
 import type { ChoiceOption, DupChoice, DupView } from "../lib/batchDuplicates";
 import type { LinkInfo } from "../lib/engine";
+import {
+  BATCH_COLUMN_LABELS,
+  BATCH_COLUMNS,
+  BATCH_FIT_SELECTORS,
+  batchTableWidth,
+  batchTemplate,
+  fitBatchColumn,
+  parseBatchWidths,
+  pinBatchColumns,
+  resizeBatchColumn,
+  type BatchColumn,
+} from "../lib/batchColumns";
+import { useStoredJson } from "../hooks/useStoredJson";
+import { ColumnDivider, textWidth } from "./ColumnDivider";
 
 // How far the pointer moves before a press on a row becomes a drag.
 const DRAG_THRESHOLD = 4;
@@ -78,6 +92,8 @@ export function LinkBatch({
   onChoose?: (urls: string[], choice: DupChoice) => void;
 }) {
   const rowsRef = useRef<HTMLOListElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [widths, setWidths] = useStoredJson("getit.batchColumns", parseBatchWidths);
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const anchor = useRef<string | null>(null);
   // The press being tracked, whether it became a drag, and whether a click
@@ -180,19 +196,54 @@ export function LinkBatch({
     );
   };
 
+  /** The name and link columns' widths on screen, for fixing them before a column is resized. */
+  const onScreen = () => {
+    const width = (key: BatchColumn) =>
+      tableRef.current?.querySelector(`[data-column="${key}"]`)?.getBoundingClientRect().width ?? 0;
+    return { name: width("name"), link: width("link") };
+  };
+  /** Fits column `key` to its widest text: its header's and its rows'. */
+  const fit = (key: BatchColumn) => {
+    const table = tableRef.current;
+    if (!table) return;
+    const texts = [
+      table.querySelector(`[data-column="${key}"] .ellipsis`),
+      ...table.querySelectorAll(`.link-batch-body ${BATCH_FIT_SELECTORS[key]}`),
+    ];
+    const measured = texts.filter((el): el is Element => !!el).map(textWidth);
+    const now = onScreen();
+    setWidths((w) => fitBatchColumn(pinBatchColumns(w, now), key, measured));
+  };
+
   const all = selectAllState(order, ticked);
+  const style = {
+    "--link-batch-columns": batchTemplate(widths),
+    "--link-batch-width": `${batchTableWidth(widths)}px`,
+  } as CSSProperties;
   return (
-    <div className="link-batch">
+    <div ref={tableRef} className="link-batch" style={style}>
       <div className="link-batch-header">
         <span />
         <Checkbox
+          className="self-center"
           checked={all}
           onCheckedChange={() => onTickAll(all !== true)}
           aria-label={all === true ? "Deselect all" : "Select all"}
         />
-        <span>Name</span>
-        <span className="link-batch-size">Size</span>
-        <span>Link</span>
+        {BATCH_COLUMNS.map((key) => (
+          <div key={key} className={"link-batch-column" + (key === "size" ? " link-batch-size" : "")} data-column={key}>
+            <div className="ellipsis">{BATCH_COLUMN_LABELS[key]}</div>
+            <ColumnDivider
+              label={BATCH_COLUMN_LABELS[key]}
+              onStart={() => {
+                const now = onScreen();
+                setWidths((w) => pinBatchColumns(w, now));
+              }}
+              onResize={(width) => setWidths((w) => resizeBatchColumn(w, key, width))}
+              onReset={() => fit(key)}
+            />
+          </div>
+        ))}
       </div>
       <div className="link-batch-body" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
         {duplicates && dups.length > 0 && (

@@ -366,9 +366,10 @@ export default function App() {
   }, []);
 
   const cwd = history?.cwd ?? null;
+  // Pasted links stay while the user goes to another folder, as captured ones
+  // do, so they can be added wherever the user ends up.
   useEffect(() => {
     setEditing(null);
-    setPasting(null);
     setQuery("");
     setAddressOpen(false);
   }, [cwd]);
