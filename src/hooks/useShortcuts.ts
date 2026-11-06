@@ -122,7 +122,17 @@ interface Options {
 }
 
 /**
- * Runs `handlers` for the window's keyboard shortcuts. Text fields and open menus
+ * What a mouse button goes to, by `MouseEvent.button`: the side buttons go
+ * back (3) and forward (4), as in Explorer and browsers. Settings, which covers
+ * the folders, keeps them.
+ */
+export function mouseShortcut(button: number, settingsOpen: boolean): "back" | "forward" | null {
+  if (settingsOpen) return null;
+  return button === 3 ? "back" : button === 4 ? "forward" : null;
+}
+
+/**
+ * Runs `handlers` for the window's keyboard shortcuts, and the mouse's side buttons. Text fields and open menus
  * keep their keys, and so does a key something already handled, such as the
  * Escape that closes a menu or dialog. Typing in a dialog selects nothing behind it.
  */
@@ -151,7 +161,26 @@ export function useShortcuts(options: Options, handlers: Record<ShortcutAction, 
       if (shortcut.preventDefault) e.preventDefault();
       if (shortcut.action) handlers[shortcut.action](e);
     };
+    // The webview would take the side buttons for its own page history, so
+    // pressing them does nothing; releasing them goes back or forward.
+    const isSide = (e: MouseEvent) => e.button === 3 || e.button === 4;
+    const onMouseDown = (e: MouseEvent) => {
+      if (isSide(e)) e.preventDefault();
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      if (!isSide(e)) return;
+      e.preventDefault();
+      const { options, handlers } = latest.current;
+      const action = mouseShortcut(e.button, options.settingsOpen);
+      if (action) handlers[action](new KeyboardEvent("keydown"));
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
   }, []);
 }

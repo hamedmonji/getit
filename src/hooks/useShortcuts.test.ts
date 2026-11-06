@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { shortcutFor, useShortcuts, type KeyPress, type ShortcutAction, type ShortcutContext } from "./useShortcuts";
+import { mouseShortcut, shortcutFor, useShortcuts, type KeyPress, type ShortcutAction, type ShortcutContext } from "./useShortcuts";
 
 const mac: ShortcutContext = { isMac: true, settingsOpen: false, selectionCount: 0, onButton: false, typing: false };
 const other: ShortcutContext = { ...mac, isMac: false };
@@ -224,5 +224,38 @@ describe("useShortcuts", () => {
     document.addEventListener("keydown", handle, true);
     expect(escapeRuns(document.body)).toBe(false);
     document.removeEventListener("keydown", handle, true);
+  });
+});
+
+describe("mouseShortcut", () => {
+  it("goes back and forward with the side buttons", () => {
+    expect(mouseShortcut(3, false)).toBe("back");
+    expect(mouseShortcut(4, false)).toBe("forward");
+  });
+
+  it("leaves the other buttons alone, and every button while Settings is open", () => {
+    expect(mouseShortcut(0, false)).toBeNull();
+    expect(mouseShortcut(1, false)).toBeNull();
+    expect(mouseShortcut(2, false)).toBeNull();
+    expect(mouseShortcut(3, true)).toBeNull();
+  });
+});
+
+describe("useShortcuts with the mouse", () => {
+  it("goes back and forward when a side button is released", () => {
+    const back = vi.fn();
+    const forward = vi.fn();
+    const handlers = { back, forward } as unknown as Record<ShortcutAction, (e: KeyboardEvent) => void>;
+    const hook = renderHook(() => useShortcuts({ settingsOpen: false, selectionCount: 0, typing: () => false }, handlers));
+    const down = new MouseEvent("mousedown", { button: 3, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    expect(back).not.toHaveBeenCalled();
+    document.body.dispatchEvent(new MouseEvent("mouseup", { button: 3, bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new MouseEvent("mouseup", { button: 4, bubbles: true, cancelable: true }));
+    document.body.dispatchEvent(new MouseEvent("mouseup", { button: 0, bubbles: true, cancelable: true }));
+    hook.unmount();
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(forward).toHaveBeenCalledTimes(1);
   });
 });
