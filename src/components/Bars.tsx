@@ -19,6 +19,8 @@ import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { LinkInfo, RenameRule } from "../lib/engine";
 import { crumbSeparator, isPathLike } from "../lib/paths";
+import { IS_MAC, IS_WINDOWS, MOD } from "../lib/platform";
+import { WindowControls } from "./WindowControls";
 import { useAutoNames } from "../hooks/useAutoNames";
 import { useLinkInfo } from "../hooks/useLinkInfo";
 import { chosen, moveTo, syncOrder, syncSelected, totalLabel } from "../lib/batch";
@@ -52,9 +54,6 @@ const SEARCH_KINDS: { kind: SearchKind; label: string }[] = [
   { kind: "files", label: "Files" },
 ];
 
-/** Room for the native macOS window buttons, which sit over the toolbar. */
-const IS_MAC = navigator.userAgent.includes("Mac");
-const MOD = IS_MAC ? "⌘" : "Ctrl+";
 
 export interface ToolbarProps {
   canBack: boolean;
@@ -111,7 +110,8 @@ const PRESSED =
 
 export function Toolbar(p: ToolbarProps) {
   return (
-    <div className="toolbar" data-tauri-drag-region>
+    <div className={"toolbar" + (IS_WINDOWS ? " toolbar-windows" : "")} data-tauri-drag-region>
+      {/* Room for the native macOS window buttons, which sit over the toolbar. */}
       {IS_MAC && <div className="traffic-light-space" data-tauri-drag-region />}
       <div className="nav-buttons">
         <Button variant="ghost" size="icon" className={DISABLED} title={`Back (${MOD}[)`} disabled={!p.canBack} onClick={p.onBack}>
@@ -180,6 +180,7 @@ export function Toolbar(p: ToolbarProps) {
       <Button variant="outline" size="icon" title={`Settings (${MOD},)`} onClick={p.onToggleSettings}>
         <GearIcon />
       </Button>
+      {IS_WINDOWS && <WindowControls />}
     </div>
   );
 }

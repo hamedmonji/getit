@@ -111,6 +111,47 @@ body {
   background: var(--panel);
 }
 
+/* On Windows the caption buttons fill the toolbar's right end, flush to the edge. */
+.toolbar-windows {
+  padding-right: 0;
+}
+
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  margin-left: 2px;
+}
+
+.window-control {
+  height: 100%;
+  width: 46px;
+  border-radius: 0;
+  padding: 0;
+  font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets", sans-serif;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.window-control:hover {
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+.window-control:active {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+/* Windows' own red, the same in light and dark. */
+.window-control-close:hover {
+  background: #c42b1c;
+  color: white;
+}
+
+.window-control-close:active {
+  background: #c42b1c;
+  color: rgba(255, 255, 255, 0.7);
+}
+
 .traffic-light-space {
   width: 62px;
   height: 100%;
