@@ -20,7 +20,8 @@ case "$TRIPLE" in *-windows-*) EXE=".exe" ;; esac
 OUT="$ROOT_DIR/src-tauri/binaries/ffmpeg-$TRIPLE$EXE"
 WORK="$ROOT_DIR/target/ffmpeg-build"
 
-if [ -x "$OUT" ]; then
+# Non-empty: development builds leave an empty stand-in (see src-tauri/build.rs).
+if [ -x "$OUT" ] && [ -s "$OUT" ]; then
   echo "→ $OUT already built"
   exit 0
 fi

@@ -8,7 +8,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use tauri::ipc::Response;
@@ -78,7 +78,8 @@ fn cache_key(path: &str, len: u64, modified: u128, size: u32) -> u64 {
 fn ffmpeg() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let path = exe.parent()?.join(if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" });
-    path.is_file().then_some(path)
+    // Development builds may have an empty stand-in (see build.rs).
+    path.metadata().is_ok_and(|m| m.is_file() && m.len() > 0).then_some(path)
 }
 
 /// Makes the thumbnail into `cached` with ffmpeg, from a keyframe of a video
@@ -86,7 +87,7 @@ fn ffmpeg() -> Option<PathBuf> {
 fn with_ffmpeg(file: &Path, cached: &Path, size: u32, available: Option<f64>) -> bool {
     let Some(ffmpeg) = ffmpeg() else { return false };
     // With no output, ffmpeg only describes the input, its duration included.
-    let probe = Command::new(&ffmpeg)
+    let probe = crate::process::background(&ffmpeg)
         .args(["-hide_banner", "-nostdin", "-i"])
         .arg(file)
         .stdout(Stdio::null())
@@ -97,7 +98,7 @@ fn with_ffmpeg(file: &Path, cached: &Path, size: u32, available: Option<f64>) ->
         .and_then(|out| parse_duration(&String::from_utf8_lossy(&out.stderr)))
         .map_or(0.0, |duration| seek_seconds(duration, available));
     let part = cached.with_extension("part");
-    let mut cmd = Command::new(&ffmpeg);
+    let mut cmd = crate::process::background(&ffmpeg);
     cmd.args(["-hide_banner", "-nostdin", "-loglevel", "error", "-skip_frame", "nokey"])
         .args(["-ss", &format!("{seek:.3}"), "-i"])
         .arg(file)
@@ -160,7 +161,7 @@ fn with_quick_look(file: &Path, dir: &Path, cached: &Path, size: u32) -> bool {
     if fs::create_dir_all(&work).is_err() {
         return false;
     }
-    let ran = Command::new("/usr/bin/qlmanage")
+    let ran = std::process::Command::new("/usr/bin/qlmanage")
         .args(["-t", "-s", &size.to_string(), "-o"])
         .arg(&work)
         .arg(file)

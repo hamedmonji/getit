@@ -2,16 +2,21 @@ import { describe, expect, it } from "vitest";
 import {
   baseName,
   canGoUp,
+  crumbSeparator,
   crumbsFrom,
   displayPath,
+  isAbsolutePath,
   isPathLike,
   folderMoves,
   isWithin,
   joinPath,
   parentPath,
+  pathParts,
   relocateAll,
   relocatePath,
   resolvePath,
+  rootOf,
+  separatorOf,
   splitName,
 } from "./paths";
 
@@ -193,5 +198,99 @@ describe("relocateAll", () => {
 describe("folderMoves", () => {
   it("pairs each folder with where it lands, leaving out ones already there", () => {
     expect(folderMoves(["/a/x", "/b/y"], "/b")).toEqual([["/a/x", "/b/x"]]);
+  });
+});
+
+describe("on Windows", () => {
+  /** `path` with its slashes as backslashes, to write Windows paths readably. */
+  const b = (path: string) => path.split("/").join("\\");
+  const home = b("C:/Users/me");
+
+  it("finds the root of drives and shares", () => {
+    expect(rootOf(b("C:/Users/me"))).toBe(b("C:/"));
+    expect(rootOf(b("d:/"))).toBe(b("d:/"));
+    expect(rootOf(b("//nas/media/films"))).toBe(b("//nas/media/"));
+    expect(rootOf("/Users/me")).toBe("/");
+  });
+
+  it("tells absolute paths apart", () => {
+    expect(isAbsolutePath(b("C:/x"))).toBe(true);
+    expect(isAbsolutePath("C:/x")).toBe(true);
+    expect(isAbsolutePath(b("//nas/media"))).toBe(true);
+    expect(isAbsolutePath("C:x")).toBe(false);
+    expect(isAbsolutePath("d1")).toBe(false);
+  });
+
+  it("joins and splits with backslashes", () => {
+    expect(joinPath(b("C:/Users"), "me")).toBe(b("C:/Users/me"));
+    expect(joinPath(b("C:/"), "Users")).toBe(b("C:/Users"));
+    expect(parentPath(b("C:/Users/me"))).toBe(b("C:/Users"));
+    expect(parentPath(b("C:/Users"))).toBe(b("C:/"));
+    expect(parentPath(b("C:/"))).toBe(b("C:/"));
+    expect(parentPath(b("//nas/media/films"))).toBe(b("//nas/media/"));
+    expect(pathParts(b("C:/Users/me"))).toEqual(["Users", "me"]);
+    expect(separatorOf(b("C:/x"))).toBe(b("/"));
+  });
+
+  it("names the last part, or the drive for a root", () => {
+    expect(baseName(b("C:/Users/me"))).toBe("me");
+    expect(baseName(b("C:/"))).toBe("C:");
+    expect(baseName(b("//nas/media/"))).toBe(b("//nas/media"));
+  });
+
+  it("tells what's inside a folder", () => {
+    expect(isWithin(b("C:/Users/me/a"), home)).toBe(true);
+    expect(isWithin(b("C:/Users/meg"), home)).toBe(false);
+    expect(isWithin(b("C:/Users"), b("C:/"))).toBe(true);
+    expect(relocatePath(b("C:/a/b/c"), [b("C:/a/b"), b("D:/b")])).toBe(b("D:/b/c"));
+    expect(folderMoves([b("C:/a/x")], b("C:/b"))).toEqual([[b("C:/a/x"), b("C:/b/x")]]);
+  });
+
+  it("shows home as ~", () => {
+    expect(displayPath(b("C:/Users/me/Downloads"), home)).toBe(b("~/Downloads"));
+  });
+
+  it("takes drive letters and backslashes as paths in the address bar", () => {
+    expect(isPathLike(b("C:/x"))).toBe(true);
+    expect(isPathLike("d:")).toBe(true);
+    expect(isPathLike(b("//nas/x"))).toBe(true);
+    expect(isPathLike("c++ tutorial")).toBe(false);
+    expect(isPathLike("a:b")).toBe(false);
+  });
+
+  it("resolves typed paths on the home's drive", () => {
+    expect(resolvePath(b("~/Downloads"), home)).toBe(b("C:/Users/me/Downloads"));
+    expect(resolvePath("~/Downloads", home)).toBe(b("C:/Users/me/Downloads"));
+    expect(resolvePath(b("D:/a/./b/../c/"), home)).toBe(b("D:/a/c"));
+    expect(resolvePath("d:", home)).toBe(b("d:/"));
+    expect(resolvePath(b("C:/../.."), home)).toBe(b("C:/"));
+    expect(resolvePath("/Temp", home)).toBe(b("C:/Temp"));
+    expect(resolvePath("D:/x//y", home)).toBe(b("D:/x/y"));
+    expect(resolvePath(b("//nas/media/a/.."), home)).toBe(b("//nas/media/"));
+  });
+
+  it("makes breadcrumbs from home or the drive", () => {
+    expect(crumbsFrom(home, b("C:/Users/me/a"))).toEqual([
+      { label: "~", path: home },
+      { label: "a", path: b("C:/Users/me/a") },
+    ]);
+    expect(crumbsFrom(home, b("D:/Movies/x"))).toEqual([
+      { label: "D:", path: b("D:/") },
+      { label: "Movies", path: b("D:/Movies") },
+      { label: "x", path: b("D:/Movies/x") },
+    ]);
+  });
+
+  it("separates breadcrumbs with the path's own separator", () => {
+    expect(crumbSeparator("/")).toBe("");
+    expect(crumbSeparator("/Users")).toBe("/");
+    expect(crumbSeparator(b("D:/"))).toBe(b("/"));
+    expect(crumbSeparator(b("D:/Movies"))).toBe(b("/"));
+  });
+
+  it("stops going up at the drive's root", () => {
+    expect(canGoUp(b("D:/"), home)).toBe(false);
+    expect(canGoUp(b("D:/Movies"), home)).toBe(true);
+    expect(canGoUp(home, home)).toBe(false);
   });
 });

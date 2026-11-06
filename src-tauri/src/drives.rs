@@ -41,8 +41,20 @@ pub fn drives_from(mut mounts: Vec<(String, PathBuf, bool)>) -> Vec<Drive> {
     drives
 }
 
+/// The Windows drives among `A:` to `Z:` whose root `exists`, in letter order,
+/// each named by its letter (`C:`) at its root (`C:\`).
+pub fn windows_drives(exists: impl Fn(&Path) -> bool) -> Vec<Drive> {
+    ('A'..='Z')
+        .map(|letter| Drive { name: format!("{letter}:"), path: format!("{letter}:\\") })
+        .filter(|drive| exists(Path::new(&drive.path)))
+        .collect()
+}
+
 #[tauri::command]
 pub fn list_drives() -> Vec<Drive> {
+    if cfg!(windows) {
+        return windows_drives(|root| root.is_dir());
+    }
     let mut mounts = Vec::new();
     for dir in mount_dirs() {
         let Ok(entries) = fs::read_dir(&dir) else { continue };
@@ -86,5 +98,15 @@ mod tests {
             drives_from(vec![("disk".into(), "/mnt/disk".into(), false), (".hidden".into(), "/mnt/.hidden".into(), false)]),
             [drive("/", "/"), drive("disk", "/mnt/disk")]
         );
+    }
+
+    #[test]
+    fn windows_drives_are_the_letters_that_exist() {
+        let present = ["C:\\", "D:\\", "Z:\\"];
+        assert_eq!(
+            windows_drives(|root| present.contains(&root.to_str().unwrap())),
+            [drive("C:", "C:\\"), drive("D:", "D:\\"), drive("Z:", "Z:\\")]
+        );
+        assert!(windows_drives(|_| false).is_empty());
     }
 }

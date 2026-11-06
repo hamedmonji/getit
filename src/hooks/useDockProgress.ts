@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { dockOverlayLayout, dockStatus, sameDockStatus, type DockStatus } from "../lib/dock";
-import { showDockOverlay } from "../lib/dockIcon";
+import { showDockOverlay, showTaskbarProgress } from "../lib/dockIcon";
+import { IS_MAC } from "../lib/platform";
 import type { EngineState } from "./useEngine";
 
 /** How often the Dock icon catches up with the downloads, rather than on every progress tick. */
@@ -21,8 +22,12 @@ export function useDockProgress({ downloads, speeds }: EngineState) {
     // Drawing takes a moment, so updates wait their turn: a draw started just
     // before a clear can't land after it and leave the speed showing.
     let queue = Promise.resolve();
+    // macOS draws the overlay on the Dock icon; elsewhere the taskbar button has a progress bar of its own.
+    const show = IS_MAC
+      ? (status: DockStatus | null) => showDockOverlay(dockOverlayLayout(status))
+      : showTaskbarProgress;
     const showOnDock = (status: DockStatus | null) => {
-      queue = queue.then(() => showDockOverlay(dockOverlayLayout(status))).catch(() => {});
+      queue = queue.then(() => show(status)).catch(() => {});
     };
     const update = () => {
       const next = dockStatus(latest.current.downloads, latest.current.speeds);

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { DockOverlayLayout } from "./dock";
+import type { DockOverlayLayout, DockStatus } from "./dock";
 
 /** The overlay's side in pixels: the Dock shows icons at up to 256 px when magnified on Retina screens. */
 const SIDE = 512;
@@ -40,6 +40,14 @@ async function drawOverlay(layout: DockOverlayLayout): Promise<Uint8Array> {
   }
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   return new Uint8Array(await blob!.arrayBuffer());
+}
+
+/**
+ * Shows `status`'s progress on the taskbar button (Windows, Linux), a busy
+ * bar when it's unknown, or nothing when `status` is null.
+ */
+export function showTaskbarProgress(status: DockStatus | null): Promise<void> {
+  return invoke("set_taskbar_progress", { active: status !== null, progress: status?.progress ?? null });
 }
 
 /** Shows `layout` over the Dock icon, or the plain icon when it's null. */

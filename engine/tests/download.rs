@@ -211,8 +211,9 @@ impl Ctx {
         format!("{}{path}", self.base)
     }
 
+    /// The folder at `name`, with `/` between its parts, in the temporary directory.
     fn folder(&self, name: &str) -> PathBuf {
-        self.dir.path().join(name)
+        name.split('/').fold(self.dir.path().to_path_buf(), |path, part| path.join(part))
     }
 
     /// Creates a paused queue with the given concurrency, so tests can add
@@ -1096,7 +1097,10 @@ async fn without_retries_network_errors_fail_at_once() {
     // Nothing listens on port 1.
     let id = ctx.engine.add(queue, "http://127.0.0.1:1/file.bin").unwrap();
     wait_for_status(&ctx.engine, id, DownloadStatus::Failed).await;
-    assert!(started.elapsed() < Duration::from_secs(1), "{:?}", started.elapsed());
+    // Windows tries a refused connection again for about 2 seconds before
+    // giving up on it; a retry would take that long again.
+    let limit = Duration::from_secs(if cfg!(windows) { 3 } else { 1 });
+    assert!(started.elapsed() < limit, "{:?}", started.elapsed());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1577,18 +1581,21 @@ async fn restore_drops_trailing_slashes_from_saved_folders() {
     let store = dir.path().join("store");
     std::fs::create_dir_all(&store).unwrap();
     let id = "6f1c1f3e-8a51-4c51-9d2e-6f0e3c1b2a77";
+    // The folder as saved (escaped for JSON), and as it should load.
+    let (saved, loaded) = if cfg!(windows) {
+        (r"C:\\getit-test\\Renamed\\", r"C:\getit-test\Renamed")
+    } else {
+        ("/tmp/getit-test/Renamed/", "/tmp/getit-test/Renamed")
+    };
     let json = format!(
-        r#"{{"version":1,"id":"{id}","dir":"/tmp/getit-test/Renamed/","settings":{{"max_concurrent":1,"paused":true}},"downloads":[]}}"#
+        r#"{{"version":1,"id":"{id}","dir":"{saved}","settings":{{"max_concurrent":1,"paused":true}},"downloads":[]}}"#
     );
     std::fs::write(store.join(format!("{id}.json")), json).unwrap();
 
     let engine = Engine::new(JsonDirStore::new(&store).unwrap()).unwrap();
     let queues = engine.queues();
-    assert_eq!(queues[0].dir.to_str(), Some("/tmp/getit-test/Renamed"));
-    assert_eq!(
-        engine.queue_for_dir("/tmp/getit-test/Renamed"),
-        Some(queues[0].id)
-    );
+    assert_eq!(queues[0].dir.to_str(), Some(loaded));
+    assert_eq!(engine.queue_for_dir(loaded), Some(queues[0].id));
 }
 
 #[tokio::test(flavor = "multi_thread")]

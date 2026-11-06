@@ -254,9 +254,25 @@ fn is_hidden(name: &str, meta: &fs::Metadata) -> bool {
             return true;
         }
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if hidden_attributes(meta.file_attributes()) {
+            return true;
+        }
+    }
+    #[cfg(not(any(target_os = "macos", windows)))]
     let _ = meta;
     false
+}
+
+/// Whether Windows file attributes mark an item Explorer hides: hidden, or a
+/// protected system file (as `desktop.ini` and `$Recycle.Bin` are).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn hidden_attributes(attributes: u32) -> bool {
+    const FILE_ATTRIBUTE_HIDDEN: u32 = 0x2;
+    const FILE_ATTRIBUTE_SYSTEM: u32 = 0x4;
+    attributes & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM) != 0
 }
 
 fn is_package(name: &str) -> bool {
@@ -270,7 +286,16 @@ fn count_visible(dir: &Path) -> usize {
     fs::read_dir(dir).map_or(0, |entries| {
         entries
             .filter_map(Result::ok)
-            .filter(|e| !e.file_name().to_string_lossy().starts_with('.'))
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                // On Windows the listing already holds the attributes, so
+                // checking them costs nothing; elsewhere only the name counts.
+                #[cfg(windows)]
+                if let Ok(meta) = e.metadata() {
+                    return !is_hidden(&name, &meta);
+                }
+                !name.starts_with('.')
+            })
             .count()
     })
 }
@@ -506,7 +531,9 @@ fn free_folder_path(dest: &Path, name: &str) -> CommandResult<PathBuf> {
     Err(format!("couldn't find a free name for \"{name}\""))
 }
 
-/// Copies a folder and everything in it. Symbolic links are copied as links.
+/// Copies a folder and everything in it. Symbolic links are copied as links;
+/// on Windows, where making one needs extra rights, what they point to is
+/// copied instead.
 fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
     fs::create_dir(to)?;
     for entry in fs::read_dir(from)? {
@@ -518,6 +545,12 @@ fn copy_dir(from: &Path, to: &Path) -> io::Result<()> {
         } else if kind.is_symlink() {
             #[cfg(unix)]
             std::os::unix::fs::symlink(fs::read_link(&src)?, &dest)?;
+            #[cfg(not(unix))]
+            if src.is_dir() {
+                copy_dir(&src, &dest)?;
+            } else {
+                fs::copy(&src, &dest)?;
+            }
         } else {
             fs::copy(&src, &dest)?;
         }
@@ -654,13 +687,22 @@ pub fn restore_from_trash(engine: State<'_, Engine>, trashed: Trashed) -> Comman
     Ok(())
 }
 
-/// Moves `trashed` back to `path`.
+/// Moves `trashed` back to `path`. Without a known place in the Trash (on
+/// Windows and Linux), puts back the item last trashed from `path`.
 fn put_back(path: &Path, trashed: Option<&Path>) -> CommandResult<()> {
     let name = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy();
-    let trashed = trashed.ok_or_else(|| format!("can't find \"{name}\" in the Trash"))?;
     if path.exists() {
         return Err(format!("\"{name}\" already exists in its old place"));
     }
+    #[cfg(not(target_os = "macos"))]
+    if trashed.is_none() {
+        let items = trash::os_limited::list().map_err(|e| format!("couldn't read the Trash: {e}"))?;
+        let index = newest_trashed_from(items.iter().map(|item| (item.original_path(), item.time_deleted)), path)
+            .ok_or_else(|| format!("\"{name}\" is no longer in the Trash"))?;
+        let item = items.into_iter().nth(index).expect("index is within the list");
+        return trash::os_limited::restore_all([item]).map_err(|e| format!("couldn't put back \"{name}\": {e}"));
+    }
+    let trashed = trashed.ok_or_else(|| format!("can't find \"{name}\" in the Trash"))?;
     if !trashed.exists() {
         return Err(format!("\"{name}\" is no longer in the Trash"));
     }
@@ -707,4 +749,43 @@ pub fn set_queue_defaults(engine: State<'_, Engine>, settings: QueueSettings) {
 #[tauri::command]
 pub fn clear_completed(engine: State<'_, Engine>, queue_id: QueueId) -> CommandResult<usize> {
     engine.clear_completed(queue_id).map_err(err)
+}
+
+/// Which of the trashed items, given by the path each came from and when it
+/// was trashed, is the one last trashed from `path`.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn newest_trashed_from(items: impl Iterator<Item = (PathBuf, i64)>, path: &Path) -> Option<usize> {
+    items
+        .enumerate()
+        .filter(|(_, (from, _))| from == path)
+        .max_by_key(|(_, (_, when))| *when)
+        .map(|(index, _)| index)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hidden_and_system_files_are_hidden() {
+        assert!(hidden_attributes(0x2));
+        assert!(hidden_attributes(0x4 | 0x20));
+        assert!(!hidden_attributes(0x10));
+        assert!(!hidden_attributes(0x20 | 0x80));
+    }
+
+    #[test]
+    fn puts_back_the_item_last_trashed_from_a_path() {
+        let items = || {
+            vec![
+                (PathBuf::from("/h/a.zip"), 10),
+                (PathBuf::from("/h/b.zip"), 30),
+                (PathBuf::from("/h/a.zip"), 20),
+            ]
+            .into_iter()
+        };
+        assert_eq!(newest_trashed_from(items(), Path::new("/h/a.zip")), Some(2));
+        assert_eq!(newest_trashed_from(items(), Path::new("/h/b.zip")), Some(1));
+        assert_eq!(newest_trashed_from(items(), Path::new("/h/c.zip")), None);
+    }
 }

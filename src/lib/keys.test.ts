@@ -6,6 +6,12 @@ describe("isFolderKey", () => {
     expect(isFolderKey("/home/q")).toBe(true);
     expect(isFolderKey("d1")).toBe(false);
   });
+
+  it("knows Windows folder paths", () => {
+    expect(isFolderKey("C:\\Users\\me")).toBe(true);
+    expect(isFolderKey("\\\\nas\\share\\q")).toBe(true);
+    expect(isFolderKey("3f2a9c1e-0b5d-4e8a-9f61-2c7d8e4b1a90")).toBe(false);
+  });
 });
 
 describe("splitKeys", () => {

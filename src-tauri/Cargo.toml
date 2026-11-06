@@ -38,6 +38,12 @@ objc2-foundation = { version = "0.3", features = ["NSData", "NSError", "NSFileMa
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 trash = "5"
+# Opening a `getit://` link starts a second process on Windows and Linux; this
+# hands it to the running app instead.
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_System_Power"] }
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,5 +1,6 @@
-//! Keeps the Mac from going to sleep on its own while a download runs, when
-//! the Downloads settings say to. The display may still sleep.
+//! Keeps the computer (macOS or Windows) from going to sleep on its own while
+//! a download runs, when the Downloads settings say to. The display may still
+//! sleep.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -47,5 +48,15 @@ fn set(hold: bool) {
     });
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Windows ties the request to the thread that makes it, here the main
+/// thread, which lives as long as getit.
+#[cfg(windows)]
+fn set(hold: bool) {
+    use windows_sys::Win32::System::Power::{ES_CONTINUOUS, ES_SYSTEM_REQUIRED, SetThreadExecutionState};
+    let state = if hold { ES_CONTINUOUS | ES_SYSTEM_REQUIRED } else { ES_CONTINUOUS };
+    // SAFETY: takes only flags, and has no other effect than on sleeping.
+    unsafe { SetThreadExecutionState(state) };
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 fn set(_hold: bool) {}

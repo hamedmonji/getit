@@ -287,11 +287,11 @@ function Downloads({ prefs, onPrefs, canKeepAwake }: DownloadsSettings) {
               checked={prefs.keep_awake}
               onCheckedChange={(checked) => onPrefs({ ...prefs, keep_awake: checked === true })}
             />
-            <Label htmlFor={awakeId}>Keep the Mac awake while downloading</Label>
+            <Label htmlFor={awakeId}>Keep the computer awake while downloading</Label>
           </div>
           <p className="settings-note">
-            Your Mac won't go to sleep on its own while a download is running; the display can still turn off. Closing
-            the lid still puts it to sleep.
+            Your computer won't go to sleep on its own while a download is running; the display can still turn off.
+            Closing the lid may still put it to sleep.
           </p>
         </section>
       )}

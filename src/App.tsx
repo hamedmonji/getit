@@ -81,7 +81,7 @@ import {
   resolvePath,
   type Move,
 } from "./lib/paths";
-import { FILE_MANAGER, IS_MAC } from "./lib/platform";
+import { FILE_MANAGER, IS_MAC, IS_WINDOWS } from "./lib/platform";
 import {
   accessShortcuts,
   accessTop,
@@ -1591,7 +1591,7 @@ export default function App() {
         downloads={{
           prefs: downloadPrefs,
           onPrefs: changeDownloadPrefs,
-          canKeepAwake: IS_MAC,
+          canKeepAwake: IS_MAC || IS_WINDOWS,
         }}
         queues={{
           defaults: queueDefaults,

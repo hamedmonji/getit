@@ -2,7 +2,7 @@
 
 import { moveTo } from "./batch";
 import { isFolderKey } from "./keys";
-import { baseName, isWithin, relocateAll, type Move } from "./paths";
+import { baseName, isAbsolutePath, isWithin, relocateAll, type Move } from "./paths";
 
 export interface Drive {
   name: string;
@@ -110,7 +110,7 @@ export function parseFavorites(raw: string | null): Favorite[] {
     const parsed: unknown = JSON.parse(raw ?? "[]");
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
-      (f): f is Favorite => typeof f?.path === "string" && f.path.startsWith("/") && typeof f.file === "boolean",
+      (f): f is Favorite => typeof f?.path === "string" && isAbsolutePath(f.path) && typeof f.file === "boolean",
     );
   } catch {
     return [];

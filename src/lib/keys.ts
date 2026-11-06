@@ -1,5 +1,7 @@
+import { isAbsolutePath } from "./paths";
+
 /** Downloads are keyed by id, folders by their absolute path. */
-export const isFolderKey = (key: string) => key.startsWith("/");
+export const isFolderKey = (key: string) => isAbsolutePath(key);
 
 /** Splits item keys into download ids and folder paths. */
 export function splitKeys(keys: string[]): { ids: string[]; paths: string[] } {

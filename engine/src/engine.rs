@@ -1458,10 +1458,19 @@ mod tests {
 
     #[test]
     fn normalizes_dirs() {
+        #[cfg(unix)]
         assert_eq!(
             normalize(Path::new("/a/./b/../c/")).unwrap(),
             PathBuf::from("/a/c")
         );
+        // Either slash separates on Windows; what comes back uses backslashes.
+        #[cfg(windows)]
+        assert_eq!(
+            normalize(Path::new(r"C:\a\.\b\..\c/")).unwrap(),
+            PathBuf::from(r"C:\a\c")
+        );
+        #[cfg(windows)]
+        assert!(normalize(Path::new("/a/c")).is_err(), "no drive, so not absolute");
         assert!(normalize(Path::new("relative/dir")).is_err());
     }
 }

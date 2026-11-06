@@ -38,6 +38,12 @@ describe("commonFolder", () => {
     expect(commonFolder(["/h/Documents"])).toBe("/h/Documents");
     expect(commonFolder(["/Volumes/x", "/h/y"])).toBe("/");
   });
+
+  it("finds it on Windows drives, which share none with each other", () => {
+    expect(commonFolder(["C:\\Users\\me\\a", "C:\\Users\\me\\b\\c"])).toBe("C:\\Users\\me");
+    expect(commonFolder(["C:\\Users\\me", "C:\\Data"])).toBe("C:\\");
+    expect(commonFolder(["C:\\Users\\me", "D:\\Data"])).toBe("C:\\");
+  });
 });
 
 describe("accessTop", () => {
@@ -137,6 +143,12 @@ describe("volumeOf", () => {
     expect(volumeOf("/Volumes/Backup")).toBe("/Volumes/Backup");
     expect(volumeOf("/Users/me/Documents")).toBe("/");
     expect(volumeOf("/Volumes")).toBe("/");
+  });
+
+  it("is the drive or share on Windows", () => {
+    expect(volumeOf("D:\\Movies\\a")).toBe("D:\\");
+    expect(volumeOf("C:\\")).toBe("C:\\");
+    expect(volumeOf("\\\\nas\\media\\x")).toBe("\\\\nas\\media\\");
   });
 });
 

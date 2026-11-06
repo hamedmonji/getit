@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { LinkInfo, RenameRule } from "../lib/engine";
-import { isPathLike } from "../lib/paths";
+import { crumbSeparator, isPathLike } from "../lib/paths";
 import { useAutoNames } from "../hooks/useAutoNames";
 import { useLinkInfo } from "../hooks/useLinkInfo";
 import { chosen, moveTo, syncOrder, syncSelected, totalLabel } from "../lib/batch";
@@ -231,7 +231,7 @@ function AddressBar(p: ToolbarProps) {
                     >
                       {c.label}
                     </span>
-                    {c.label !== "/" && "/"}
+                    {crumbSeparator(c.path)}
                   </span>
                 ))}
               </span>

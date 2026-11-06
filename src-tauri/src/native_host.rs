@@ -2,7 +2,9 @@
 //! opening a tab (see `browser-extension/background.js`).
 //!
 //! On startup the app writes a host manifest for each installed browser,
-//! pointing it at this executable. When the extension asks for the host, the
+//! pointing it at this executable: on macOS into each browser's own folder, on
+//! Windows into getit's data folder, named in the registry key each browser
+//! looks up. When the extension asks for the host, the
 //! browser runs the executable with the extension's origin as an argument;
 //! [`is_host_launch`] spots that, and [`serve`] starts the app and answers
 //! instead of opening a window. Links still go through the local listener in
@@ -11,7 +13,7 @@
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// Must match `NATIVE_HOST` in `browser-extension/background.js`.
 const HOST_NAME: &str = "com.hamedmonji.getit";
@@ -40,6 +42,16 @@ const BROWSERS: &[(&str, Family)] = &[
     ("Library/Application Support/Mozilla", Family::Firefox),
 ];
 
+/// The registry keys, under the current user, where Windows browsers look up
+/// native hosts. Opera and Vivaldi read Chrome's.
+const WINDOWS_KEYS: &[(&str, Family)] = &[
+    (r"Software\Google\Chrome\NativeMessagingHosts", Family::Chromium),
+    (r"Software\Chromium\NativeMessagingHosts", Family::Chromium),
+    (r"Software\Microsoft\Edge\NativeMessagingHosts", Family::Chromium),
+    (r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts", Family::Chromium),
+    (r"Software\Mozilla\NativeMessagingHosts", Family::Firefox),
+];
+
 /// Whether the browser started this executable as the native host: Chromium
 /// passes the extension's origin, Firefox the manifest path and extension id.
 pub fn is_host_launch(args: &[String]) -> bool {
@@ -60,12 +72,16 @@ pub fn serve() {
 }
 
 /// Writes the host manifest for each installed browser. Skipped in debug
-/// builds, which would point the browsers away from the installed app.
-pub fn register(home: &Path) {
+/// builds, which would point the browsers away from the installed app. On
+/// Windows the manifests go in `data_dir`.
+pub fn register(home: &Path, data_dir: &Path) {
     if cfg!(debug_assertions) {
         return;
     }
     let Ok(exe) = std::env::current_exe() else { return };
+    if cfg!(windows) {
+        return register_in_registry(&exe, data_dir);
+    }
     for (dir, family) in host_dirs(home, |p| p.is_dir()) {
         let written = fs::create_dir_all(&dir)
             .and_then(|()| fs::write(dir.join(format!("{HOST_NAME}.json")), manifest(&exe, family)));
@@ -84,6 +100,48 @@ fn host_dirs(home: &Path, exists: impl Fn(&Path) -> bool) -> Vec<(PathBuf, Famil
         .filter(|(dir, _)| exists(dir))
         .map(|(dir, family)| (dir.join("NativeMessagingHosts"), family))
         .collect()
+}
+
+/// Writes one manifest per browser family into `data_dir`, and points each
+/// browser's registry key at it. Browsers that aren't installed never read
+/// their key, so every key is written.
+fn register_in_registry(exe: &Path, data_dir: &Path) {
+    let dir = data_dir.join("NativeMessagingHosts");
+    if let Err(e) = fs::create_dir_all(&dir) {
+        return eprintln!("native host: couldn't create {}: {e}", dir.display());
+    }
+    for (key, family) in WINDOWS_KEYS {
+        let file = dir.join(manifest_file_name(*family));
+        let written = fs::write(&file, manifest(exe, *family)).and_then(|()| {
+            let status = crate::process::background("reg").args(reg_add_args(key, &file)).status()?;
+            if status.success() { Ok(()) } else { Err(io::Error::other(format!("reg exited with {status}"))) }
+        });
+        if let Err(e) = written {
+            eprintln!("native host: couldn't register in {key}: {e}");
+        }
+    }
+}
+
+fn manifest_file_name(family: Family) -> String {
+    match family {
+        Family::Chromium => format!("{HOST_NAME}.chromium.json"),
+        Family::Firefox => format!("{HOST_NAME}.firefox.json"),
+    }
+}
+
+/// Arguments for `reg` that set the default value of `key`'s subkey for this
+/// host, under the current user, to the manifest's path.
+fn reg_add_args(key: &str, manifest: &Path) -> Vec<String> {
+    vec![
+        "add".into(),
+        format!(r"HKCU\{key}\{HOST_NAME}"),
+        "/ve".into(),
+        "/t".into(),
+        "REG_SZ".into(),
+        "/d".into(),
+        manifest.to_string_lossy().into_owned(),
+        "/f".into(),
+    ]
 }
 
 fn manifest(exe: &Path, family: Family) -> String {
@@ -110,12 +168,32 @@ fn launch_app() -> io::Result<()> {
     let exe = std::env::current_exe()?;
     let status = match bundle_of(&exe) {
         Some(bundle) => Command::new("/usr/bin/open").arg(bundle).status()?,
-        None => {
-            Command::new(&exe).spawn()?;
-            return Ok(());
-        }
+        None => return spawn_detached(&exe),
     };
     if status.success() { Ok(()) } else { Err(io::Error::other(format!("open exited with {status}"))) }
+}
+
+/// Starts `exe` apart from this host, without the browser's pipes, so the
+/// browser sees the host finish and the app lives on after it.
+fn spawn_detached(exe: &Path) -> io::Result<()> {
+    let command = || {
+        let mut command = Command::new(exe);
+        command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        command
+    };
+    // Firefox runs hosts in a Windows job that ends everything they start when
+    // they exit; leaving it keeps the app running. A job that forbids leaving
+    // refuses, and then the app starts inside it.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        if command().creation_flags(DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB).spawn().is_ok() {
+            return Ok(());
+        }
+    }
+    command().spawn().map(drop)
 }
 
 /// Native messages are a native-endian u32 length followed by that much JSON.
@@ -173,6 +251,26 @@ mod tests {
         let firefox: serde_json::Value = serde_json::from_str(&manifest(exe, Family::Firefox)).unwrap();
         assert_eq!(firefox["allowed_extensions"][0], "getit@hamedmonji.com");
         assert!(firefox.get("allowed_origins").is_none());
+    }
+
+    #[test]
+    fn windows_keys_point_at_the_manifest() {
+        let manifest = Path::new(r"C:\Users\me\AppData\Roaming\getit\host.json");
+        assert_eq!(
+            reg_add_args(r"Software\Google\Chrome\NativeMessagingHosts", manifest),
+            [
+                "add",
+                r"HKCU\Software\Google\Chrome\NativeMessagingHosts\com.hamedmonji.getit",
+                "/ve",
+                "/t",
+                "REG_SZ",
+                "/d",
+                r"C:\Users\me\AppData\Roaming\getit\host.json",
+                "/f",
+            ]
+        );
+        assert_ne!(manifest_file_name(Family::Chromium), manifest_file_name(Family::Firefox));
+        assert!(WINDOWS_KEYS.iter().any(|(_, family)| *family == Family::Firefox));
     }
 
     #[test]

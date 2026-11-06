@@ -979,7 +979,21 @@ fn sanitize_file_name(raw: &str) -> Option<String> {
         }
         cleaned.truncate(cut);
     }
+    if is_reserved_on_windows(&cleaned) {
+        cleaned.insert(0, '_');
+    }
     (!cleaned.is_empty()).then_some(cleaned)
+}
+
+/// Whether Windows keeps `name` for a device, as it does `CON`, `nul.txt` and
+/// `COM1.tar.gz`: a file can't be made with it, whatever the case or extension.
+fn is_reserved_on_windows(name: &str) -> bool {
+    const DEVICES: &[&str] = &["CON", "PRN", "AUX", "NUL"];
+    let stem = name.split('.').next().unwrap_or(name).trim_end().to_ascii_uppercase();
+    DEVICES.contains(&stem.as_str())
+        || ((stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.len() == 4
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
 }
 
 /// Splits `"name.ext"` into `("name", ".ext")`. Dotfiles have no extension.
@@ -1073,6 +1087,13 @@ mod tests {
         assert_eq!(sanitize_file_name(r"C:\temp\a.txt"), Some("a.txt".into()));
         assert_eq!(sanitize_file_name("a:b?.txt"), Some("a_b_.txt".into()));
         assert_eq!(sanitize_file_name(" ... "), None);
+        assert_eq!(sanitize_file_name("con"), Some("_con".into()));
+        assert_eq!(sanitize_file_name("Nul.txt"), Some("_Nul.txt".into()));
+        assert_eq!(sanitize_file_name("COM1.tar.gz"), Some("_COM1.tar.gz".into()));
+        assert_eq!(sanitize_file_name("lpt9"), Some("_lpt9".into()));
+        assert_eq!(sanitize_file_name("console.log"), Some("console.log".into()));
+        assert_eq!(sanitize_file_name("COM10"), Some("COM10".into()));
+        assert_eq!(sanitize_file_name("com0"), Some("com0".into()));
         assert_eq!(sanitize_file_name(&"é".repeat(150)).unwrap().len(), 200);
     }
 

@@ -6,6 +6,7 @@ mod dock;
 mod drives;
 pub mod native_host;
 mod prefs;
+mod process;
 mod relaunch;
 mod thumbnail;
 
@@ -23,7 +24,16 @@ const RESYNC: &str = "engine://resync";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // On Windows and Linux, opening a `getit://` link (or the app again) starts
+    // a second process. It must be the first plugin, so that process hands its
+    // link to this one and exits before setting anything up; the deep-link
+    // plugin then gets the link as if this process had opened it.
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        browser::bring_to_front(app)
+    }));
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -51,7 +61,7 @@ pub fn run() {
                 let handle = app.handle().clone();
                 app.deep_link().on_open_url(move |_| browser::bring_to_front(&handle));
             }
-            native_host::register(&app.path().home_dir()?);
+            native_host::register(&app.path().home_dir()?, &app.path().app_data_dir()?);
             app.manage(access::Access::load(
                 app.path().home_dir()?,
                 app.path().app_data_dir()?.join("setup.json"),
@@ -110,17 +120,19 @@ pub fn run() {
             prefs::set_download_prefs,
             browser::take_browser_links,
             dock::set_dock_overlay,
+            dock::set_taskbar_progress,
             drives::list_drives,
             relaunch::relaunch,
             thumbnail::thumbnail,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| match event {
+        .run(|_app, _event| {
             // Clicking the Dock icon while the window is hidden.
             #[cfg(target_os = "macos")]
-            tauri::RunEvent::Reopen { has_visible_windows: false, .. } => browser::bring_to_front(app),
-            _ => {}
+            if let tauri::RunEvent::Reopen { has_visible_windows: false, .. } = _event {
+                browser::bring_to_front(_app)
+            }
         });
 }
 

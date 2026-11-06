@@ -5,7 +5,7 @@ import type { EngineState } from "../hooks/useEngine";
 import type { DownloadItem, LinkInfo, QueueInfo } from "./engine";
 import { type FileKind, resolveKind } from "./fileKind";
 import { formatEta, formatSize, formatSpeed } from "./format";
-import { baseName, isWithin, joinPath, parentPath } from "./paths";
+import { baseName, isWithin, joinPath, parentPath, rootOf } from "./paths";
 import { FILE_MANAGER } from "./platform";
 
 export type ViewMode = "Icons" | "List";
@@ -392,8 +392,8 @@ export function searchResults(
   const files: FileVm[] = [];
   for (const queue of Object.values(state.queues)) {
     if (root !== null && !isWithin(queue.dir, root)) continue;
-    const top = root ?? (isWithin(queue.dir, home) ? home : "/");
-    for (let p = queue.dir; p !== top && p !== "/"; p = parentPath(p)) paths.add(p);
+    const top = root ?? (isWithin(queue.dir, home) ? home : rootOf(queue.dir));
+    for (let p = queue.dir; p !== top && p !== rootOf(p); p = parentPath(p)) paths.add(p);
     for (const id of queue.downloads) {
       const item = state.downloads[id];
       if (item && matches(displayName(item), words)) {

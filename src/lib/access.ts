@@ -1,6 +1,6 @@
 // The folders getit may open without Full Disk Access, as chosen in Settings.
 
-import { isWithin, relocateAll, type Move } from "./paths";
+import { isWithin, joinPath, pathParts, relocateAll, rootOf, type Move } from "./paths";
 
 /** The folder chosen as the top (null for none), and the folders added since. */
 export interface AccessChoice {
@@ -21,12 +21,17 @@ export function addFolder(folders: string[], root: string | null, path: string):
   return [...folders.filter((f) => !isWithin(f, path)), path];
 }
 
-/** The deepest folder that holds every one of `paths`. */
+/**
+ * The deepest folder that holds every one of `paths`. Paths on different
+ * Windows drives share none, and give the first one's drive.
+ */
 export function commonFolder(paths: string[]): string {
-  const parts = paths.map((p) => p.split("/").filter(Boolean));
+  const root = rootOf(paths[0]);
+  if (paths.some((p) => rootOf(p) !== root)) return root;
+  const parts = paths.map(pathParts);
   const shared: string[] = [];
   for (let i = 0; parts.every((p) => i < p.length && p[i] === parts[0][i]); i++) shared.push(parts[0][i]);
-  return "/" + shared.join("/");
+  return shared.reduce(joinPath, root);
 }
 
 /**
@@ -66,9 +71,11 @@ export function relocateAccess(
   return { root: root && relocateAll(root, moves), folders: folders.map((f) => relocateAll(f, moves)) };
 }
 
-/** The drive `path` is on: the volume under /Volumes, else the startup drive. */
+/** The drive `path` is on: the volume under /Volumes, else the startup drive; on Windows, its drive or share. */
 export function volumeOf(path: string): string {
-  const parts = path.split("/").filter(Boolean);
+  const root = rootOf(path);
+  if (root !== "/") return root;
+  const parts = pathParts(path);
   return parts[0] === "Volumes" && parts.length > 1 ? `/Volumes/${parts[1]}` : "/";
 }
 
