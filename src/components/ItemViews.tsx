@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/context-menu";
 import { useColumnWidths } from "../hooks/useColumnWidths";
 import { useListFiller } from "../hooks/useListFiller";
+import { useMiddleEllipsis } from "../hooks/useMiddleEllipsis";
 import { useStoredJson } from "../hooks/useStoredJson";
 import {
   COLUMN_LABELS,
@@ -121,7 +122,20 @@ function NameEditor({
   );
 }
 
-function FolderName({ props, path, name, className }: { props: ItemViewProps; path: string; name: string; className: string }) {
+function FolderName({
+  props,
+  path,
+  name,
+  className,
+  children,
+}: {
+  props: ItemViewProps;
+  path: string;
+  name: string;
+  className?: string;
+  /** Shown instead of a plain name while it isn't being edited. */
+  children?: ReactNode;
+}) {
   if (props.editing === path) {
     return (
       <NameEditor
@@ -131,7 +145,18 @@ function FolderName({ props, path, name, className }: { props: ItemViewProps; pa
       />
     );
   }
-  return <span className={className}>{name}</span>;
+  return children ?? <span className={className}>{name}</span>;
+}
+
+/** A folder's name on a tile: at most two lines, shortened in the middle past that. */
+function TileFolderLabel({ name }: { name: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const shown = useMiddleEllipsis(ref, name);
+  return (
+    <span ref={ref} className="tile-name two-lines" title={shown === name ? undefined : name}>
+      {shown}
+    </span>
+  );
 }
 
 /** A download's name, editable without its extension, which the file keeps. */
@@ -187,7 +212,9 @@ export function IconView(props: ItemViewProps) {
           {...handlers(props, g.path, () => props.onOpenFolder(g.path))}
         >
           <FolderGlyph vm={g} size="large" />
-          <FolderName props={props} path={g.path} name={g.name} className="tile-name" />
+          <FolderName props={props} path={g.path} name={g.name}>
+            <TileFolderLabel name={g.name} />
+          </FolderName>
           {g.showBar && <ProgressBar className="tile-bar" pct={g.pct} color={g.barColor} />}
           <div className="tile-sub">{g.sub}</div>
         </div>

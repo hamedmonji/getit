@@ -633,6 +633,12 @@ body {
   overflow: hidden;
 }
 
+/* Shortened in the middle to fit, by useMiddleEllipsis. */
+.tile-name.two-lines {
+  max-height: calc(2 * 1.3em);
+  overflow: hidden;
+}
+
 .tile-bar {
   width: 72px;
   height: 3px;
