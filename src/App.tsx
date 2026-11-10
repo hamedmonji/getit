@@ -1613,6 +1613,14 @@ export default function App() {
           onPrefs: changeDownloadPrefs,
           canKeepAwake: IS_MAC || IS_WINDOWS,
         }}
+        tray={
+          IS_WINDOWS
+            ? {
+                closeToTray: downloadPrefs.close_to_tray,
+                onCloseToTray: (close_to_tray) => changeDownloadPrefs({ ...downloadPrefs, close_to_tray }),
+              }
+            : undefined
+        }
         queues={{
           defaults: queueDefaults,
           onDefaults: setQueueDefaults,

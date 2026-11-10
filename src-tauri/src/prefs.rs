@@ -1,6 +1,8 @@
 //! The Downloads settings: how many connections a download may use, and
-//! whether the Mac stays awake while downloads run. Kept here rather than in
-//! the window, so they're in place before any download starts at launch.
+//! whether the Mac stays awake while downloads run; and, on Windows, whether
+//! closing the window keeps getit running in the system tray. Kept here rather
+//! than in the window, so they're in place before any download starts at
+//! launch, and when the window closes.
 
 use std::fs;
 use std::io;
@@ -11,7 +13,7 @@ use getit_engine::{DEFAULT_CONNECTIONS, Engine, MAX_CONNECTIONS};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 
-use crate::awake;
+use crate::{awake, tray};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -20,6 +22,8 @@ pub struct DownloadPrefs {
     pub connections: u64,
     /// Whether the Mac is kept from sleeping while a download runs.
     pub keep_awake: bool,
+    /// Whether closing the window hides it to the system tray instead of quitting; Windows only.
+    pub close_to_tray: bool,
 }
 
 impl Default for DownloadPrefs {
@@ -27,6 +31,7 @@ impl Default for DownloadPrefs {
         DownloadPrefs {
             connections: DEFAULT_CONNECTIONS,
             keep_awake: true,
+            close_to_tray: true,
         }
     }
 }
@@ -76,10 +81,11 @@ impl Prefs {
     }
 }
 
-/// Puts `prefs` into effect: the engine's connections, and keeping awake.
+/// Puts `prefs` into effect: the engine's connections, keeping awake, and the tray icon.
 pub fn apply(app: &AppHandle, engine: &Engine, prefs: DownloadPrefs) {
     engine.set_connections(prefs.connections);
     awake::update(app, engine, prefs.keep_awake);
+    tray::update(app, prefs.close_to_tray);
 }
 
 #[tauri::command]
@@ -105,17 +111,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn starts_with_sixteen_connections_and_keeping_awake() {
+    fn starts_with_sixteen_connections_keeping_awake_and_closing_to_tray() {
         let dir = tempfile::tempdir().unwrap();
         let prefs = Prefs::load(dir.path().join("downloads.json"));
-        assert_eq!(prefs.get(), DownloadPrefs { connections: 16, keep_awake: true });
+        assert_eq!(prefs.get(), DownloadPrefs { connections: 16, keep_awake: true, close_to_tray: true });
     }
 
     #[test]
     fn remembers_what_was_set() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("nested").join("downloads.json");
-        let set = DownloadPrefs { connections: 8, keep_awake: false };
+        let set = DownloadPrefs { connections: 8, keep_awake: false, close_to_tray: false };
         Prefs::load(file.clone()).set(set).unwrap();
         assert_eq!(Prefs::load(file).get(), set);
     }
@@ -124,9 +130,9 @@ mod tests {
     fn keeps_connections_within_what_the_engine_allows() {
         let dir = tempfile::tempdir().unwrap();
         let prefs = Prefs::load(dir.path().join("downloads.json"));
-        let saved = prefs.set(DownloadPrefs { connections: 99, keep_awake: true }).unwrap();
+        let saved = prefs.set(DownloadPrefs { connections: 99, ..Default::default() }).unwrap();
         assert_eq!(saved.connections, MAX_CONNECTIONS);
-        assert_eq!(prefs.set(DownloadPrefs { connections: 0, keep_awake: true }).unwrap().connections, 1);
+        assert_eq!(prefs.set(DownloadPrefs { connections: 0, ..Default::default() }).unwrap().connections, 1);
     }
 
     #[test]
@@ -134,6 +140,6 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("downloads.json");
         fs::write(&file, r#"{"connections":2}"#).unwrap();
-        assert_eq!(Prefs::load(file).get(), DownloadPrefs { connections: 2, keep_awake: true });
+        assert_eq!(Prefs::load(file).get(), DownloadPrefs { connections: 2, ..Default::default() });
     }
 }

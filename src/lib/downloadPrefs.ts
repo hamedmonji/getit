@@ -5,10 +5,12 @@ export interface DownloadPrefs {
   connections: number;
   /** Whether the Mac is kept from sleeping while a download runs. */
   keep_awake: boolean;
+  /** Whether closing the window keeps getit running in the system tray; Windows only. */
+  close_to_tray: boolean;
 }
 
 /** What getit starts with, until the saved settings are read. Matches prefs.rs. */
-export const DEFAULT_DOWNLOAD_PREFS: DownloadPrefs = { connections: 16, keep_awake: true };
+export const DEFAULT_DOWNLOAD_PREFS: DownloadPrefs = { connections: 16, keep_awake: true, close_to_tray: true };
 
 /** The fewest and most connections a download may use. The most matches MAX_CONNECTIONS in the engine. */
 export const MIN_CONNECTIONS = 1;

@@ -9,8 +9,8 @@ import {
 } from "./downloadPrefs";
 
 describe("download prefs", () => {
-  it("start with sixteen connections and keeping the Mac awake", () => {
-    expect(DEFAULT_DOWNLOAD_PREFS).toEqual({ connections: 16, keep_awake: true });
+  it("start with sixteen connections, keeping the Mac awake, and closing the window to the tray", () => {
+    expect(DEFAULT_DOWNLOAD_PREFS).toEqual({ connections: 16, keep_awake: true, close_to_tray: true });
   });
 
   it("allow from 1 to 32 connections", () => {

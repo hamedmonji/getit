@@ -97,6 +97,12 @@ export interface QueueDefaultsSettings {
   onApply: () => Promise<number>;
 }
 
+/** Whether closing the window keeps getit running in the system tray, on Windows. */
+export interface TraySettings {
+  closeToTray: boolean;
+  onCloseToTray: (closeToTray: boolean) => void;
+}
+
 /** The sidebar's sections, to show again those hidden from it. */
 export interface SidebarSettings {
   sections: { id: SectionId; label: string; shown: boolean }[];
@@ -124,6 +130,7 @@ export function Settings({
   downloads,
   queues,
   sidebar,
+  tray,
   access,
   development,
   onClose,
@@ -137,6 +144,8 @@ export function Settings({
   downloads: DownloadsSettings;
   queues: QueueDefaultsSettings;
   sidebar: SidebarSettings;
+  /** The Closing the window section shows only when given. */
+  tray?: TraySettings;
   /** The Folder access section shows only when given. */
   access?: AccessSettings;
   /** The Development page shows only when given. */
@@ -166,6 +175,7 @@ export function Settings({
             </TabsList>
           </div>
           <TabsContent value="general" className="min-h-0 overflow-y-auto p-5 pt-12">
+            {tray && <CloseToTray {...tray} />}
             <section className="settings-section">
               <h3 className="settings-heading">Sort files by</h3>
               <SortList order={sortOrder} onChange={onSortOrder} />
@@ -377,6 +387,23 @@ function QueueDefaults({ defaults, onDefaults, onApply }: QueueDefaultsSettings)
         )}
       </div>
     </div>
+  );
+}
+
+/** Whether closing the window only hides it to the system tray. */
+function CloseToTray({ closeToTray, onCloseToTray }: TraySettings) {
+  const id = useId();
+  return (
+    <section className="settings-section">
+      <h3 className="settings-heading">Closing the window</h3>
+      <div className="flex items-center gap-2">
+        <Checkbox id={id} checked={closeToTray} onCheckedChange={(checked) => onCloseToTray(checked === true)} />
+        <Label htmlFor={id}>Keep getit running in the system tray</Label>
+      </div>
+      <p className="settings-note">
+        Downloads carry on with the window closed. Click the tray icon to bring it back, or right-click it to quit.
+      </p>
+    </section>
   );
 }
 

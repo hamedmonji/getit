@@ -9,6 +9,7 @@ mod prefs;
 mod process;
 mod relaunch;
 mod thumbnail;
+mod tray;
 
 use std::sync::Mutex;
 
@@ -70,13 +71,17 @@ pub fn run() {
         })
         // On macOS, closing the window (⌘W or its red button) only hides it, so
         // getit keeps downloading; the Dock icon or the browser extension
-        // brings it back, and ⌘Q quits.
+        // brings it back, and ⌘Q quits. On Windows it does the same when the
+        // General settings say to, with the tray icon to bring it back or quit.
         .on_window_event(|window, event| {
-            if cfg!(target_os = "macos")
-                && let tauri::WindowEvent::CloseRequested { api, .. } = event
-            {
-                api.prevent_close();
-                let _ = window.hide();
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let close_to_tray = window
+                    .try_state::<prefs::Prefs>()
+                    .is_some_and(|prefs| prefs.get().close_to_tray);
+                if tray::hides_on_close(tray::Platform::current(), close_to_tray) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
