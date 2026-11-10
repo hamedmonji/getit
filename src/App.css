@@ -922,7 +922,7 @@ body {
 
 .list-rows {
   /* A file row's height, also the filler rows'. */
-  --file-row-h: 38px;
+  --file-row-h: 32px;
   padding: 4px 6px;
 }
 
@@ -966,11 +966,11 @@ body {
 
 /* Keeps rows reached with the arrow keys clear of the sticky header. */
 .row {
-  scroll-margin: 34px 0 4px;
+  scroll-margin: 32px 0 4px;
 }
 
 .folder-row {
-  height: 34px;
+  height: 30px;
 }
 
 .file-row {
