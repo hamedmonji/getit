@@ -1,4 +1,5 @@
 mod access;
+mod autostart;
 mod awake;
 mod browser;
 mod commands;
@@ -43,8 +44,19 @@ pub fn run() {
         // Registers the `getit://` scheme, which the browser extension opens to
         // start the app; the link itself carries nothing.
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .arg(autostart::HIDDEN_ARG)
+                .build(),
+        )
         .manage(Mutex::new(browser::Inbox::default()))
         .setup(|app| {
+            // The window starts hidden; it shows unless getit was opened at login.
+            let hidden = autostart::launched_at_login(std::env::args());
+            app.manage(autostart::Launch { hidden });
+            if !hidden && let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+            }
             let store = JsonDirStore::new(app.path().app_data_dir()?.join("queues"))?;
             // The engine spawns its tasks on the runtime it is created in.
             let engine = async_runtime::block_on(async { Engine::new(store) })?;

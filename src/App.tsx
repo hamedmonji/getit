@@ -1613,6 +1613,15 @@ export default function App() {
           onPrefs: changeDownloadPrefs,
           canKeepAwake: IS_MAC || IS_WINDOWS,
         }}
+        login={
+          IS_MAC || IS_WINDOWS
+            ? {
+                launchAtLogin: downloadPrefs.launch_at_login,
+                onLaunchAtLogin: (launch_at_login) => changeDownloadPrefs({ ...downloadPrefs, launch_at_login }),
+                waitsIn: IS_WINDOWS ? "system tray" : "Dock",
+              }
+            : undefined
+        }
         tray={
           IS_WINDOWS
             ? {

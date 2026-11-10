@@ -1,6 +1,7 @@
 //! The Downloads settings: how many connections a download may use, and
 //! whether the Mac stays awake while downloads run; and, on Windows, whether
-//! closing the window keeps getit running in the system tray. Kept here rather
+//! closing the window keeps getit running in the system tray; and whether
+//! getit opens at login. Kept here rather
 //! than in the window, so they're in place before any download starts at
 //! launch, and when the window closes.
 
@@ -11,9 +12,9 @@ use std::sync::Mutex;
 
 use getit_engine::{DEFAULT_CONNECTIONS, Engine, MAX_CONNECTIONS};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
-use crate::{awake, tray};
+use crate::{autostart, awake, tray};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -24,6 +25,8 @@ pub struct DownloadPrefs {
     pub keep_awake: bool,
     /// Whether closing the window hides it to the system tray instead of quitting; Windows only.
     pub close_to_tray: bool,
+    /// Whether getit opens, without its window, when the user logs in; Windows and macOS only.
+    pub launch_at_login: bool,
 }
 
 impl Default for DownloadPrefs {
@@ -32,6 +35,7 @@ impl Default for DownloadPrefs {
             connections: DEFAULT_CONNECTIONS,
             keep_awake: true,
             close_to_tray: true,
+            launch_at_login: true,
         }
     }
 }
@@ -81,11 +85,15 @@ impl Prefs {
     }
 }
 
-/// Puts `prefs` into effect: the engine's connections, keeping awake, and the tray icon.
+/// Puts `prefs` into effect: the engine's connections, keeping awake, the
+/// tray icon, and opening at login.
 pub fn apply(app: &AppHandle, engine: &Engine, prefs: DownloadPrefs) {
     engine.set_connections(prefs.connections);
     awake::update(app, engine, prefs.keep_awake);
-    tray::update(app, prefs.close_to_tray);
+    // Opened at login without its window, the tray icon is the way back to it.
+    let hidden = app.try_state::<autostart::Launch>().is_some_and(|launch| launch.hidden);
+    tray::update(app, prefs.close_to_tray || hidden);
+    autostart::update(app, prefs.launch_at_login);
 }
 
 #[tauri::command]
@@ -111,17 +119,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn starts_with_sixteen_connections_keeping_awake_and_closing_to_tray() {
+    fn starts_with_sixteen_connections_keeping_awake_closing_to_tray_and_opening_at_login() {
         let dir = tempfile::tempdir().unwrap();
         let prefs = Prefs::load(dir.path().join("downloads.json"));
-        assert_eq!(prefs.get(), DownloadPrefs { connections: 16, keep_awake: true, close_to_tray: true });
+        assert_eq!(prefs.get(), DownloadPrefs { connections: 16, keep_awake: true, close_to_tray: true, launch_at_login: true });
     }
 
     #[test]
     fn remembers_what_was_set() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("nested").join("downloads.json");
-        let set = DownloadPrefs { connections: 8, keep_awake: false, close_to_tray: false };
+        let set = DownloadPrefs { connections: 8, keep_awake: false, close_to_tray: false, launch_at_login: false };
         Prefs::load(file.clone()).set(set).unwrap();
         assert_eq!(Prefs::load(file).get(), set);
     }

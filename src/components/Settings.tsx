@@ -103,6 +103,14 @@ export interface TraySettings {
   onCloseToTray: (closeToTray: boolean) => void;
 }
 
+/** Whether getit opens when the user logs in, on Windows and macOS. */
+export interface LoginSettings {
+  launchAtLogin: boolean;
+  onLaunchAtLogin: (launchAtLogin: boolean) => void;
+  /** Where getit waits when opened at login: "system tray" on Windows, "Dock" on macOS. */
+  waitsIn: string;
+}
+
 /** The sidebar's sections, to show again those hidden from it. */
 export interface SidebarSettings {
   sections: { id: SectionId; label: string; shown: boolean }[];
@@ -131,6 +139,7 @@ export function Settings({
   queues,
   sidebar,
   tray,
+  login,
   access,
   development,
   onClose,
@@ -146,6 +155,8 @@ export function Settings({
   sidebar: SidebarSettings;
   /** The Closing the window section shows only when given. */
   tray?: TraySettings;
+  /** The Startup section shows only when given. */
+  login?: LoginSettings;
   /** The Folder access section shows only when given. */
   access?: AccessSettings;
   /** The Development page shows only when given. */
@@ -175,6 +186,7 @@ export function Settings({
             </TabsList>
           </div>
           <TabsContent value="general" className="min-h-0 overflow-y-auto p-5 pt-12">
+            {login && <LaunchAtLogin {...login} />}
             {tray && <CloseToTray {...tray} />}
             <section className="settings-section">
               <h3 className="settings-heading">Sort files by</h3>
@@ -387,6 +399,23 @@ function QueueDefaults({ defaults, onDefaults, onApply }: QueueDefaultsSettings)
         )}
       </div>
     </div>
+  );
+}
+
+/** Whether getit opens, without its window, when the user logs in. */
+function LaunchAtLogin({ launchAtLogin, onLaunchAtLogin, waitsIn }: LoginSettings) {
+  const id = useId();
+  return (
+    <section className="settings-section">
+      <h3 className="settings-heading">Startup</h3>
+      <div className="flex items-center gap-2">
+        <Checkbox id={id} checked={launchAtLogin} onCheckedChange={(checked) => onLaunchAtLogin(checked === true)} />
+        <Label htmlFor={id}>Open getit when you log in</Label>
+      </div>
+      <p className="settings-note">
+        It opens without its window, in the {waitsIn}, and carries on with queued downloads.
+      </p>
+    </section>
   );
 }
 
