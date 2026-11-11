@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { IS_MAC } from "../lib/platform";
 
 export type ShortcutAction =
-  | "closeSettings"
   | "goUp"
   | "openSelected"
   | "moveSelection"
@@ -32,7 +31,6 @@ export type KeyPress = Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey
 
 export interface ShortcutContext {
   isMac: boolean;
-  settingsOpen: boolean;
   /** How many items are selected in view. */
   selectionCount: number;
   /** Whether a button has focus, which takes Return and Space itself. */
@@ -69,9 +67,6 @@ export function shortcutFor(e: KeyPress, ctx: ShortcutContext): Shortcut | null 
   const key = e.key.toLowerCase();
   const prevent = (action: ShortcutAction | null): Shortcut => ({ action, preventDefault: true });
   const plain = (action: ShortcutAction): Shortcut => ({ action, preventDefault: false });
-
-  // The settings dialog covers the window; only its own keys work.
-  if (ctx.settingsOpen) return e.key === "Escape" || (e.key === "," && command) ? prevent("closeSettings") : null;
 
   const arrow = e.key.startsWith("Arrow");
   if (arrow && (ctx.isMac ? e.metaKey : e.altKey)) {
@@ -115,7 +110,6 @@ export function shortcutFor(e: KeyPress, ctx: ShortcutContext): Shortcut | null 
 }
 
 interface Options {
-  settingsOpen: boolean;
   selectionCount: number;
   /** Whether the user is typing a name to select, asked as each key comes. */
   typing: () => boolean;
@@ -123,11 +117,9 @@ interface Options {
 
 /**
  * What a mouse button goes to, by `MouseEvent.button`: the side buttons go
- * back (3) and forward (4), as in Explorer and browsers. Settings, which covers
- * the folders, keeps them.
+ * back (3) and forward (4), as in Explorer and browsers.
  */
-export function mouseShortcut(button: number, settingsOpen: boolean): "back" | "forward" | null {
-  if (settingsOpen) return null;
+export function mouseShortcut(button: number): "back" | "forward" | null {
   return button === 3 ? "back" : button === 4 ? "forward" : null;
 }
 
@@ -152,7 +144,6 @@ export function useShortcuts(options: Options, handlers: Record<ShortcutAction, 
       if (inText || inMenu || e.defaultPrevented) return;
       const shortcut = shortcutFor(e, {
         isMac: IS_MAC,
-        settingsOpen: options.settingsOpen,
         selectionCount: options.selectionCount,
         onButton: e.target instanceof HTMLButtonElement,
         typing: options.typing(),
@@ -170,9 +161,8 @@ export function useShortcuts(options: Options, handlers: Record<ShortcutAction, 
     const onMouseUp = (e: MouseEvent) => {
       if (!isSide(e)) return;
       e.preventDefault();
-      const { options, handlers } = latest.current;
-      const action = mouseShortcut(e.button, options.settingsOpen);
-      if (action) handlers[action](new KeyboardEvent("keydown"));
+      const action = mouseShortcut(e.button);
+      if (action) latest.current.handlers[action](new KeyboardEvent("keydown"));
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onMouseDown);

@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -17,7 +16,6 @@ import { Onboarding } from "./components/Onboarding";
 import { FinishFlood } from "./components/FinishFlood";
 import { QueueSettings } from "./components/QueueSettings";
 import { RefreshLink } from "./components/RefreshLink";
-import { Settings } from "./components/Settings";
 import { Sidebar } from "./components/Sidebar";
 import { ViewSettings } from "./components/ViewSettings";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -44,14 +42,16 @@ import { useMarquee } from "./hooks/useMarquee";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useSortOrder } from "./hooks/useSortOrder";
 import { useStoredState } from "./hooks/useStoredState";
+import { useDocumentAppearance } from "./hooks/useDocumentAppearance";
+import { useSettingsWindow } from "./hooks/useSettingsWindow";
+import { SETTINGS_REPLY, SETTINGS_WINDOW, type SettingsReply } from "./lib/settingsWindow";
+import { emitTo } from "@tauri-apps/api/event";
 import { useSystemDark } from "./hooks/useSystemDark";
 import { useUndo } from "./hooks/useUndo";
 import { useUpdate } from "./hooks/useUpdate";
 import { onboardingSteps, resumeStep, showsOnboarding, STORED_STEPS, type StoredStep } from "./lib/onboarding";
 import {
   floodColor,
-  accentTokens,
-  backgroundTokens,
   DENSITIES,
   isAccent,
   isBackground,
@@ -242,17 +242,7 @@ export default function App() {
   const [background, setBackground] = useStoredState<Background>("getit.background", isBackground, () => "default");
   const [density, setDensity] = useStoredState<Density>("getit.density", DENSITIES, () => "comfortable");
   const [stripes, setStripes] = useStoredState<Stripes>("getit.stripes", STRIPES, () => "off");
-  // On the document rather than the app: menus and dialogs show outside it, and
-  // shadcn's components take dark mode from a `dark` class above them.
-  useLayoutEffect(() => {
-    const root = document.documentElement;
-    root.dataset.theme = theme;
-    root.dataset.density = density;
-    root.dataset.stripes = stripes;
-    root.classList.toggle("dark", theme === "Dark");
-    for (const [name, value] of Object.entries(accentTokens(accent, theme))) root.style.setProperty(name, value);
-    for (const [name, value] of Object.entries(backgroundTokens(background, theme))) root.style.setProperty(name, value);
-  }, [theme, accent, background, density, stripes]);
+  useDocumentAppearance(theme, accent, background, density, stripes);
   const [mode, setMode] = useStoredState<ViewMode>("getit.view", ["Icons", "List"], () => "Icons");
   const [folderFilter, setFolderFilter] = useStoredState<"all" | "queues">(
     "getit.folders",
@@ -269,10 +259,6 @@ export default function App() {
   );
   const queuePanelOpen = queuePanel === "open";
   const toggleQueuePanel = () => setQueuePanel(queuePanelOpen ? "closed" : "open");
-  /** Whether the settings popup is showing. */
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const toggleSettings = () => setSettingsOpen((open) => !open);
-  const closeSettings = useCallback(() => setSettingsOpen(false), []);
   /** Global sort order for files: by the first key, then the next for ties. */
   const [sortOrder, setSortOrder] = useSortOrder();
   const [detailsPanel, setDetailsPanel] = useStoredState<"open" | "closed">(
@@ -875,17 +861,6 @@ export default function App() {
   };
   const removeAccessFolder = (path: string) => saveAccessFolders(accessFolders.filter((f) => f !== path));
 
-  // Checks Full Disk Access on launch, and again while the settings are open,
-  // where the user may be turning it on; the folder is listed again when it changes.
-  useEffect(() => {
-    if (!IS_MAC) return;
-    const check = () => engine.fullDiskAccess().then(setFullDisk, (e) => console.error(e));
-    check();
-    if (!settingsOpen) return;
-    const timer = setInterval(check, FULL_DISK_POLL_MS);
-    return () => clearInterval(timer);
-  }, [settingsOpen]);
-  useEffect(() => setListNonce((n) => n + 1), [fullDisk]);
 
   // Development only: a limit on download speed, kept across restarts.
   const [speedLimit, setSpeedLimit] = useStoredState<SpeedLimit>("getit.speedLimit", SPEED_LIMITS, () => "off");
@@ -903,6 +878,68 @@ export default function App() {
       .then(() => window.location.reload())
       .catch((e) => setNotice(`Couldn't reset onboarding: ${e}`));
   };
+
+  // The settings, in a window of their own: it shows what's here and sends back what the user changes.
+  const settingsWindow = useSettingsWindow(
+    {
+      sortOrder,
+      pasteMode,
+      appearance: { theme: themePref, resolvedTheme: theme, accent, background, density, stripes },
+      downloadPrefs,
+      queueDefaults,
+      sections: sectionOrder(sections).map((id) => ({
+        id,
+        label: sectionLabel(id, fullDisk || !root),
+        shown: !hiddenSections.includes(id),
+      })),
+      access: IS_MAC && home ? { home, fullDisk, asked: accessAsked, root, folders: accessFolders } : null,
+      development: import.meta.env.DEV ? { speedLimit } : null,
+    },
+    {
+      sortOrder: ({ order }) => setSortOrder(order),
+      pasteMode: ({ mode }) => setPasteMode(mode),
+      theme: ({ theme }) => setThemePref(theme),
+      accent: ({ accent }) => setAccent(accent),
+      background: ({ background }) => setBackground(background),
+      density: ({ density }) => setDensity(density),
+      stripes: ({ stripes }) => setStripes(stripes),
+      downloadPrefs: ({ prefs }) => changeDownloadPrefs(prefs),
+      queueDefaults: ({ settings }) => setQueueDefaults(settings),
+      // Every queue at once; each keeps its pause and auto rename rules.
+      applyQueueDefaults: ({ request }) => {
+        const all = Object.values(state.queues);
+        const reply = (answer: SettingsReply) => report(emitTo(SETTINGS_WINDOW, SETTINGS_REPLY, answer));
+        Promise.all(all.map((q) => engine.setQueueSettings(q.id, withDefaults(q.settings, queueDefaults)))).then(
+          () => reply({ request, count: all.length }),
+          (e) => {
+            setNotice(`Couldn't apply to every queue: ${e}`);
+            reply({ request, error: String(e) });
+          },
+        );
+      },
+      sectionShown: ({ id, shown }) => setHiddenSections(withSectionShown(hiddenSections, id, shown)),
+      fullDiskAccess: askFullDiskAccess,
+      restart: () => report(engine.relaunch()),
+      addFolder: addAccessFolder,
+      removeFolder: ({ path }) => removeAccessFolder(path),
+      resetOnboarding,
+      testUpdate: ({ fails }) => updater.test(fails),
+      speedLimit: ({ limit }) => setSpeedLimit(limit),
+    },
+  );
+  const settingsOpen = settingsWindow.open;
+
+  // Checks Full Disk Access on launch, and again while the settings are open,
+  // where the user may be turning it on; the folder is listed again when it changes.
+  useEffect(() => {
+    if (!IS_MAC) return;
+    const check = () => engine.fullDiskAccess().then(setFullDisk, (e) => console.error(e));
+    check();
+    if (!settingsOpen) return;
+    const timer = setInterval(check, FULL_DISK_POLL_MS);
+    return () => clearInterval(timer);
+  }, [settingsOpen]);
+  useEffect(() => setListNonce((n) => n + 1), [fullDisk]);
 
   // While onboarding asks where getit can save, or the main view asks for a
   // folder after the chosen ones were deleted, getit goes on by itself once Full
@@ -1004,9 +1041,8 @@ export default function App() {
   }, [linksReady]);
 
   useShortcuts(
-    { settingsOpen, selectionCount: selection.length, typing: () => isTyping(typed.current, Date.now()) },
+    { selectionCount: selection.length, typing: () => isTyping(typed.current, Date.now()) },
     {
-      closeSettings: () => setSettingsOpen(false),
       goUp,
       openSelected: () => {
         const [key] = selection;
@@ -1029,7 +1065,7 @@ export default function App() {
       forward: goForward,
       details: toggleDetails,
       sidebar: () => setSidebarPanel(sidebarPanel === "open" ? "closed" : "open"),
-      settings: toggleSettings,
+      settings: settingsWindow.show,
       queuePanel: toggleQueuePanel,
       icons: () => setMode("Icons"),
       list: () => setMode("List"),
@@ -1297,7 +1333,7 @@ export default function App() {
           setPasting(null);
           setAdding((a) => !a);
         }}
-        onToggleSettings={toggleSettings}
+        onToggleSettings={settingsWindow.show}
       />
 
       {adding && (
@@ -1588,89 +1624,6 @@ export default function App() {
           setRefreshing(null);
           setRefreshCapture(null);
         }}
-      />
-      <Settings
-        open={settingsOpen}
-        sortOrder={sortOrder}
-        onSortOrder={setSortOrder}
-        pasteMode={pasteMode}
-        onPasteMode={setPasteMode}
-        appearance={{
-          theme: themePref,
-          onTheme: setThemePref,
-          resolvedTheme: theme,
-          accent,
-          onAccent: setAccent,
-          background,
-          onBackground: setBackground,
-          density,
-          onDensity: setDensity,
-          stripes,
-          onStripes: setStripes,
-        }}
-        downloads={{
-          prefs: downloadPrefs,
-          onPrefs: changeDownloadPrefs,
-          canKeepAwake: IS_MAC || IS_WINDOWS,
-        }}
-        login={
-          IS_MAC || IS_WINDOWS
-            ? {
-                launchAtLogin: downloadPrefs.launch_at_login,
-                onLaunchAtLogin: (launch_at_login) => changeDownloadPrefs({ ...downloadPrefs, launch_at_login }),
-                waitsIn: IS_WINDOWS ? "system tray" : "Dock",
-              }
-            : undefined
-        }
-        tray={
-          IS_WINDOWS
-            ? {
-                closeToTray: downloadPrefs.close_to_tray,
-                onCloseToTray: (close_to_tray) => changeDownloadPrefs({ ...downloadPrefs, close_to_tray }),
-              }
-            : undefined
-        }
-        queues={{
-          defaults: queueDefaults,
-          onDefaults: setQueueDefaults,
-          // Every queue at once; each keeps its pause and auto rename rules.
-          onApply: () => {
-            const all = Object.values(state.queues);
-            return Promise.all(all.map((q) => engine.setQueueSettings(q.id, withDefaults(q.settings, queueDefaults))))
-              .then(() => all.length)
-              .catch((e) => {
-                setNotice(`Couldn't apply to every queue: ${e}`);
-                throw e;
-              });
-          },
-        }}
-        sidebar={{
-          sections: sectionOrder(sections).map((id) => ({
-            id,
-            label: sectionLabel(id, fullDisk || !root),
-            shown: !hiddenSections.includes(id),
-          })),
-          onShown: (id, shown) => setHiddenSections(withSectionShown(hiddenSections, id, shown)),
-        }}
-        access={
-          IS_MAC && home
-            ? {
-                home,
-                fullDisk,
-                asked: accessAsked,
-                root,
-                folders: accessFolders,
-                onFullDiskAccess: askFullDiskAccess,
-                onRestart: () => report(engine.relaunch()),
-                onAddFolder: addAccessFolder,
-                onRemoveFolder: removeAccessFolder,
-              }
-            : undefined
-        }
-        development={
-          import.meta.env.DEV ? { onResetOnboarding: resetOnboarding, onTestUpdate: updater.test, speedLimit, onSpeedLimit: setSpeedLimit } : undefined
-        }
-        onClose={closeSettings}
       />
       {drag && (
         <div className="drag-ghost" style={{ left: drag.x + 14, top: drag.y + 10 }}>

@@ -10,9 +10,11 @@ import "@fontsource/jetbrains-mono/700.css";
 import "./index.css";
 import "./App.css";
 import App from "./App";
+import { SettingsWindow } from "./SettingsWindow";
+import { isSettingsWindow } from "./lib/settingsWindow";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    {isSettingsWindow(window.location.search) ? <SettingsWindow /> : <App />}
   </React.StrictMode>,
 );

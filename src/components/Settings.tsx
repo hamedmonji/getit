@@ -3,7 +3,6 @@ import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -120,31 +119,8 @@ export interface SidebarSettings {
 /** How far the pointer moves before a press on a row becomes a drag. */
 const DRAG_THRESHOLD = 4;
 
-/**
- * The settings dialog, centred over the app, with settings that apply
- * everywhere, on pages picked in a sidebar: the sort order, where files are sorted by the top
- * key, then the next for ties; and whether pasted links are added without
- * asking; how getit looks; on macOS, Full Disk Access and the folders getit may open without
- * it. In development, a way to see onboarding again and a download speed limit. Closes on a click
- * outside it or Escape.
- */
-export function Settings({
-  open,
-  sortOrder,
-  onSortOrder,
-  pasteMode,
-  onPasteMode,
-  appearance,
-  downloads,
-  queues,
-  sidebar,
-  tray,
-  login,
-  access,
-  development,
-  onClose,
-}: {
-  open: boolean;
+/** What the settings page shows, and what it calls when something changes. */
+export interface SettingsProps {
   sortOrder: SortKey[];
   onSortOrder: (order: SortKey[]) => void;
   pasteMode: "ask" | "always";
@@ -161,120 +137,133 @@ export function Settings({
   access?: AccessSettings;
   /** The Development page shows only when given. */
   development?: DevelopmentSettings;
-  onClose: () => void;
-}) {
+}
+
+/**
+ * The settings page, filling the settings window, with settings that apply
+ * everywhere, on pages picked in a sidebar: the sort order, where files are sorted by the top
+ * key, then the next for ties; and whether pasted links are added without
+ * asking; how getit looks; on macOS, Full Disk Access and the folders getit may open without
+ * it. In development, a way to see onboarding again and a download speed limit.
+ */
+export function Settings({
+  sortOrder,
+  onSortOrder,
+  pasteMode,
+  onPasteMode,
+  appearance,
+  downloads,
+  queues,
+  sidebar,
+  tray,
+  login,
+  access,
+  development,
+}: SettingsProps) {
   const askId = useId();
   const pages = settingsPages({ access: !!access, development: !!development });
   return (
-    <Dialog open={open} onOpenChange={(open) => !open && onClose()}>
-      {/* The pages describe themselves; there's no one description for the dialog. */}
-      <DialogContent
-        aria-describedby={undefined}
-        className="settings-dialog flex h-[min(520px,calc(100vh-4rem))] gap-0 overflow-hidden p-0 sm:max-w-2xl [&_[data-slot=dialog-close]]:text-ink-muted"
-      >
-        <Tabs defaultValue="general" orientation="vertical" className="min-h-0 flex-1 gap-0">
-          <div className="flex w-44 flex-none flex-col gap-3 border-r border-line bg-panel2 p-3">
-            <DialogHeader className="px-2 pt-1">
-              <DialogTitle>Settings</DialogTitle>
-            </DialogHeader>
-            <TabsList className="w-full items-stretch gap-0.5 bg-transparent p-0">
-              {pages.map((page) => (
-                <TabsTrigger key={page} value={page} className="h-8 flex-none px-2">
-                  {SETTINGS_PAGE_LABELS[page]}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-          <TabsContent value="general" className="min-h-0 overflow-y-auto p-5 pt-12">
-            {login && <LaunchAtLogin {...login} />}
-            {tray && <CloseToTray {...tray} />}
+    <main className="settings-dialog flex h-screen gap-0 overflow-hidden bg-popover text-sm text-popover-foreground">
+      <Tabs defaultValue="general" orientation="vertical" className="min-h-0 flex-1 gap-0">
+        <div className="flex w-44 flex-none flex-col gap-3 border-r border-line bg-panel2 p-3">
+          <h1 className="px-2 pt-1 font-heading text-base leading-none font-medium">Settings</h1>
+          <TabsList className="w-full items-stretch gap-0.5 bg-transparent p-0">
+            {pages.map((page) => (
+              <TabsTrigger key={page} value={page} className="h-8 flex-none px-2">
+                {SETTINGS_PAGE_LABELS[page]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+        <TabsContent value="general" className="min-h-0 overflow-y-auto p-5">
+          {login && <LaunchAtLogin {...login} />}
+          {tray && <CloseToTray {...tray} />}
+          <section className="settings-section">
+            <h3 className="settings-heading">Sort files by</h3>
+            <SortList order={sortOrder} onChange={onSortOrder} />
+            <p className="settings-note">
+              Sorted by the first, then by the next where they're equal. Drag to reorder, or click one to put it
+              first. This doesn't change the order downloads run in.
+            </p>
+          </section>
+          <section className="settings-section">
+            <h3 className="settings-heading">Pasted links</h3>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id={askId}
+                checked={pasteMode === "ask"}
+                onCheckedChange={(checked) => onPasteMode(checked === true ? "ask" : "always")}
+              />
+              <Label htmlFor={askId}>Ask before adding pasted links</Label>
+            </div>
+            <p className="settings-note">When off, pasted links go straight into the current folder's queue.</p>
+          </section>
+          <SidebarSections {...sidebar} />
+        </TabsContent>
+        <TabsContent value="downloads" className="min-h-0 overflow-y-auto p-5">
+          <Downloads {...downloads} />
+        </TabsContent>
+        <TabsContent value="queues" className="min-h-0 overflow-y-auto p-5">
+          <QueueDefaults {...queues} />
+        </TabsContent>
+        <TabsContent value="appearance" className="min-h-0 overflow-y-auto p-5">
+          <Appearance {...appearance} />
+        </TabsContent>
+        {access && (
+          <TabsContent value="access" className="min-h-0 overflow-y-auto p-5">
+            <FolderAccess {...access} />
+          </TabsContent>
+        )}
+        {development && (
+          <TabsContent value="development" className="min-h-0 overflow-y-auto p-5">
             <section className="settings-section">
-              <h3 className="settings-heading">Sort files by</h3>
-              <SortList order={sortOrder} onChange={onSortOrder} />
+              <h3 className="settings-heading">Max download speed</h3>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                size="sm"
+                spacing={0}
+                value={development.speedLimit}
+                onValueChange={(v) => v && development.onSpeedLimit(v as SpeedLimit)}
+              >
+                {SPEED_LIMITS.map((limit) => (
+                  <ToggleGroupItem key={limit} value={limit} className="px-3">
+                    {SPEED_LIMIT_LABELS[limit]}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
               <p className="settings-note">
-                Sorted by the first, then by the next where they're equal. Drag to reorder, or click one to put it
-                first. This doesn't change the order downloads run in.
+                For all downloads together. Running downloads slow down or speed up right away.
               </p>
             </section>
             <section className="settings-section">
-              <h3 className="settings-heading">Pasted links</h3>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id={askId}
-                  checked={pasteMode === "ask"}
-                  onCheckedChange={(checked) => onPasteMode(checked === true ? "ask" : "always")}
-                />
-                <Label htmlFor={askId}>Ask before adding pasted links</Label>
+              <h3 className="settings-heading">Update</h3>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => development.onTestUpdate(false)}>
+                  Show test update
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => development.onTestUpdate(true)}>
+                  Show failing update
+                </Button>
               </div>
-              <p className="settings-note">When off, pasted links go straight into the current folder's queue.</p>
+              <p className="settings-note">
+                Offers a pretend next version on the update card. Its download takes a few seconds, and restarting
+                only pretends to, so every step can be tried without a release.
+              </p>
             </section>
-            <SidebarSections {...sidebar} />
+            <section className="settings-section">
+              <h3 className="settings-heading">Onboarding</h3>
+              <div>
+                <Button variant="outline" size="sm" onClick={development.onResetOnboarding}>
+                  Reset onboarding
+                </Button>
+              </div>
+              <p className="settings-note">Forgets the first-launch choice, so onboarding shows again.</p>
+            </section>
           </TabsContent>
-          <TabsContent value="downloads" className="min-h-0 overflow-y-auto p-5 pt-12">
-            <Downloads {...downloads} />
-          </TabsContent>
-          <TabsContent value="queues" className="min-h-0 overflow-y-auto p-5 pt-12">
-            <QueueDefaults {...queues} />
-          </TabsContent>
-          <TabsContent value="appearance" className="min-h-0 overflow-y-auto p-5 pt-12">
-            <Appearance {...appearance} />
-          </TabsContent>
-          {access && (
-            <TabsContent value="access" className="min-h-0 overflow-y-auto p-5 pt-12">
-              <FolderAccess {...access} />
-            </TabsContent>
-          )}
-          {development && (
-            <TabsContent value="development" className="min-h-0 overflow-y-auto p-5 pt-12">
-              <section className="settings-section">
-                <h3 className="settings-heading">Max download speed</h3>
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  size="sm"
-                  spacing={0}
-                  value={development.speedLimit}
-                  onValueChange={(v) => v && development.onSpeedLimit(v as SpeedLimit)}
-                >
-                  {SPEED_LIMITS.map((limit) => (
-                    <ToggleGroupItem key={limit} value={limit} className="px-3">
-                      {SPEED_LIMIT_LABELS[limit]}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-                <p className="settings-note">
-                  For all downloads together. Running downloads slow down or speed up right away.
-                </p>
-              </section>
-              <section className="settings-section">
-                <h3 className="settings-heading">Update</h3>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => development.onTestUpdate(false)}>
-                    Show test update
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => development.onTestUpdate(true)}>
-                    Show failing update
-                  </Button>
-                </div>
-                <p className="settings-note">
-                  Offers a pretend next version on the update card. Its download takes a few seconds, and restarting
-                  only pretends to, so every step can be tried without a release.
-                </p>
-              </section>
-              <section className="settings-section">
-                <h3 className="settings-heading">Onboarding</h3>
-                <div>
-                  <Button variant="outline" size="sm" onClick={development.onResetOnboarding}>
-                    Reset onboarding
-                  </Button>
-                </div>
-                <p className="settings-note">Forgets the first-launch choice, so onboarding shows again.</p>
-              </section>
-            </TabsContent>
-          )}
-        </Tabs>
-      </DialogContent>
-    </Dialog>
+        )}
+      </Tabs>
+    </main>
   );
 }
 

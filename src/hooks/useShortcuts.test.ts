@@ -3,7 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { mouseShortcut, shortcutFor, useShortcuts, type KeyPress, type ShortcutAction, type ShortcutContext } from "./useShortcuts";
 
-const mac: ShortcutContext = { isMac: true, settingsOpen: false, selectionCount: 0, onButton: false, typing: false };
+const mac: ShortcutContext = { isMac: true, selectionCount: 0, onButton: false, typing: false };
 const other: ShortcutContext = { ...mac, isMac: false };
 
 const press = (key: string, mods: Partial<KeyPress> = {}): KeyPress => ({
@@ -156,14 +156,6 @@ describe("shortcutFor", () => {
     expect(shortcutFor(cmd("Backspace"), mac)?.preventDefault).toBe(false);
   });
 
-  it("only closes the settings while they're open", () => {
-    const open = { ...mac, settingsOpen: true, selectionCount: 1 };
-    expect(action(press("Escape"), open)).toBe("closeSettings");
-    expect(action(cmd(","), open)).toBe("closeSettings");
-    expect(shortcutFor(cmd("v"), open)).toBeNull();
-    expect(shortcutFor(press("Backspace"), open)).toBeNull();
-  });
-
   it("ignores other keys", () => {
     expect(shortcutFor(press("Home"), mac)).toBeNull();
     expect(shortcutFor(cmd("q"), mac)).toBeNull();
@@ -175,7 +167,7 @@ describe("useShortcuts", () => {
   const escapeRuns = (target: Element) => {
     const escape = vi.fn();
     const handlers = { escape } as unknown as Record<ShortcutAction, (e: KeyboardEvent) => void>;
-    const hook = renderHook(() => useShortcuts({ settingsOpen: false, selectionCount: 0, typing: () => false }, handlers));
+    const hook = renderHook(() => useShortcuts({ selectionCount: 0, typing: () => false }, handlers));
     target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
     hook.unmount();
     return escape.mock.calls.length > 0;
@@ -198,7 +190,7 @@ describe("useShortcuts", () => {
   const typeSelects = (target: Element) => {
     const typeSelect = vi.fn();
     const handlers = { typeSelect } as unknown as Record<ShortcutAction, (e: KeyboardEvent) => void>;
-    const hook = renderHook(() => useShortcuts({ settingsOpen: false, selectionCount: 0, typing: () => false }, handlers));
+    const hook = renderHook(() => useShortcuts({ selectionCount: 0, typing: () => false }, handlers));
     target.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true }));
     hook.unmount();
     return typeSelect.mock.calls.length > 0;
@@ -229,15 +221,14 @@ describe("useShortcuts", () => {
 
 describe("mouseShortcut", () => {
   it("goes back and forward with the side buttons", () => {
-    expect(mouseShortcut(3, false)).toBe("back");
-    expect(mouseShortcut(4, false)).toBe("forward");
+    expect(mouseShortcut(3)).toBe("back");
+    expect(mouseShortcut(4)).toBe("forward");
   });
 
-  it("leaves the other buttons alone, and every button while Settings is open", () => {
-    expect(mouseShortcut(0, false)).toBeNull();
-    expect(mouseShortcut(1, false)).toBeNull();
-    expect(mouseShortcut(2, false)).toBeNull();
-    expect(mouseShortcut(3, true)).toBeNull();
+  it("leaves the other buttons alone", () => {
+    expect(mouseShortcut(0)).toBeNull();
+    expect(mouseShortcut(1)).toBeNull();
+    expect(mouseShortcut(2)).toBeNull();
   });
 });
 
@@ -246,7 +237,7 @@ describe("useShortcuts with the mouse", () => {
     const back = vi.fn();
     const forward = vi.fn();
     const handlers = { back, forward } as unknown as Record<ShortcutAction, (e: KeyboardEvent) => void>;
-    const hook = renderHook(() => useShortcuts({ settingsOpen: false, selectionCount: 0, typing: () => false }, handlers));
+    const hook = renderHook(() => useShortcuts({ selectionCount: 0, typing: () => false }, handlers));
     const down = new MouseEvent("mousedown", { button: 3, bubbles: true, cancelable: true });
     document.body.dispatchEvent(down);
     expect(down.defaultPrevented).toBe(true);

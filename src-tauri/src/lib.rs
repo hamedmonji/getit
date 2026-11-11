@@ -23,6 +23,10 @@ use tokio::sync::broadcast::error::RecvError;
 const EVENT: &str = "engine://event";
 /// The frontend missed events and should reload the full state.
 const RESYNC: &str = "engine://resync";
+/// The window getit opens with; the frontend calls it `MAIN_WINDOW` too.
+const MAIN_WINDOW: &str = "main";
+/// The settings window's label, as the frontend opens it (`SETTINGS_WINDOW`).
+const SETTINGS_WINDOW: &str = "settings";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -54,7 +58,7 @@ pub fn run() {
             // The window starts hidden; it shows unless getit was opened at login.
             let hidden = autostart::launched_at_login(std::env::args());
             app.manage(autostart::Launch { hidden });
-            if !hidden && let Some(window) = app.get_webview_window("main") {
+            if !hidden && let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                 let _ = window.show();
             }
             let store = JsonDirStore::new(app.path().app_data_dir()?.join("queues"))?;
@@ -85,8 +89,15 @@ pub fn run() {
         // getit keeps downloading; the Dock icon or the browser extension
         // brings it back, and ⌘Q quits. On Windows it does the same when the
         // General settings say to, with the tray icon to bring it back or quit.
+        // The settings window, which works through the main one, closes with it.
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() != MAIN_WINDOW {
+                    return;
+                }
+                if let Some(settings) = window.app_handle().get_webview_window(SETTINGS_WINDOW) {
+                    let _ = settings.close();
+                }
                 let close_to_tray = window
                     .try_state::<prefs::Prefs>()
                     .is_some_and(|prefs| prefs.get().close_to_tray);
