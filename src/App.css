@@ -862,7 +862,7 @@ body {
 
 .list {
   /* The columns, plus the rows' padding, action button, icon, and gaps. */
-  min-width: calc(var(--list-columns-width) + 158px);
+  min-width: calc(var(--list-columns-width) + 170px);
 }
 
 .list-header,
@@ -999,7 +999,8 @@ body {
 }
 
 .row-status,
-.row-size {
+.row-size,
+.row-added {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
   color: var(--ink-muted);

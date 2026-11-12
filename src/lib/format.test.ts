@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatEta, formatSize, formatSpeed, plural } from "./format";
+import { formatAdded, formatEta, formatSize, formatSpeed, plural } from "./format";
 
 const KB = 1024;
 const MB = 1024 * KB;
@@ -66,5 +66,22 @@ describe("plural", () => {
     expect(plural(0, "item")).toBe("0 items");
     expect(plural(1, "item")).toBe("1 item");
     expect(plural(2, "item")).toBe("2 items");
+  });
+});
+
+describe("formatAdded", () => {
+  const now = new Date(2026, 10, 12, 18, 0).getTime();
+
+  it("shows today and yesterday by name, with the time", () => {
+    expect(formatAdded(new Date(2026, 10, 12, 15, 4).getTime(), now, "en-US")).toBe("Today at 3:04 PM");
+    expect(formatAdded(new Date(2026, 10, 11, 9, 15).getTime(), now, "en-US")).toBe("Yesterday at 9:15 AM");
+  });
+
+  it("shows older dates in full", () => {
+    expect(formatAdded(new Date(2026, 9, 3, 23, 59).getTime(), now, "en-GB")).toBe("3 Oct 2026 at 23:59");
+  });
+
+  it("shows a dash when the date isn't known", () => {
+    expect(formatAdded(0, now)).toBe("—");
   });
 });

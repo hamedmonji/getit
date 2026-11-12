@@ -23,6 +23,7 @@ import {
   withColumnShown,
   type ColumnKey,
 } from "../lib/columns";
+import { formatAdded } from "../lib/format";
 import { splitName } from "../lib/paths";
 import type { FileVm, FolderVm } from "../lib/viewModels";
 import { fillerStripes } from "../lib/listFiller";
@@ -281,6 +282,8 @@ export function ListView(props: ItemViewProps) {
   } as CSSProperties;
   /** A row's cells for the shown columns, in their order. */
   const cells = (row: Record<ColumnKey, ReactNode>) => shown.map((key) => <Fragment key={key}>{row[key]}</Fragment>);
+  const now = Date.now();
+  const added = (f: FileVm) => <span className="row-added">{formatAdded(f.addedAt, now)}</span>;
   const rowsRef = useRef<HTMLDivElement>(null);
   const space = useListFiller(rowsRef);
   const filler = fillerStripes(space.realRows, space.room, space.rowHeight);
@@ -337,6 +340,7 @@ export function ListView(props: ItemViewProps) {
               status: <span className="row-sub">{g.sub}</span>,
               progress: <ProgressBar className="row-bar" pct={g.pct} color={g.barColor} />,
               size: <span className="row-size">{g.sizeLabel}</span>,
+              added: <span />,
             })}
             <span />
           </div>
@@ -361,6 +365,7 @@ export function ListView(props: ItemViewProps) {
               // A file that isn't a download has no progress to show.
               progress: f.plain ? <span /> : <ProgressBar className="row-bar" pct={f.pct} color={f.color} />,
               size: <span className="row-size">{f.sizeLabel}</span>,
+              added: added(f),
             })}
             <span />
           </div>
@@ -378,6 +383,7 @@ export function ListView(props: ItemViewProps) {
               status: <span className="row-status">{f.status}</span>,
               progress: <span />,
               size: <span className="row-size">{f.sizeLabel}</span>,
+              added: added(f),
             })}
             <span />
           </div>

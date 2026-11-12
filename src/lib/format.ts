@@ -23,3 +23,22 @@ export function formatEta(sec: number): string {
 export function plural(n: number, word: string): string {
   return n + " " + word + (n === 1 ? "" : "s");
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Midnight at the start of `ms`'s day, in local time. */
+const startOfDay = (ms: number) => new Date(ms).setHours(0, 0, 0, 0);
+
+/**
+ * When something was added, as Finder shows it: "Today at 3:04 PM",
+ * "Yesterday at 9:15 AM", or "12 Nov 2026 at 3:04 PM". "—" when unknown (0).
+ */
+export function formatAdded(ms: number, now: number, locale?: string): string {
+  if (!ms) return "—";
+  const time = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(ms);
+  const days = Math.round((startOfDay(now) - startOfDay(ms)) / DAY_MS);
+  if (days === 0) return `Today at ${time}`;
+  if (days === 1) return `Yesterday at ${time}`;
+  const date = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(ms);
+  return `${date} at ${time}`;
+}

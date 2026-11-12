@@ -1,14 +1,15 @@
 // Widths of the list view's columns, set by dragging the dividers in its header.
 
-export type ColumnKey = "name" | "progress" | "size" | "status";
+export type ColumnKey = "name" | "progress" | "size" | "status" | "added";
 
-export const COLUMNS: ColumnKey[] = ["name", "status", "progress", "size"];
+export const COLUMNS: ColumnKey[] = ["name", "status", "progress", "size", "added"];
 
 export const COLUMN_LABELS: Record<ColumnKey, string> = {
   name: "Name",
   progress: "Progress",
   size: "Size",
   status: "Status",
+  added: "Date Added",
 };
 
 /** Widths in pixels. The name column fills what the others leave until a column is resized. */
@@ -17,12 +18,13 @@ export interface ColumnWidths {
   progress: number;
   size: number;
   status: number;
+  added: number;
 }
 
-export const DEFAULT_WIDTHS: ColumnWidths = { name: null, progress: 120, size: 80, status: 200 };
+export const DEFAULT_WIDTHS: ColumnWidths = { name: null, progress: 120, size: 80, status: 200, added: 160 };
 
 /** Narrowest each column can be dragged to; the name column's is also its least when filling. */
-export const MIN_WIDTHS: Record<ColumnKey, number> = { name: 120, progress: 60, size: 56, status: 80 };
+export const MIN_WIDTHS: Record<ColumnKey, number> = { name: 120, progress: 60, size: 56, status: 80, added: 80 };
 
 
 /** `widths` with `key` set to `width`, kept to the column's minimum, in whole pixels. */
@@ -51,6 +53,7 @@ export const FIT_SELECTORS: Partial<Record<ColumnKey, string>> = {
   name: ".row-name",
   status: ".row-status, .row-sub",
   size: ".row-size",
+  added: ".row-added",
 };
 
 /** Room left after the widest text, so a fitted column doesn't cut it off at a rounding. */

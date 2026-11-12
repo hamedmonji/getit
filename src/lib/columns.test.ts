@@ -41,7 +41,7 @@ describe("pinName", () => {
 
 describe("resetColumn", () => {
   it("puts the column back to its default", () => {
-    const widths = { name: 300, progress: 90, size: 70, status: 150 };
+    const widths = { name: 300, progress: 90, size: 70, status: 150, added: 120 };
     expect(resetColumn(widths, "progress")).toEqual({ ...widths, progress: DEFAULT_WIDTHS.progress });
   });
 
@@ -52,27 +52,27 @@ describe("resetColumn", () => {
 
 describe("columnTemplate", () => {
   it("lets the name column fill until it's sized", () => {
-    expect(columnTemplate(DEFAULT_WIDTHS)).toBe("minmax(120px, 1fr) 200px 120px 80px 0px");
+    expect(columnTemplate(DEFAULT_WIDTHS)).toBe("minmax(120px, 1fr) 200px 120px 80px 160px 0px");
   });
 
   it("gives the slack to the empty column at the end once the name column is sized", () => {
-    expect(columnTemplate({ ...DEFAULT_WIDTHS, name: 300 })).toBe("300px 200px 120px 80px minmax(0px, 1fr)");
+    expect(columnTemplate({ ...DEFAULT_WIDTHS, name: 300 })).toBe("300px 200px 120px 80px 160px minmax(0px, 1fr)");
   });
 });
 
 describe("columnsWidth", () => {
   it("counts the filling name column at its minimum", () => {
-    expect(columnsWidth(DEFAULT_WIDTHS)).toBe(120 + 120 + 80 + 200);
+    expect(columnsWidth(DEFAULT_WIDTHS)).toBe(120 + 120 + 80 + 200 + 160);
   });
 
   it("counts a sized name column at its width", () => {
-    expect(columnsWidth({ ...DEFAULT_WIDTHS, name: 300 })).toBe(300 + 120 + 80 + 200);
+    expect(columnsWidth({ ...DEFAULT_WIDTHS, name: 300 })).toBe(300 + 120 + 80 + 200 + 160);
   });
 });
 
 describe("parseColumnWidths", () => {
   it("reads back saved widths", () => {
-    const widths = { name: 300, progress: 90, size: 70, status: 150 };
+    const widths = { name: 300, progress: 90, size: 70, status: 150, added: 120 };
     expect(parseColumnWidths(JSON.stringify(widths))).toEqual(widths);
   });
 
@@ -90,8 +90,8 @@ describe("parseColumnWidths", () => {
 
 describe("hidden columns", () => {
   it("shows every column but the hidden ones, and always the name", () => {
-    expect(shownColumns([])).toEqual(["name", "status", "progress", "size"]);
-    expect(shownColumns(["status", "name"])).toEqual(["name", "progress", "size"]);
+    expect(shownColumns([])).toEqual(["name", "status", "progress", "size", "added"]);
+    expect(shownColumns(["status", "name"])).toEqual(["name", "progress", "size", "added"]);
   });
 
   it("hides a column once, shows it again, and never hides the name", () => {
@@ -103,7 +103,7 @@ describe("hidden columns", () => {
 
   it("lays out and measures only the shown columns, giving back hidden ones' gaps", () => {
     expect(columnTemplate(DEFAULT_WIDTHS, ["name", "size"])).toBe("minmax(120px, 1fr) 80px 0px");
-    expect(columnsWidth(DEFAULT_WIDTHS, ["name", "size"])).toBe(120 + 80 - 2 * 12);
+    expect(columnsWidth(DEFAULT_WIDTHS, ["name", "size"])).toBe(120 + 80 - 3 * 12);
   });
 
   it("reads hidden columns back, leaving out unknown ones and the name", () => {
